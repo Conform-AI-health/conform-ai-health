@@ -5,13 +5,14 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Instala dependências de compilação
 RUN apk add --no-cache openssl python3 make g++
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm ci
+RUN npm install
 
 COPY tsconfig*.json ./
 COPY src ./src
@@ -28,21 +29,16 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 RUN apk add --no-cache openssl
-
-# Cria usuário não-root para segurança
-USER node
 
 COPY --chown=node:node package*.json ./
 COPY --chown=node:node prisma ./prisma/
-
-# Instala apenas dependências de produção
-RUN npm ci --omit=dev && npx prisma generate
-
-# Copia build compilado
+COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/dist ./dist
+
+USER node
 
 EXPOSE 3000
 
 CMD ["node", "dist/index.js"]
-

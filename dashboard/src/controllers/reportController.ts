@@ -174,7 +174,7 @@ export class ReportController {
       }
 
       md += `---\n\n`;
-      md += `*Laudo emitido eletronicamente pela plataforma ConformIA com fundamentação na Resolução CFM nº 2.336/2023, ANS e LGPD.*`;
+      md += `*Laudo emitido eletronicamente pela plataforma ConformIA com fundamentação na Resolução CFM nº, ANS e LGPD.*`;
 
       res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename=laudo-${report.id}.md`);

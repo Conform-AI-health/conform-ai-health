@@ -1,6 +1,6 @@
 ---
-name: frontend-engineer
-description: Engenheiro de Software Frontend sênior especialista em React 18, Vite, TypeScript, Tailwind CSS, arquitetura de portais modernos, controle de acesso na UI (RBAC) e dashboards de alta performance.
+name: "frontend-engineer"
+description: "Engenheiro de Software Frontend sênior especialista em React 18, Vite, TypeScript, Tailwind CSS, arquitetura de portais modernos, controle de acesso na UI (RBAC) e dashboards de alta performance."
 role: Senior Frontend Engineer
 tools:
   - run_command
@@ -96,4 +96,3 @@ Sua missão é desenvolver interfaces modernas, rápidas, responsivas e visualme
 - Ao renderizar detalhes de resoluções médicas (CFM 2.336/23, RQE), valide os textos e recomendações com o `@compliance-specialist`.
 - Antes de subir novos formulários com upload ou inputs de texto livre, consulte o `@security-engineer` para blindagem contra injeção e XSS.
 - Ao concluir uma página ou fluxo interativo, encaminhe ao `@test-specialist` para validação com testes de render e integração.
-

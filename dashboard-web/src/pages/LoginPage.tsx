@@ -58,7 +58,7 @@ export const LoginPage: React.FC = () => {
             </div>
             <h1 className="text-2xl font-extrabold text-white tracking-tight">ConformIA</h1>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs mx-auto">
-              Inteligência e Governança Regulatória Deontológica em Saúde (CFM 2.336/2023 & LGPD)
+              Inteligência e Governança Regulatória Deontológica em Saúde (CFM & LGPD)
             </p>
           </div>
 
@@ -121,37 +121,24 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Demo Fill Buttons */}
+          {/* Acesso Rápido Administrador Oficial */}
           <div className="mt-8 pt-6 border-t border-slate-800">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block text-center mb-3">
-              Perfis de Demonstração Rápida:
+              Credenciais Administrativas Oficiais:
             </span>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => fillQuickLogin('admin@conformia.med.br', 'Admin@2026')}
-                className="p-2 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded-lg text-center transition group"
-              >
-                <span className="block text-xs font-bold text-purple-400">Admin</span>
-                <span className="block text-[10px] text-slate-500 group-hover:text-slate-400">Master</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillQuickLogin('auditor@conformia.med.br', 'Auditor@2026')}
-                className="p-2 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded-lg text-center transition group"
-              >
-                <span className="block text-xs font-bold text-blue-400">Auditor</span>
-                <span className="block text-[10px] text-slate-500 group-hover:text-slate-400">Técnico</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillQuickLogin('clinica@dermato.med.br', 'Cliente@2026')}
-                className="p-2 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded-lg text-center transition group"
-              >
-                <span className="block text-xs font-bold text-emerald-400">Clínica</span>
-                <span className="block text-[10px] text-slate-500 group-hover:text-slate-400">Portal</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => fillQuickLogin('admin@conform.ai', 'admin123456')}
+              className="w-full p-2.5 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/80 rounded-xl text-center transition flex items-center justify-between px-4 group"
+            >
+              <div className="text-left">
+                <span className="block text-xs font-bold text-purple-400">admin@conform.ai</span>
+                <span className="block text-[10px] text-slate-500">Administrador Master do Sistema</span>
+              </div>
+              <span className="text-xs font-semibold text-slate-400 group-hover:text-white bg-slate-800 px-2.5 py-1 rounded-lg">
+                Preencher
+              </span>
+            </button>
           </div>
         </div>
 

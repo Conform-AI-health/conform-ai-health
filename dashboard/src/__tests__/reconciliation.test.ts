@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { ScraperService, ScrapeResult } from '../services/scraperService.js';
 
-describe('Motor de Reconciliação Deontológica (CFM 2.336/2023)', () => {
+describe('Motor de Reconciliação Deontológica (CFM)', () => {
   it('deve identificar violações críticas para página médica sem CRM e sem RQE com promessa de resultado', () => {
     const rawHtml = `
       <!DOCTYPE html>

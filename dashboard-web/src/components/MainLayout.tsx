@@ -13,37 +13,21 @@ import {
   Stethoscope,
   Activity,
   Sparkles,
+  Terminal,
+  Globe,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
 export const MainLayout: React.FC = () => {
-  const { user, logout, login } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [switchingRole, setSwitchingRole] = useState(false);
 
   const isClient = user?.role === 'CLIENT';
 
   const handleLogout = () => {
     logout();
     navigate('/login');
-  };
-
-  const handleQuickDemoSwitch = async (email: string, pass: string) => {
-    try {
-      setSwitchingRole(true);
-      const res = await api.post('/auth/login', { email, password: pass });
-      login(res.data.token, res.data.user);
-      if (res.data.user.role === 'CLIENT') {
-        navigate('/portal');
-      } else {
-        navigate('/cockpit');
-      }
-    } catch (err: any) {
-      alert(`Erro na alternância rápida: ${err.message}`);
-    } finally {
-      setSwitchingRole(false);
-    }
   };
 
   const navItems = isClient
@@ -54,10 +38,12 @@ export const MainLayout: React.FC = () => {
       ]
     : [
         { label: 'Cockpit do Auditor', path: '/cockpit', icon: LayoutDashboard },
+        { label: 'Varredura & Tags', path: '/scraping', icon: Globe },
         { label: 'Clínicas & Clientes', path: '/clients', icon: Building2 },
         { label: 'Módulos de Auditoria', path: '/agents', icon: Bot },
         { label: 'Laudos Deontológicos', path: '/reports', icon: FileCheck2 },
         { label: 'Catálogo de Normas', path: '/norms', icon: BookOpen },
+        { label: 'Logs & Telemetria IA', path: '/logs', icon: Terminal },
       ];
 
   return (
@@ -107,51 +93,8 @@ export const MainLayout: React.FC = () => {
           </nav>
         </div>
 
-        {/* User Card & Demo Switcher Footer */}
+        {/* User Card & Profile Footer */}
         <div className="p-4 border-t border-slate-800 bg-[#090f22] space-y-3">
-          {/* Demo Role Quick Switcher */}
-          <div className="bg-slate-900/90 rounded-lg p-2.5 border border-slate-800">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1 mb-1.5">
-              <Sparkles className="h-3 w-3 text-emerald-400" />
-              Alternar Perfil Demo:
-            </span>
-            <div className="grid grid-cols-3 gap-1">
-              <button
-                disabled={switchingRole}
-                onClick={() => handleQuickDemoSwitch('admin@conformia.med.br', 'Admin@2026')}
-                className={`text-[10px] py-1 px-1.5 rounded font-semibold text-center transition ${
-                  user?.role === 'ADMIN'
-                    ? 'bg-purple-600/30 text-purple-300 border border-purple-500/30'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                Admin
-              </button>
-              <button
-                disabled={switchingRole}
-                onClick={() => handleQuickDemoSwitch('auditor@conformia.med.br', 'Auditor@2026')}
-                className={`text-[10px] py-1 px-1.5 rounded font-semibold text-center transition ${
-                  user?.role === 'AUDITOR'
-                    ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                Auditor
-              </button>
-              <button
-                disabled={switchingRole}
-                onClick={() => handleQuickDemoSwitch('clinica@dermato.med.br', 'Cliente@2026')}
-                className={`text-[10px] py-1 px-1.5 rounded font-semibold text-center transition ${
-                  user?.role === 'CLIENT'
-                    ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                Clínica
-              </button>
-            </div>
-          </div>
-
           {/* User profile */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 overflow-hidden">
@@ -196,7 +139,7 @@ export const MainLayout: React.FC = () => {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <Stethoscope className="h-4 w-4 text-emerald-400" />
-              <span>Resolução CFM nº 2.336/2023</span>
+              <span>Resolução CFM nº</span>
               <span className="text-slate-600">•</span>
               <span>ANS RN 509/395</span>
               <span className="text-slate-600">•</span>

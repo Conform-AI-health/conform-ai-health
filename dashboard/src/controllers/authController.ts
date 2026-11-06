@@ -101,6 +101,14 @@ export class AuthController {
         return;
       }
 
+      if (!user.passwordHash) {
+        res.status(401).json({
+          error: 'Credenciais inválidas. Usuário sem senha configurada.',
+          code: 'INVALID_CREDENTIALS',
+        });
+        return;
+      }
+
       const isMatch = await bcrypt.compare(password, user.passwordHash);
       if (!isMatch) {
         res.status(401).json({
@@ -202,6 +210,14 @@ export class AuthController {
 
       if (!user) {
         res.status(404).json({ error: 'Usuário não encontrado.' });
+        return;
+      }
+
+      if (!user.passwordHash) {
+        res.status(400).json({
+          error: 'Usuário não possui senha definida.',
+          code: 'PASSWORD_NOT_SET',
+        });
         return;
       }
 

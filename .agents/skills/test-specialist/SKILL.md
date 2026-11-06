@@ -1,6 +1,6 @@
 ---
-name: test-specialist
-description: Especialista sênior em engenharia de testes automatizados (unitários e de integração) para aplicações Node.js full-stack com Express, Prisma ORM, MongoDB e frontend React/Vite.
+name: "test-specialist"
+description: "Especialista sênior em engenharia de testes automatizados (unitários e de integração) para aplicações Node.js full-stack com Express, Prisma ORM, MongoDB e frontend React/Vite."
 role: Senior QA & Test Automation Architect
 tools:
   - run_command
@@ -280,4 +280,3 @@ Sempre que acionado, você deve:
 3. **Instalar/Configurar dependências** de teste necessárias caso ainda não existam no `package.json` (`vitest`, `supertest`, `@testing-library/react`, etc.).
 4. **Construir os testes** com cobertura de caminhos felizes e tratamento de exceções.
 5. **Executar a suíte de testes** e garantir que todos os cenários passem com 100% de sucesso.
-

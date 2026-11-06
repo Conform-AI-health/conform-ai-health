@@ -18,7 +18,7 @@ O **Conform.ai** atua como uma camada automatizada de proteção, monitoramento 
 
 ## 🎯 Principais Capacidades & Escopo Regulatório
 
-- 🔍 **Varredura e Auditoria Contínua:** Análise automatizada de fluxos de produtos digitais de saúde (SaMD, Telemedicina, Prescrição, IA) e de páginas/canais digitais (**CFM nº 2.454/2026**, **CFM nº 2.314/2022**, **CFM nº 2.299/2021**, **CFM nº 2.336/2023**, **ANVISA RDC nº 657/2022**, **ANS** e **LGPD Art. 11**).
+- 🔍 **Varredura e Auditoria Contínua:** Análise automatizada de fluxos de produtos digitais de saúde (SaMD, Telemedicina, Prescrição, IA) e de páginas/canais digitais (**CFM nº 2.454/2026**, **CFM nº 2.314/2022**, **CFM nº 2.299/2021**, **CFM nº**, **ANVISA RDC nº 657/2022**, **ANS** e **LGPD Art. 11**).
 - ⚖️ **Auditoria Regulatória com IA em 2 Estágios:** Roteamento inteligente via catálogo índice de normas vigentes seguido de análise semântica profunda confrontada diretamente com os artigos aplicáveis.
 - 🚥 **Veredito em Semáforo & Economia de Tokens:** Classificação visual instantânea do nível de conformidade (**Verde** = Regular, **Amarelo** = Atenção/Revisão, **Vermelho** = Violação Crítica) acompanhada do medidor de eficiência de contexto (*Token Efficiency Meter*).
 - 📋 **Recomendações Corretivas & Automação:** Orientações práticas fundamentadas na legislação, envio de relatórios executivos por e-mail e geração assistida de ajustes técnicos no código-fonte.
@@ -48,7 +48,7 @@ flowchart LR
 > *Em cumprimento estrito à LGPD e ao Item 6.9 do Regulamento do Hack Brasil 2026, o projeto utiliza exclusivamente **dados e casos sintéticos**, sem qualquer exposição de dados pessoais reais de pacientes.*
 
 - **Exemplo 1 — Auditoria de Fluxo de Prescrição Digital e Telemedicina:** Simulação de uma plataforma de teleconsulta avaliando a exigência de assinatura digital ICP-Brasil (**CFM nº 2.299/2021**), Termo de Consentimento Livre e Esclarecido (**CFM nº 2.314/2022**) e supervisão humana em módulos de IA médica (**CFM nº 2.454/2026**).
-- **Exemplo 2 — Auditoria de Comunicação e Canais Digitais em Saúde:** Verificação automatizada de páginas institucionais confrontando a obrigatoriedade de exibição de CRM/RQE, vedação ao sensacionalismo/promessa de resultado (**CFM nº 2.336/2023**) e transparência no tratamento de dados sensíveis (**LGPD Art. 11**).
+- **Exemplo 2 — Auditoria de Comunicação e Canais Digitais em Saúde:** Verificação automatizada de páginas institucionais confrontando a obrigatoriedade de exibição de CRM/RQE, vedação ao sensacionalismo/promessa de resultado (**CFM nº**) e transparência no tratamento de dados sensíveis (**LGPD Art. 11**).
 
 ---
 

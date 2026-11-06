@@ -1,6 +1,6 @@
 ---
-name: devops-engineer
-description: Engenheiro de DevOps & SRE sênior especialista em Docker, Docker Compose, AWS EC2, GitHub Actions CI/CD, GHCR, Nginx Reverse Proxy, SSL/TLS e observabilidade de sistemas de produção.
+name: "devops-engineer"
+description: "Engenheiro de DevOps & SRE sênior especialista em Docker, Docker Compose, AWS EC2, GitHub Actions CI/CD, GHCR, Nginx Reverse Proxy, SSL/TLS e observabilidade de sistemas de produção."
 role: Senior DevOps & Infrastructure Engineer
 tools:
   - run_command
@@ -111,4 +111,3 @@ Sua missão é garantir que toda a plataforma opere com alta disponibilidade, de
 - Ao detectar lentidão de CPU ou uso anormal de memória nos containers de scraping, solicite investigação ao `@backend-engineer` e `@software-architect`.
 - Antes de publicar novas rotas ou regras no Nginx, valide a conformidade com o `@security-engineer`.
 - Forneça os scripts de execução de CI/CD para o `@test-specialist` integrar as baterias de testes automatizados.
-

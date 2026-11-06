@@ -19,6 +19,11 @@ export const reconciliationOutputSchema = z.object({
   score: z.number().min(0).max(100).describe('Pontuação de risco ou conformidade de 0 a 100'),
   summary: z.string().describe('Síntese diagnóstica da auditoria deontológica'),
   violations: z.array(violationSchema).describe('Lista de violações normativas identificadas'),
+  promptTokens: z.number().default(0),
+  completionTokens: z.number().default(0),
+  totalTokens: z.number().default(0),
+  sourcesUsed: z.array(z.string()).default([]),
+  aiModelUsed: z.string().default('gemini-2.0-flash'),
 });
 
 export type ReconciliationOutput = z.infer<typeof reconciliationOutputSchema>;
@@ -76,7 +81,7 @@ export class ReconciliationEngine {
     const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 
     const systemPrompt = `
-Você é o Auditor Deontológico Sênior da ConformIA, especialista na Resolução CFM nº 2.336/2023, ANS, ANVISA e LGPD em Saúde.
+Você é o Auditor Deontológico Sênior da ConformIA, especialista na Resolução CFM nº, ANS, ANVISA e LGPD em Saúde.
 Sua missão é auditar o conteúdo textual e descritivo de materiais médicos e confrontá-los com o catálogo de normas.
 Você DEVE responder estritamente no formato JSON estruturado definido pelo schema.
 Critérios de severidade:
@@ -122,7 +127,22 @@ Faça a auditoria completa e retorne o JSON com verdict, score, summary e array 
 
     const responseText = response.text || '{}';
     const parsed = JSON.parse(responseText);
-    return reconciliationOutputSchema.parse(parsed);
+
+    const usage: any = (response as any).usageMetadata || {};
+    const promptTokens = usage.promptTokenCount || Math.ceil(prompt.length / 4);
+    const completionTokens = usage.candidatesTokenCount || Math.ceil(responseText.length / 4);
+    const totalTokens = usage.totalTokenCount || (promptTokens + completionTokens);
+
+    const sourcesUsed = NORMS_CATALOG.map((n) => `${n.normCode} (${n.article}): ${n.title}`);
+
+    return reconciliationOutputSchema.parse({
+      ...parsed,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      sourcesUsed,
+      aiModelUsed: 'gemini-2.0-flash',
+    });
   }
 
   /**
@@ -164,7 +184,20 @@ ${scrape.cleanMarkdown.substring(0, 4000)}
 
     const jsonText = response.data?.response || '{}';
     const parsed = JSON.parse(jsonText);
-    return reconciliationOutputSchema.parse(parsed);
+
+    const promptTokens = response.data?.prompt_eval_count || Math.ceil(prompt.length / 4);
+    const completionTokens = response.data?.eval_count || Math.ceil(jsonText.length / 4);
+    const totalTokens = promptTokens + completionTokens;
+    const sourcesUsed = NORMS_CATALOG.map((n) => `${n.normCode} (${n.article}): ${n.title}`);
+
+    return reconciliationOutputSchema.parse({
+      ...parsed,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      sourcesUsed,
+      aiModelUsed: `ollama:${env.OLLAMA_MODEL}`,
+    });
   }
 
   /**
@@ -305,11 +338,30 @@ ${scrape.cleanMarkdown.substring(0, 4000)}
     const header = customSummaryHeader ? `${customSummaryHeader}. ` : '';
     const summary = `${header}Auditoria concluída com ${violations.length} não-conformidade(s) deontológica(s) encontrada(s). Veredito Semáforo: ${verdict} (Score de Conformidade: ${score}/100).`;
 
+    // Telemetria determinística para modo heurístico
+    const estimatedPrompt = Math.ceil(scrape.cleanMarkdown.length / 4);
+    const estimatedCompletion = Math.ceil(summary.length / 4) + violations.length * 40;
+    const promptTokens = estimatedPrompt;
+    const completionTokens = estimatedCompletion;
+    const totalTokens = promptTokens + completionTokens;
+
+    // Fontes/artigos do catálogo que foram especificamente acionados
+    const sourcesUsed = Array.from(new Set(violations.map((v) => `${v.normCode} (${v.normArticle})`)));
+    if (sourcesUsed.length === 0) {
+      sourcesUsed.push('Res. CFM 2.336/23 (Art. 1º ao 14)');
+      sourcesUsed.push('LGPD em Saúde (Art. 11)');
+    }
+
     return {
       verdict,
       score,
       summary,
       violations,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      sourcesUsed,
+      aiModelUsed: 'regex-heuristic-engine',
     };
   }
 }

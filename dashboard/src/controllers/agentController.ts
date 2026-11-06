@@ -6,6 +6,18 @@ import { Role, ExtractionMode } from '@prisma/client';
 import { ScraperService } from '../services/scraperService.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 
+const createAgentSchema = z.object({
+  name: z.string().min(2, 'Nome é obrigatório'),
+  code: z.string().min(2, 'Código identificador é obrigatório'),
+  description: z.string().min(5, 'Descrição é obrigatória'),
+  category: z.string().default('DEONTOLOGIA_MEDICA'),
+  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL']).default('CHEERIO'),
+  targetNorms: z.array(z.string()).default([]),
+  systemPrompt: z.string().optional(),
+});
+
+const updateAgentSchema = createAgentSchema.partial();
+
 const runAuditSchema = z.object({
   clientId: z.string().min(1, 'clientId é obrigatório'),
   targetUrl: z.string().url('targetUrl deve ser uma URL válida'),
@@ -42,6 +54,81 @@ export class AgentController {
     }
   }
 
+  public static async create(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = createAgentSchema.parse(req.body);
+
+      const existing = await prisma.agentModule.findUnique({
+        where: { code: data.code },
+      });
+      if (existing) {
+        res.status(409).json({
+          error: `Já existe um agente cadastrado com o código ${data.code}.`,
+          code: 'AGENT_CODE_EXISTS',
+        });
+        return;
+      }
+
+      const agent = await prisma.agentModule.create({
+        data: {
+          name: data.name,
+          code: data.code.toUpperCase(),
+          description: data.description,
+          category: data.category,
+          extractionMode: data.extractionMode,
+          rulesCount: data.targetNorms.length > 0 ? data.targetNorms.length : 12,
+          targetNorms: data.targetNorms,
+          systemPrompt: data.systemPrompt || null,
+        },
+      });
+
+      res.status(201).json({
+        message: 'Agente regulatório cadastrado com sucesso!',
+        agent,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public static async update(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const data = updateAgentSchema.parse(req.body);
+
+      const updated = await prisma.agentModule.update({
+        where: { id },
+        data: {
+          ...data,
+          ...(data.code && { code: data.code.toUpperCase() }),
+          ...(data.targetNorms && { rulesCount: data.targetNorms.length }),
+        },
+      });
+
+      res.status(200).json({
+        message: 'Agente atualizado com sucesso.',
+        agent: updated,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public static async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      await prisma.agentModule.delete({
+        where: { id },
+      });
+
+      res.status(200).json({
+        message: 'Módulo de agente removido com sucesso.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public static async runAudit(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id: agentModuleId } = req.params;
@@ -68,6 +155,51 @@ export class AgentController {
       const mod = await prisma.agentModule.findUnique({
         where: { id: agentModuleId },
       });
+
+      // Validação de contexto de tags antes de iniciar
+      let scrapedPage = await prisma.scrapedPage.findUnique({
+        where: { url: targetUrl },
+      });
+
+      if (!scrapedPage) {
+        // Se ainda não foi indexada no repositório, raspa e tagueia a página
+        const initialScrape = await ScraperService.scrape(targetUrl, extractionMode || mod?.extractionMode || 'CHEERIO');
+        scrapedPage = await prisma.scrapedPage.upsert({
+          where: { url: targetUrl },
+          update: {
+            title: initialScrape.title,
+            cleanMarkdown: initialScrape.cleanMarkdown,
+            rawLength: initialScrape.rawHtmlLength,
+            tokensCount: initialScrape.tokensEstimatedClean,
+            tags: initialScrape.detectedTags,
+            extractedEntities: JSON.stringify(initialScrape.extractedEntities),
+          },
+          create: {
+            url: targetUrl,
+            title: initialScrape.title,
+            cleanMarkdown: initialScrape.cleanMarkdown,
+            rawLength: initialScrape.rawHtmlLength,
+            tokensCount: initialScrape.tokensEstimatedClean,
+            tags: initialScrape.detectedTags,
+            extractedEntities: JSON.stringify(initialScrape.extractedEntities),
+          },
+        });
+      }
+
+      // Verificação se a tag da página faz parte do contexto do agente
+      const agentTags = mod?.tags || ['CFM'];
+      const pageTags = scrapedPage.tags || ['CFM'];
+      const isContextCompatible = agentTags.some((tag) => pageTags.includes(tag));
+
+      if (!isContextCompatible) {
+        res.status(422).json({
+          error: `Incompatibilidade de contexto. As tags da página ([${pageTags.join(', ')}]) não fazem parte do contexto deste agente ([${agentTags.join(', ')}]).`,
+          code: 'AGENT_CONTEXT_MISMATCH',
+          pageTags,
+          agentTags,
+        });
+        return;
+      }
 
       const effectiveMode: ExtractionMode = extractionMode || mod?.extractionMode || 'CHEERIO';
 
@@ -129,6 +261,11 @@ export class AgentController {
                   rawContent: scrape.rawHtmlLength.toString(),
                   cleanMarkdown: scrape.cleanMarkdown,
                   tokensSaved: Math.max(0, scrape.tokensEstimatedRaw - scrape.tokensEstimatedClean),
+                  promptTokens: recon.promptTokens,
+                  completionTokens: recon.completionTokens,
+                  totalTokens: recon.totalTokens,
+                  sourcesUsed: recon.sourcesUsed,
+                  aiModelUsed: recon.aiModelUsed,
                   executionTimeMs,
                 },
               });

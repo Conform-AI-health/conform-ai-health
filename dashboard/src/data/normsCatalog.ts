@@ -13,7 +13,7 @@ export interface NormChunk {
 }
 
 export const NORMS_CATALOG: NormChunk[] = [
-  // --- CFM nº 2.336/2023 ---
+  // --- CFM nº ---
   {
     id: 'CFM-2336-ART-01',
     normCode: 'Res. CFM 2.336/23',
