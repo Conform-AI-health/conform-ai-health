@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------
+  # Redis: Fila BullMQ e Cache Operacional
+  # -------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: conformia-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - conformia-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------
+  # Backend REST API (Node.js 20 + Express + Prisma)
+  # -------------------------------------------------------------
+  dashboard-api:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: conformia-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - API_PREFIX=/api/v1
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-conformia-super-secret-jwt-key-minimum-32-chars-2026}
+      - JWT_EXPIRES_IN=7d
+      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+      - EXTRACTION_MODE=${EXTRACTION_MODE:-CHEERIO}
+      - CORS_ORIGIN=*
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - conformia-net
+
+  # -------------------------------------------------------------
+  # Worker Assíncrono de Auditoria Deontológica (BullMQ)
+  # -------------------------------------------------------------
+  audit-worker:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: conformia-worker
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+      - EXTRACTION_MODE=${EXTRACTION_MODE:-CHEERIO}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - conformia-net
+
+  # -------------------------------------------------------------
+  # Frontend SPA (Vite + React + Nginx Proxy)
+  # -------------------------------------------------------------
+  dashboard-web:
+    build:
+      context: ./dashboard-web
+      dockerfile: Dockerfile
+    container_name: conformia-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - dashboard-api
+    networks:
+      - conformia-net
+
+networks:
+  conformia-net:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
+
