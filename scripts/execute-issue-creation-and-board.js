@@ -190,3 +190,4 @@ run().catch(err => {
   console.error('Erro na execução:', err);
   process.exit(1);
 });
+
