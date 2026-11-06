@@ -1,7 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { Role } from '@prisma/client';
 import { env } from '../config/env.js';
+
+export const Role = {
+  ADMIN: 'ADMIN',
+  AUDITOR: 'AUDITOR',
+  CLIENT: 'CLIENT',
+} as const;
+
+export type Role = (typeof Role)[keyof typeof Role];
 
 export interface TokenPayload {
   userId: string;

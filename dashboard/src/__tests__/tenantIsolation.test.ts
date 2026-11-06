@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Request, Response, NextFunction } from 'express';
 import { enforceTenantIsolation, authorize } from '../middlewares/auth.js';
-import { Role } from '@prisma/client';
+const Role = {
+  ADMIN: 'ADMIN',
+  AUDITOR: 'AUDITOR',
+  CLIENT: 'CLIENT',
+} as const;
 
 describe('Segurança & Isolamento Multi-Tenant (RBAC & Tenant Guards)', () => {
   it('deve bloquear usuário CLIENT ao tentar acessar dados de outro clientId (403 Forbidden)', () => {
