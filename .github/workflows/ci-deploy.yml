@@ -107,8 +107,8 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
-          username: ${{ secrets.AWS_EC2_USER }}
-          key: ${{ secrets.AWS_EC2_SSH_KEY }}
+          username: ${{ secrets.AWS_EC2_USER }} 
+          key: ${{ secrets.AWS_EC2_SSH_KEY }}     
           script: |
             cd /opt/conformia
             echo "📥 Atualizando imagens no servidor de produção..."
@@ -118,4 +118,3 @@ jobs:
             echo "🩺 Verificando integridade dos serviços..."
             curl --fail http://localhost/health || exit 1
             echo "✅ Deploy concluído com sucesso!"
-
