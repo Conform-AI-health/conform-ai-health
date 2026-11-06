@@ -86,7 +86,7 @@ export const DashboardPage: React.FC = () => {
   const avgScore =
     totalReports > 0
       ? Math.round(reports.reduce((acc, r) => acc + (r.score || 0), 0) / totalReports)
-      : 82;
+      : 0;
 
   const totalTokensSaved = reports.reduce((acc, r) => acc + (r.tokensSaved || 0), 0);
 
@@ -100,7 +100,7 @@ export const DashboardPage: React.FC = () => {
             <span>Cockpit do Auditor Deontológico</span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Monitoramento analítico em tempo real de conformidade com a Resolução CFM nº 2.336/2023 e LGPD.
+            Monitoramento analítico em tempo real de conformidade com a Resolução CFM nº e LGPD.
           </p>
         </div>
 
@@ -233,7 +233,7 @@ export const DashboardPage: React.FC = () => {
                   <div
                     className="bg-emerald-500 h-2 rounded-full transition-all"
                     style={{
-                      width: totalReports > 0 ? `${(compliantCount / totalReports) * 100}%` : '50%',
+                      width: totalReports > 0 ? `${(compliantCount / totalReports) * 100}%` : '0%',
                     }}
                   ></div>
                 </div>
@@ -251,7 +251,7 @@ export const DashboardPage: React.FC = () => {
                   <div
                     className="bg-amber-500 h-2 rounded-full transition-all"
                     style={{
-                      width: totalReports > 0 ? `${(partialCount / totalReports) * 100}%` : '35%',
+                      width: totalReports > 0 ? `${(partialCount / totalReports) * 100}%` : '0%',
                     }}
                   ></div>
                 </div>
@@ -269,7 +269,7 @@ export const DashboardPage: React.FC = () => {
                   <div
                     className="bg-red-500 h-2 rounded-full transition-all"
                     style={{
-                      width: totalReports > 0 ? `${(nonCompliantCount / totalReports) * 100}%` : '15%',
+                      width: totalReports > 0 ? `${(nonCompliantCount / totalReports) * 100}%` : '0%',
                     }}
                   ></div>
                 </div>
@@ -406,7 +406,7 @@ export const DashboardPage: React.FC = () => {
               <span>Disparar Auditoria Deontológica</span>
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Selecione a clínica alvo e o canal digital para varredura e cruzamento com a Resolução CFM 2.336/2023.
+              Selecione a clínica alvo e o canal digital para varredura e cruzamento com a Resolução CFM.
             </p>
 
             <form onSubmit={handleRunAuditSubmit} className="space-y-4 mt-5">

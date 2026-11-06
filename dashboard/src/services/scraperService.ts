@@ -12,6 +12,7 @@ export interface ScrapeResult {
   tokensEstimatedRaw: number;
   tokensEstimatedClean: number;
   tokensSavedPercentage: number;
+  detectedTags: string[];
   extractedEntities: {
     crms: string[];
     rqes: string[];
@@ -24,9 +25,197 @@ export interface ScrapeResult {
 
 export class ScraperService {
   /**
+   * Verifica se a URL informada aponta para uma árvore de diretório do GitHub
+   */
+  public static isGitHubTreeUrl(url: string): {
+    isTree: boolean;
+    owner?: string;
+    repo?: string;
+    branch?: string;
+    path?: string;
+  } {
+    const match = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/?(.*)$/i);
+    if (match) {
+      return {
+        isTree: true,
+        owner: match[1],
+        repo: match[2],
+        branch: match[3],
+        path: match[4] || '',
+      };
+    }
+    return { isTree: false };
+  }
+
+  /**
+   * Verifica se a URL informada é um arquivo individual (blob) no GitHub
+   */
+  public static isGitHubBlobUrl(url: string): {
+    isBlob: boolean;
+    owner?: string;
+    repo?: string;
+    branch?: string;
+    path?: string;
+  } {
+    const match = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i);
+    if (match) {
+      return {
+        isBlob: true,
+        owner: match[1],
+        repo: match[2],
+        branch: match[3],
+        path: match[4],
+      };
+    }
+    return { isBlob: false };
+  }
+
+  /**
+   * Executa varredura em lote de um diretório do GitHub, baixando todos os arquivos da pasta
+   */
+  public static async scrapeGitHubTree(treeUrl: string, customTags?: string[]): Promise<ScrapeResult[]> {
+    const treeInfo = this.isGitHubTreeUrl(treeUrl);
+    if (!treeInfo.isTree || !treeInfo.owner || !treeInfo.repo) {
+      throw new Error('A URL fornecida não é uma árvore de diretório válida do GitHub.');
+    }
+
+    const { owner, repo, branch = 'main', path = '' } = treeInfo;
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+
+    console.log(`📂 [Scraper] Varrendo diretório GitHub via API: ${apiUrl}`);
+
+    const ghHeaders: Record<string, string> = {
+      'User-Agent': 'ConformIA-Regulatory-Auditor (Health Deontology)',
+      Accept: 'application/vnd.github.v3+json',
+    };
+
+    if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) {
+      ghHeaders['Authorization'] = `token ${process.env.GITHUB_TOKEN || process.env.GH_TOKEN}`;
+    }
+
+    const contentsResponse = await axios.get(apiUrl, {
+      headers: ghHeaders,
+      timeout: 20000,
+    });
+
+    if (!Array.isArray(contentsResponse.data)) {
+      throw new Error('O caminho fornecido no GitHub não aponta para um diretório com múltiplos arquivos.');
+    }
+
+    // Filtra apenas arquivos suportados (.md, .txt, .json, .html)
+    const files = contentsResponse.data
+      .filter((item: any) => item.type === 'file')
+      .slice(0, 50); // Trava de segurança: máximo 50 arquivos por lote
+
+    if (files.length === 0) {
+      throw new Error('Nenhum arquivo de documento elegível foi encontrado neste diretório.');
+    }
+
+    console.log(`📄 [Scraper] Encontrados ${files.length} arquivos no diretório GitHub. Baixando e processando...`);
+
+    const results: ScrapeResult[] = [];
+
+    // Processamento com concorrência controlada (lotes de 5)
+    const chunkSize = 5;
+    for (let i = 0; i < files.length; i += chunkSize) {
+      const chunk = files.slice(i, i + chunkSize);
+      const chunkPromises = chunk.map(async (fileItem: any) => {
+        try {
+          const rawUrl =
+            fileItem.download_url ||
+            `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${fileItem.path}`;
+
+          const fileResp = await axios.get(rawUrl, {
+            timeout: 15000,
+            headers: {
+              'User-Agent': 'ConformIA-Regulatory-Auditor',
+            },
+          });
+
+          const rawContent = typeof fileResp.data === 'string' ? fileResp.data : JSON.stringify(fileResp.data, null, 2);
+
+          // Extrai título amigável (tenta pegar o primeiro # H1 do markdown ou usa o nome do arquivo)
+          let title = fileItem.name.replace(/\.[^/.]+$/, '');
+          const h1Match = rawContent.match(/^#\s+(.+)$/m);
+          if (h1Match && h1Match[1].trim()) {
+            title = h1Match[1].trim();
+          }
+
+          const cleanMarkdown = rawContent.trim();
+          const tokensEstimatedRaw = Math.ceil(rawContent.length / 4);
+          const tokensEstimatedClean = Math.ceil(cleanMarkdown.length / 4);
+
+          // Detecção de tags e entidades
+          const detectedTags = this.detectRegulatoryTags(cleanMarkdown, rawContent);
+          const effectiveTags = Array.from(new Set([...(customTags || []), ...detectedTags]));
+
+          // Extração de entidades
+          const crmRegex = /crm[-/\s]?([a-z]{2})?[:\s]*(\d{4,8})([-/\s]?([a-z]{2}))?/gi;
+          const crms: string[] = [];
+          let m;
+          while ((m = crmRegex.exec(cleanMarkdown)) !== null) {
+            crms.push(m[0].trim());
+          }
+
+          const rqeRegex = /rqe[:\s]*(\d{3,6})/gi;
+          const rqes: string[] = [];
+          while ((m = rqeRegex.exec(cleanMarkdown)) !== null) {
+            rqes.push(m[0].trim());
+          }
+
+          const ufs = ['SP', 'RJ', 'MG', 'RS', 'PR', 'SC', 'BA', 'PE', 'CE', 'GO', 'DF', 'ES'];
+          const detectedStates = ufs.filter((uf) =>
+            new RegExp(`\\b${uf}\\b`, 'i').test(cleanMarkdown)
+          );
+
+          const fullText = cleanMarkdown.toLowerCase();
+
+          return {
+            url: fileItem.html_url || fileItem.url || rawUrl,
+            mode: 'CHEERIO' as ExtractionMode,
+            title,
+            rawHtmlLength: rawContent.length,
+            cleanMarkdown,
+            tokensEstimatedRaw,
+            tokensEstimatedClean,
+            tokensSavedPercentage: 0,
+            detectedTags: effectiveTags,
+            extractedEntities: {
+              crms: Array.from(new Set(crms)),
+              rqes: Array.from(new Set(rqes)),
+              states: detectedStates,
+              hasBeforeAfterMention: fullText.includes('antes e depois') || fullText.includes('antes/depois'),
+              hasPromotionalPricing: fullText.includes('promoção') || fullText.includes('desconto'),
+              hasGuaranteedResultMention: fullText.includes('100% garantido') || fullText.includes('resultado garantido'),
+            },
+          } as ScrapeResult;
+        } catch (err: any) {
+          console.warn(`[Scraper] Erro ao baixar arquivo ${fileItem.name}: ${err.message}`);
+          return null;
+        }
+      });
+
+      const chunkResults = await Promise.all(chunkPromises);
+      for (const res of chunkResults) {
+        if (res) results.push(res);
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Executa extração polimórfica com base no modo solicitado ou configurado
    */
   public static async scrape(url: string, mode?: ExtractionMode): Promise<ScrapeResult> {
+    // Se for um arquivo blob único do GitHub, baixa o raw diretamente
+    const blobInfo = this.isGitHubBlobUrl(url);
+    if (blobInfo.isBlob && blobInfo.owner && blobInfo.repo && blobInfo.branch && blobInfo.path) {
+      const rawUrl = `https://raw.githubusercontent.com/${blobInfo.owner}/${blobInfo.repo}/${blobInfo.branch}/${blobInfo.path}`;
+      const resp = await axios.get(rawUrl, { timeout: 15000 });
+      const rawText = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
+      return this.processHtml(url, `<html><head><title>${blobInfo.path}</title></head><body><pre>${rawText}</pre></body></html>`, 'CHEERIO');
+    }
     const selectedMode = mode || (env.EXTRACTION_MODE as ExtractionMode) || 'CHEERIO';
 
     try {
@@ -276,6 +465,9 @@ export class ScraperService {
     const tokensSavedPercentage =
       tokensEstimatedRaw > 0 ? Math.round((tokensSaved / tokensEstimatedRaw) * 100) : 0;
 
+    // 6. Detecção e Auto-Tagging Regulatória (CFM, LGPD, ANVISA, ANS)
+    const detectedTags = this.detectRegulatoryTags(cleanMarkdown, rawHtml);
+
     return {
       url,
       mode,
@@ -285,6 +477,7 @@ export class ScraperService {
       tokensEstimatedRaw,
       tokensEstimatedClean,
       tokensSavedPercentage,
+      detectedTags,
       extractedEntities: {
         crms: Array.from(new Set(crms)),
         rqes: Array.from(new Set(rqes)),
@@ -294,6 +487,100 @@ export class ScraperService {
         hasGuaranteedResultMention,
       },
     };
+  }
+
+  /**
+   * Classificador Deontológico Heurístico de Tags:
+   * CFM (Médico), LGPD (Dados), ANVISA (Sanitário), ANS (Saúde Suplementar)
+   */
+  public static detectRegulatoryTags(cleanMarkdown: string, rawHtml: string): string[] {
+    const textLower = (cleanMarkdown + ' ' + rawHtml).toLowerCase();
+    const tags: string[] = [];
+
+    // Tag CFM (Médico)
+    const cfmSignals = [
+      'crm',
+      'rqe',
+      'médic',
+      'dermatolog',
+      'cirurgi',
+      'cardiolog',
+      'ortoped',
+      'pediatr',
+      'consulta',
+      'antes e depois',
+      'antes/depois',
+      'paciente',
+      'tratamento',
+      'prescrição',
+    ];
+    if (cfmSignals.some((sig) => textLower.includes(sig))) {
+      tags.push('CFM');
+    }
+
+    // Tag LGPD (Dados e Privacidade)
+    const lgpdSignals = [
+      'privacidade',
+      'lgpd',
+      'dados pessoais',
+      'consentimento',
+      'termo de uso',
+      'cookies',
+      'agendar online',
+      'agendamento',
+      'formulário',
+      'input',
+      'fale conosco',
+      'cadastre-se',
+    ];
+    if (lgpdSignals.some((sig) => textLower.includes(sig))) {
+      tags.push('LGPD');
+    }
+
+    // Tag ANVISA (Vigilância Sanitária e Produtos)
+    const anvisSignals = [
+      'anvisa',
+      'medicamento',
+      'remédio',
+      'tarja vermelha',
+      'tarja preta',
+      'toxina botulínica',
+      'botox',
+      'fármaco',
+      'ácido hialurônico',
+      'efeito terapêutico',
+      'substância',
+      'cosmético',
+    ];
+    if (anvisSignals.some((sig) => textLower.includes(sig))) {
+      tags.push('ANVISA');
+    }
+
+    // Tag ANS (Saúde Suplementar e Planos)
+    const ansSignals = [
+      'ans',
+      'plano de saúde',
+      'convênio',
+      'operadora',
+      'unimed',
+      'bradesco saúde',
+      'sulamérica',
+      'amil',
+      'rede credenciada',
+      'carência',
+      'reembolso',
+      'rol de procedimentos',
+    ];
+    if (ansSignals.some((sig) => textLower.includes(sig))) {
+      tags.push('ANS');
+    }
+
+    // Padrão mínimo: se nenhuma específica bater, assume CFM por ser plataforma deontológica de saúde
+    if (tags.length === 0) {
+      tags.push('CFM');
+    }
+
+    return tags;
   }
 }
 

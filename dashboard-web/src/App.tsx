@@ -10,6 +10,8 @@ import { ClientsPage } from './pages/ClientsPage';
 import { AgentsPage } from './pages/AgentsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { NormsPage } from './pages/NormsPage';
+import { LogsTelemetryPage } from './pages/LogsTelemetryPage';
+import { ScrapingPage } from './pages/ScrapingPage';
 
 const RootRedirect: React.FC = () => {
   const { user } = useAuth();
@@ -31,8 +33,10 @@ export const App: React.FC = () => {
               {/* Cockpit do Auditor (Apenas ADMIN e AUDITOR) */}
               <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'AUDITOR']} />}>
                 <Route path="/cockpit" element={<DashboardPage />} />
+                <Route path="/scraping" element={<ScrapingPage />} />
                 <Route path="/clients" element={<ClientsPage />} />
                 <Route path="/agents" element={<AgentsPage />} />
+                <Route path="/logs" element={<LogsTelemetryPage />} />
               </Route>
 
               {/* Portal do Cliente (Apenas CLIENT) */}

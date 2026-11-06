@@ -53,13 +53,13 @@ enum Verdict {
 model User {
   id           String    @id @default(auto()) @map("_id") @db.ObjectId
   email        String    @unique
-  passwordHash String
+  passwordHash String?
   name         String
   role         Role      @default(CLIENT)
   clientId     String?   @db.ObjectId
   client       Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime? @default(now())
+  updatedAt    DateTime? @updatedAt
 
   @@map("users")
 }
@@ -96,6 +96,9 @@ model AgentModule {
   category       String
   rulesCount     Int             @default(0)
   extractionMode ExtractionMode  @default(CHEERIO)
+  tags           String[]        @default(["CFM"])
+  targetNorms    String[]        @default([])
+  systemPrompt   String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -127,6 +130,11 @@ model AuditReport {
   rawContent      String?
   cleanMarkdown   String?
   tokensSaved     Int            @default(0)
+  promptTokens    Int            @default(0)
+  completionTokens Int           @default(0)
+  totalTokens     Int            @default(0)
+  sourcesUsed     String[]       @default([])
+  aiModelUsed     String?
   executionTimeMs Int            @default(0)
   status          AuditStatus    @default(PENDING)
   violations      Violation[]
@@ -164,5 +172,22 @@ model SystemLog {
 
   @@index([level, createdAt])
   @@map("system_logs")
+}
+
+model ScrapedPage {
+  id                String       @id @default(auto()) @map("_id") @db.ObjectId
+  url               String       @unique
+  title             String
+  cleanMarkdown     String
+  rawLength         Int          @default(0)
+  tokensCount       Int          @default(0)
+  tags              String[]     // CFM, LGPD, ANVISA, ANS
+  extractedEntities String?      // Serialized JSON with entities
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([tags])
+  @@index([tags, createdAt])
+  @@map("scraped_pages")
 }
 

@@ -192,7 +192,7 @@ export const CustomerDashboardPage: React.FC = () => {
             </div>
             <p className="text-xs mt-2 opacity-90">
               {isConforme
-                ? 'Sua clínica atende integralmente à Resolução CFM nº 2.336/2023 e diretrizes da LGPD.'
+                ? 'Sua clínica atende integralmente à Resolução CFM nº e diretrizes da LGPD.'
                 : isParcial
                 ? 'Identificamos oportunidades de adequação técnica recomendadas para prevenir autuações.'
                 : 'Atenção imediata requerida: infrações de severidade alta ou crítica identificadas em seus canais.'}

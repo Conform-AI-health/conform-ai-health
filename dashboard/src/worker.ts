@@ -51,6 +51,11 @@ export function startAuditWorker() {
               rawContent: scrape.rawHtmlLength.toString(),
               cleanMarkdown: scrape.cleanMarkdown,
               tokensSaved: Math.max(0, scrape.tokensEstimatedRaw - scrape.tokensEstimatedClean),
+              promptTokens: reconciliation.promptTokens,
+              completionTokens: reconciliation.completionTokens,
+              totalTokens: reconciliation.totalTokens,
+              sourcesUsed: reconciliation.sourcesUsed,
+              aiModelUsed: reconciliation.aiModelUsed,
               executionTimeMs,
             },
           });

@@ -1,0 +1,561 @@
+[
+  {
+    "number": 52,
+    "title": "[TASK-26] Proxy Reverso Nginx, SSL/TLS Let's Encrypt e Observabilidade",
+    "state": "open",
+    "labels": [
+      "devops",
+      "nginx",
+      "ssl"
+    ],
+    "body": "## 📌 [TASK-26] Proxy Reverso Nginx, SSL/TLS Let's Encrypt e Observabilidade\n\n### 📖 Descrição\nNginx configurado com HTTPS obrigatório, HTTP/2, cabeçalhos HSTS, compressão Brotli/Gzip e rotação de logs Docker.\n\n### ⚖️ Critérios de Aceitação\nClassificação A+ em testes de SSL Labs e zero exposição de portas internas na internet.\n\n---\n- **Épico:** 🚀 ÉPICO 7: Infraestrutura, CI/CD e Deploy em Nuvem\n- **Agente Especialista Sugerido:** `@devops-engineer` / `@security-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 51,
+    "title": "[TASK-25] Pipeline de CI/CD com GitHub Actions (`ci-deploy.yml`)",
+    "state": "open",
+    "labels": [
+      "devops",
+      "github-actions",
+      "cicd"
+    ],
+    "body": "## 📌 [TASK-25] Pipeline de CI/CD com GitHub Actions (`ci-deploy.yml`)\n\n### 📖 Descrição\nAutomação com etapas de typecheck, testes, build/push de imagens no GHCR (GitHub Container Registry) e deploy contínuo via SSH.\n\n### ⚖️ Critérios de Aceitação\nCada commit na branch `main` executa a validação e atualiza os containers na AWS EC2.\n\n---\n- **Épico:** 🚀 ÉPICO 7: Infraestrutura, CI/CD e Deploy em Nuvem\n- **Agente Especialista Sugerido:** `@devops-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 50,
+    "title": "[TASK-24] Dockerfiles Multi-Stage Otimizados e Docker Compose",
+    "state": "open",
+    "labels": [
+      "devops",
+      "docker",
+      "containers"
+    ],
+    "body": "## 📌 [TASK-24] Dockerfiles Multi-Stage Otimizados e Docker Compose\n\n### 📖 Descrição\nContainers enxutos para API e Worker (Node.js Alpine) com usuário não-root e rede interna segura `conformia-net`.\n\n### ⚖️ Critérios de Aceitação\nBuild idempotente e inicialização saudável com healthcheck configurado.\n\n---\n- **Épico:** 🚀 ÉPICO 7: Infraestrutura, CI/CD e Deploy em Nuvem\n- **Agente Especialista Sugerido:** `@devops-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 49,
+    "title": "[TASK-23] Auditoria SAST & Blindagem OWASP Top 10",
+    "state": "open",
+    "labels": [
+      "security",
+      "owasp",
+      "sast"
+    ],
+    "body": "## 📌 [TASK-23] Auditoria SAST & Blindagem OWASP Top 10\n\n### 📖 Descrição\nProteção contra NoSQL Injection, Rate Limiting em rotas de autenticação, cabeçalhos de segurança via Helmet e proteção XSS.\n\n### ⚖️ Critérios de Aceitação\nZero vulnerabilidades de severidade Alta/Crítica em análise estática.\n\n---\n- **Épico:** 🛡️ ÉPICO 6: Qualidade, Segurança & DevSecOps\n- **Agente Especialista Sugerido:** `@security-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 48,
+    "title": "[TASK-22] Testes de Renderização e Componentes Frontend",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "qa",
+      "testing"
+    ],
+    "body": "## 📌 [TASK-22] Testes de Renderização e Componentes Frontend\n\n### 📖 Descrição\nTestes de componentes React (render do layout por papel, proteção de rotas e cálculo de badges de risco).\n\n### ⚖️ Critérios de Aceitação\nTestes validam isolamento visual e fluxos sem quebrar compilação.\n\n---\n- **Épico:** 🛡️ ÉPICO 6: Qualidade, Segurança & DevSecOps\n- **Agente Especialista Sugerido:** `@test-specialist`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 47,
+    "title": "[TASK-21] Suíte de Testes Unitários e de Integração Backend",
+    "state": "open",
+    "labels": [
+      "backend",
+      "qa",
+      "testing"
+    ],
+    "body": "## 📌 [TASK-21] Suíte de Testes Unitários e de Integração Backend\n\n### 📖 Descrição\nTestes de controladores Express com Supertest, mocks de Prisma/MongoDB e testes de resiliência de filas.\n\n### ⚖️ Critérios de Aceitação\nCobertura de rotas críticas de autenticação, clientes e regras de clientes.\n\n---\n- **Épico:** 🛡️ ÉPICO 6: Qualidade, Segurança & DevSecOps\n- **Agente Especialista Sugerido:** `@test-specialist`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 46,
+    "title": "[TASK-20] Portal Exclusivo do Cliente (`/customer-dashboard`)",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "customer-portal",
+      "ux"
+    ],
+    "body": "## 📌 [TASK-20] Portal Exclusivo do Cliente (`/customer-dashboard`)\n\n### 📖 Descrição\nDashboard visual com indicadores de conformidade da clínica, badges de gravidade e listagem de normas ativas com recomendações.\n\n### ⚖️ Critérios de Aceitação\nVisualização clara, livre de botões administrativos e com linguagem acessível ao gestor de saúde.\n\n---\n- **Épico:** 🎨 ÉPICO 5: Frontend SPA — Cockpit do Auditor & Portal do Cliente\n- **Agente Especialista Sugerido:** `@frontend-engineer` / `@compliance-specialist`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 45,
+    "title": "[TASK-19] Cockpit Administrativo (Auditor & Admin)",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "dashboard",
+      "admin"
+    ],
+    "body": "## 📌 [TASK-19] Cockpit Administrativo (Auditor & Admin)\n\n### 📖 Descrição\nListagem e cadastro de clientes, painel de agentes regulatórios, disparo manual de auditorias e alternância de provider de IA.\n\n### ⚖️ Critérios de Aceitação\nTabelas paginadas com busca, modais de confirmação e status em tempo real.\n\n---\n- **Épico:** 🎨 ÉPICO 5: Frontend SPA — Cockpit do Auditor & Portal do Cliente\n- **Agente Especialista Sugerido:** `@frontend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 44,
+    "title": "[TASK-18] Sistema de Autenticação na UI e Roteamento por Perfil (RBAC)",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "auth",
+      "rbac"
+    ],
+    "body": "## 📌 [TASK-18] Sistema de Autenticação na UI e Roteamento por Perfil (RBAC)\n\n### 📖 Descrição\n`AuthContext` com gerenciamento de tokens JWT e componente `ProtectedRoute` que segmenta auditores e clientes.\n\n### ⚖️ Critérios de Aceitação\nRedirecionamento automático de clientes para `/customer-dashboard` e bloqueio de rotas administrativas.\n\n---\n- **Épico:** 🎨 ÉPICO 5: Frontend SPA — Cockpit do Auditor & Portal do Cliente\n- **Agente Especialista Sugerido:** `@frontend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 43,
+    "title": "[TASK-17] Setup React 18, Vite 6, Tailwind CSS 3 e Design System",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "vite",
+      "tailwind"
+    ],
+    "body": "## 📌 [TASK-17] Setup React 18, Vite 6, Tailwind CSS 3 e Design System\n\n### 📖 Descrição\nConfiguração de build, paleta de cores corporativa, ícones Lucide e proxy reverso para desenvolvimento.\n\n### ⚖️ Critérios de Aceitação\nInterface fluida, responsiva e com feedback visual instantâneo.\n\n---\n- **Épico:** 🎨 ÉPICO 5: Frontend SPA — Cockpit do Auditor & Portal do Cliente\n- **Agente Especialista Sugerido:** `@frontend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 42,
+    "title": "[TASK-16] Geração e Armazenamento de Relatórios com Veredito Semáforo",
+    "state": "open",
+    "labels": [
+      "backend",
+      "reports",
+      "audit"
+    ],
+    "body": "## 📌 [TASK-16] Geração e Armazenamento de Relatórios com Veredito Semáforo\n\n### 📖 Descrição\nPersistência de `AuditReport` contendo sumário executivo, pontuação de risco e lista detalhada de violações categorizadas.\n\n### ⚖️ Critérios de Aceitação\nVeredito semáforo gerado (Verde = Conforme, Amarelo = Atenção, Vermelho = Não Conforme).\n\n---\n- **Épico:** ⚙️ ÉPICO 4: APIs RESTful, Background Worker e Multi-Tenancy\n- **Agente Especialista Sugerido:** `@backend-engineer` / `@compliance-specialist`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 41,
+    "title": "[TASK-15] Portal do Cliente Backend & Isolamento Estrito de Tenant",
+    "state": "open",
+    "labels": [
+      "backend",
+      "security",
+      "multi-tenant"
+    ],
+    "body": "## 📌 [TASK-15] Portal do Cliente Backend & Isolamento Estrito de Tenant\n\n### 📖 Descrição\nEndpoints dedicados `/api/v1/clients/portal/me` e `/api/v1/norms/customer-rules`, garantindo que usuários `CLIENT` acessem apenas seus dados.\n\n### ⚖️ Critérios de Aceitação\nTentativas de acesso a clientes de terceiros retornam 403/404; zero vazamento de dados.\n\n---\n- **Épico:** ⚙️ ÉPICO 4: APIs RESTful, Background Worker e Multi-Tenancy\n- **Agente Especialista Sugerido:** `@backend-engineer` / `@security-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 40,
+    "title": "[TASK-14] Endpoints de Gestão de Clientes e Agentes Regulatórios",
+    "state": "open",
+    "labels": [
+      "backend",
+      "api",
+      "crud"
+    ],
+    "body": "## 📌 [TASK-14] Endpoints de Gestão de Clientes e Agentes Regulatórios\n\n### 📖 Descrição\nRotas `/api/v1/clients` e `/api/v1/agents` com suporte a agendamento automático e disparo imediato (`POST /api/v1/agents/:id/run`).\n\n### ⚖️ Critérios de Aceitação\nValidação Zod em todos os payloads e paginação eficiente nas listagens.\n\n---\n- **Épico:** ⚙️ ÉPICO 4: APIs RESTful, Background Worker e Multi-Tenancy\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 39,
+    "title": "[TASK-13] Worker Assíncrono de Auditoria (`audit-worker`)",
+    "state": "open",
+    "labels": [
+      "backend",
+      "worker",
+      "bullmq"
+    ],
+    "body": "## 📌 [TASK-13] Worker Assíncrono de Auditoria (`audit-worker`)\n\n### 📖 Descrição\nProcessamento em lote de auditorias, atualização de status (`QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`) e emissão de telemetria.\n\n### ⚖️ Critérios de Aceitação\nJobs processados em paralelo com limite de concorrência e isolamento de exceções.\n\n---\n- **Épico:** ⚙️ ÉPICO 4: APIs RESTful, Background Worker e Multi-Tenancy\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 38,
+    "title": "[TASK-12] Motor de Reconciliação Deontológica com Cascata de Fallback",
+    "state": "open",
+    "labels": [
+      "ai",
+      "resilience",
+      "engine"
+    ],
+    "body": "## 📌 [TASK-12] Motor de Reconciliação Deontológica com Cascata de Fallback\n\n### 📖 Descrição\nReconciliação com cascata de resiliência: Gemini API ➔ Ollama Local ➔ Heurística por Regex.\n\n### ⚖️ Critérios de Aceitação\nSe o provedor primário falhar ou sofrer rate limit, o motor comuta automaticamente sem abortar o job.\n\n---\n- **Épico:** 🧠 ÉPICO 3: Inteligência Regulatória, Deontologia e RAG\n- **Agente Especialista Sugerido:** `@ai-software-engineer` / `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 37,
+    "title": "[TASK-11] Integração com Google Gemini 2.0 Flash e Structured Outputs",
+    "state": "open",
+    "labels": [
+      "ai",
+      "gemini",
+      "zod"
+    ],
+    "body": "## 📌 [TASK-11] Integração com Google Gemini 2.0 Flash e Structured Outputs\n\n### 📖 Descrição\nImplementação de inferência com Google Gemini SDK e garantia de saída JSON estrita via Zod Schema.\n\n### ⚖️ Critérios de Aceitação\nRespostas da IA sempre aderem ao contrato de auditoria sem alucinações de formato.\n\n---\n- **Épico:** 🧠 ÉPICO 3: Inteligência Regulatória, Deontologia e RAG\n- **Agente Especialista Sugerido:** `@ai-software-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 36,
+    "title": "[TASK-10] Chunking Semântico e Busca Vetorial (RAG no Atlas)",
+    "state": "open",
+    "labels": [
+      "ai",
+      "rag",
+      "mongodb-atlas"
+    ],
+    "body": "## 📌 [TASK-10] Chunking Semântico e Busca Vetorial (RAG no Atlas)\n\n### 📖 Descrição\nFracionamento de normas em unidades legais atômicas (*atomic legal chunks*) com embeddings e índice vetorial `$vectorSearch`.\n\n### ⚖️ Critérios de Aceitação\nChunks recuperados correspondem aos artigos pertinentes da infração identificada.\n\n---\n- **Épico:** 🧠 ÉPICO 3: Inteligência Regulatória, Deontologia e RAG\n- **Agente Especialista Sugerido:** `@ai-software-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 34,
+    "title": "[TASK-08] Pipeline de Sanitização e Coleta de Evidências",
+    "state": "open",
+    "labels": [
+      "backend",
+      "security",
+      "data-cleaning"
+    ],
+    "body": "## 📌 [TASK-08] Pipeline de Sanitização e Coleta de Evidências\n\n### 📖 Descrição\nRemoção de tags perigosas (`<script>`, `<style>`, SVGs pesados) e preservação estrita de textos legais, links de rodapé e imagens.\n\n### ⚖️ Critérios de Aceitação\nHTML limpo e compacto armazenado no payload da auditoria sem risco de XSS.\n\n---\n- **Épico:** 🕷️ ÉPICO 2: Motor de Extração e Web Scraping Resiliente\n- **Agente Especialista Sugerido:** `@backend-engineer` / `@security-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 33,
+    "title": "[TASK-07] Integração com Firecrawl API e Modo MCP",
+    "state": "open",
+    "labels": [
+      "ai",
+      "scraping",
+      "mcp"
+    ],
+    "body": "## 📌 [TASK-07] Integração com Firecrawl API e Modo MCP\n\n### 📖 Descrição\nSuporte a extração via Firecrawl API e protocolo MCP (Model Context Protocol) como contingência avançada.\n\n### ⚖️ Critérios de Aceitação\nFallback automático entre extratores em caso de bloqueio ou timeout.\n\n---\n- **Épico:** 🕷️ ÉPICO 2: Motor de Extração e Web Scraping Resiliente\n- **Agente Especialista Sugerido:** `@ai-software-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 32,
+    "title": "[TASK-06] Extrator Leve em Alta Velocidade com Cheerio",
+    "state": "open",
+    "labels": [
+      "backend",
+      "scraping",
+      "performance"
+    ],
+    "body": "## 📌 [TASK-06] Extrator Leve em Alta Velocidade com Cheerio\n\n### 📖 Descrição\nImplementar extrator estático baseado em Cheerio para páginas institucionais simples, economizando memória e CPU.\n\n### ⚖️ Critérios de Aceitação\nExtração com latência inferior a 500ms para HTMLs estáticos.\n\n---\n- **Épico:** 🕷️ ÉPICO 2: Motor de Extração e Web Scraping Resiliente\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 31,
+    "title": "[TASK-05] Serviço de Scraping com Puppeteer (Headless Browser)",
+    "state": "open",
+    "labels": [
+      "backend",
+      "scraping",
+      "puppeteer"
+    ],
+    "body": "## 📌 [TASK-05] Serviço de Scraping com Puppeteer (Headless Browser)\n\n### 📖 Descrição\nImplementar captura com Puppeteer para páginas dinâmicas (Single Page Applications) com desativação de GPU e modo sandbox otimizado.\n\n### ⚖️ Critérios de Aceitação\nExtração completa do DOM renderizado, texto visível e metadados de páginas ricas em JavaScript.\n\n---\n- **Épico:** 🕷️ ÉPICO 2: Motor de Extração e Web Scraping Resiliente\n- **Agente Especialista Sugerido:** `@software-architect` / `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 30,
+    "title": "[TASK-04] Autenticação JWT e RBAC Multi-Tenant Base",
+    "state": "open",
+    "labels": [
+      "security",
+      "auth",
+      "rbac"
+    ],
+    "body": "## 📌 [TASK-04] Autenticação JWT e RBAC Multi-Tenant Base\n\n### 📖 Descrição\nMiddlewares `authenticate` e `authorize` suportando perfis `ADMIN`, `AUDITOR`, `CLIENT` e `VIEWER`. Criptografia de senhas com `bcryptjs`.\n\n### ⚖️ Critérios de Aceitação\nRotas protegidas rejeitam tokens inválidos (401) e perfis não autorizados (403).\n\n---\n- **Épico:** 🏛️ ÉPICO 1: Fundação, Arquitetura e Modelagem de Dados\n- **Agente Especialista Sugerido:** `@security-engineer` / `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 29,
+    "title": "[TASK-03] Infraestrutura de Filas BullMQ e Conexão Redis",
+    "state": "open",
+    "labels": [
+      "backend",
+      "redis",
+      "queues"
+    ],
+    "body": "## 📌 [TASK-03] Infraestrutura de Filas BullMQ e Conexão Redis\n\n### 📖 Descrição\nConfigurar cliente `ioredis`, filas `auditQueue` e workers com tratamento de conexões, retries e exponential backoff.\n\n### ⚖️ Critérios de Aceitação\nConexão estável com Redis local e em container; fila responde a eventos de enqueue e processamento.\n\n---\n- **Épico:** 🏛️ ÉPICO 1: Fundação, Arquitetura e Modelagem de Dados\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 28,
+    "title": "[TASK-02] Modelagem Prisma com MongoDB Replica Set",
+    "state": "open",
+    "labels": [
+      "backend",
+      "database",
+      "prisma"
+    ],
+    "body": "## 📌 [TASK-02] Modelagem Prisma com MongoDB Replica Set\n\n### 📖 Descrição\nDesenhar `schema.prisma` com coleções `User`, `Client`, `AgentModule`, `AuditReport`, `Violation` e enums (`Role`, `ClientStatus`, `AuditStatus`, `RuleSeverity`, `ExtractionMode`).\n\n### ⚖️ Critérios de Aceitação\n`npx prisma generate` cria os tipos estritos; migração e seed funcionam com idempotência.\n\n---\n- **Épico:** 🏛️ ÉPICO 1: Fundação, Arquitetura e Modelagem de Dados\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 27,
+    "title": "[TASK-01] Configuração do Monorepo e Workspace TypeScript",
+    "state": "open",
+    "labels": [
+      "architecture",
+      "setup"
+    ],
+    "body": "## 📌 [TASK-01] Configuração do Monorepo e Workspace TypeScript\n\n### 📖 Descrição\nEstruturar repositório com `dashboard` (API Express), `dashboard-web` (SPA React) e scripts integrados no `package.json` raiz (`typecheck`, `dev`, `build`).\n\n### ⚖️ Critérios de Aceitação\n`npm run typecheck` e `npm run build` executam sem erros na raiz.\n\n---\n- **Épico:** 🏛️ ÉPICO 1: Fundação, Arquitetura e Modelagem de Dados\n- **Agente Especialista Sugerido:** `@software-architect`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 26,
+    "title": "[TASK-26] Proxy Reverso Nginx, SSL/TLS Let's Encrypt e Observabilidade",
+    "state": "open",
+    "labels": [
+      "devops",
+      "nginx",
+      "ssl"
+    ],
+    "body": "## 📌 [TASK-26] Proxy Reverso Nginx, SSL/TLS Let's Encrypt e Observabilidade\n\n### 📖 Descrição\nNginx configurado com HTTPS obrigatório, HTTP/2, cabeçalhos HSTS, compressão Brotli/Gzip e rotação de logs Docker.\n\n### ⚖️ Critérios de Aceitação\nClassificação A+ em testes de SSL Labs e zero exposição de portas internas na internet.\n\n---\n- **Épico:** 🚀 ÉPICO 7: Infraestrutura, CI/CD e Deploy em Nuvem\n- **Agente Especialista Sugerido:** `@devops-engineer` / `@security-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 25,
+    "title": "[TASK-25] Pipeline de CI/CD com GitHub Actions (`ci-deploy.yml`)",
+    "state": "open",
+    "labels": [
+      "devops",
+      "github-actions",
+      "cicd"
+    ],
+    "body": "## 📌 [TASK-25] Pipeline de CI/CD com GitHub Actions (`ci-deploy.yml`)\n\n### 📖 Descrição\nAutomação com etapas de typecheck, testes, build/push de imagens no GHCR (GitHub Container Registry) e deploy contínuo via SSH.\n\n### ⚖️ Critérios de Aceitação\nCada commit na branch `main` executa a validação e atualiza os containers na AWS EC2.\n\n---\n- **Épico:** 🚀 ÉPICO 7: Infraestrutura, CI/CD e Deploy em Nuvem\n- **Agente Especialista Sugerido:** `@devops-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 24,
+    "title": "[TASK-24] Dockerfiles Multi-Stage Otimizados e Docker Compose",
+    "state": "open",
+    "labels": [
+      "devops",
+      "docker",
+      "containers"
+    ],
+    "body": "## 📌 [TASK-24] Dockerfiles Multi-Stage Otimizados e Docker Compose\n\n### 📖 Descrição\nContainers enxutos para API e Worker (Node.js Alpine) com usuário não-root e rede interna segura `conformia-net`.\n\n### ⚖️ Critérios de Aceitação\nBuild idempotente e inicialização saudável com healthcheck configurado.\n\n---\n- **Épico:** 🚀 ÉPICO 7: Infraestrutura, CI/CD e Deploy em Nuvem\n- **Agente Especialista Sugerido:** `@devops-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 23,
+    "title": "[TASK-23] Auditoria SAST & Blindagem OWASP Top 10",
+    "state": "open",
+    "labels": [
+      "security",
+      "owasp",
+      "sast"
+    ],
+    "body": "## 📌 [TASK-23] Auditoria SAST & Blindagem OWASP Top 10\n\n### 📖 Descrição\nProteção contra NoSQL Injection, Rate Limiting em rotas de autenticação, cabeçalhos de segurança via Helmet e proteção XSS.\n\n### ⚖️ Critérios de Aceitação\nZero vulnerabilidades de severidade Alta/Crítica em análise estática.\n\n---\n- **Épico:** 🛡️ ÉPICO 6: Qualidade, Segurança & DevSecOps\n- **Agente Especialista Sugerido:** `@security-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 22,
+    "title": "[TASK-22] Testes de Renderização e Componentes Frontend",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "qa",
+      "testing"
+    ],
+    "body": "## 📌 [TASK-22] Testes de Renderização e Componentes Frontend\n\n### 📖 Descrição\nTestes de componentes React (render do layout por papel, proteção de rotas e cálculo de badges de risco).\n\n### ⚖️ Critérios de Aceitação\nTestes validam isolamento visual e fluxos sem quebrar compilação.\n\n---\n- **Épico:** 🛡️ ÉPICO 6: Qualidade, Segurança & DevSecOps\n- **Agente Especialista Sugerido:** `@test-specialist`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 21,
+    "title": "[TASK-21] Suíte de Testes Unitários e de Integração Backend",
+    "state": "open",
+    "labels": [
+      "backend",
+      "qa",
+      "testing"
+    ],
+    "body": "## 📌 [TASK-21] Suíte de Testes Unitários e de Integração Backend\n\n### 📖 Descrição\nTestes de controladores Express com Supertest, mocks de Prisma/MongoDB e testes de resiliência de filas.\n\n### ⚖️ Critérios de Aceitação\nCobertura de rotas críticas de autenticação, clientes e regras de clientes.\n\n---\n- **Épico:** 🛡️ ÉPICO 6: Qualidade, Segurança & DevSecOps\n- **Agente Especialista Sugerido:** `@test-specialist`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 20,
+    "title": "[TASK-20] Portal Exclusivo do Cliente (`/customer-dashboard`)",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "customer-portal",
+      "ux"
+    ],
+    "body": "## 📌 [TASK-20] Portal Exclusivo do Cliente (`/customer-dashboard`)\n\n### 📖 Descrição\nDashboard visual com indicadores de conformidade da clínica, badges de gravidade e listagem de normas ativas com recomendações.\n\n### ⚖️ Critérios de Aceitação\nVisualização clara, livre de botões administrativos e com linguagem acessível ao gestor de saúde.\n\n---\n- **Épico:** 🎨 ÉPICO 5: Frontend SPA — Cockpit do Auditor & Portal do Cliente\n- **Agente Especialista Sugerido:** `@frontend-engineer` / `@compliance-specialist`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 19,
+    "title": "[TASK-19] Cockpit Administrativo (Auditor & Admin)",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "dashboard",
+      "admin"
+    ],
+    "body": "## 📌 [TASK-19] Cockpit Administrativo (Auditor & Admin)\n\n### 📖 Descrição\nListagem e cadastro de clientes, painel de agentes regulatórios, disparo manual de auditorias e alternância de provider de IA.\n\n### ⚖️ Critérios de Aceitação\nTabelas paginadas com busca, modais de confirmação e status em tempo real.\n\n---\n- **Épico:** 🎨 ÉPICO 5: Frontend SPA — Cockpit do Auditor & Portal do Cliente\n- **Agente Especialista Sugerido:** `@frontend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 18,
+    "title": "[TASK-18] Sistema de Autenticação na UI e Roteamento por Perfil (RBAC)",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "auth",
+      "rbac"
+    ],
+    "body": "## 📌 [TASK-18] Sistema de Autenticação na UI e Roteamento por Perfil (RBAC)\n\n### 📖 Descrição\n`AuthContext` com gerenciamento de tokens JWT e componente `ProtectedRoute` que segmenta auditores e clientes.\n\n### ⚖️ Critérios de Aceitação\nRedirecionamento automático de clientes para `/customer-dashboard` e bloqueio de rotas administrativas.\n\n---\n- **Épico:** 🎨 ÉPICO 5: Frontend SPA — Cockpit do Auditor & Portal do Cliente\n- **Agente Especialista Sugerido:** `@frontend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 17,
+    "title": "[TASK-17] Setup React 18, Vite 6, Tailwind CSS 3 e Design System",
+    "state": "open",
+    "labels": [
+      "frontend",
+      "vite",
+      "tailwind"
+    ],
+    "body": "## 📌 [TASK-17] Setup React 18, Vite 6, Tailwind CSS 3 e Design System\n\n### 📖 Descrição\nConfiguração de build, paleta de cores corporativa, ícones Lucide e proxy reverso para desenvolvimento.\n\n### ⚖️ Critérios de Aceitação\nInterface fluida, responsiva e com feedback visual instantâneo.\n\n---\n- **Épico:** 🎨 ÉPICO 5: Frontend SPA — Cockpit do Auditor & Portal do Cliente\n- **Agente Especialista Sugerido:** `@frontend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 16,
+    "title": "[TASK-16] Geração e Armazenamento de Relatórios com Veredito Semáforo",
+    "state": "open",
+    "labels": [
+      "backend",
+      "reports",
+      "audit"
+    ],
+    "body": "## 📌 [TASK-16] Geração e Armazenamento de Relatórios com Veredito Semáforo\n\n### 📖 Descrição\nPersistência de `AuditReport` contendo sumário executivo, pontuação de risco e lista detalhada de violações categorizadas.\n\n### ⚖️ Critérios de Aceitação\nVeredito semáforo gerado (Verde = Conforme, Amarelo = Atenção, Vermelho = Não Conforme).\n\n---\n- **Épico:** ⚙️ ÉPICO 4: APIs RESTful, Background Worker e Multi-Tenancy\n- **Agente Especialista Sugerido:** `@backend-engineer` / `@compliance-specialist`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 15,
+    "title": "[TASK-15] Portal do Cliente Backend & Isolamento Estrito de Tenant",
+    "state": "open",
+    "labels": [
+      "backend",
+      "security",
+      "multi-tenant"
+    ],
+    "body": "## 📌 [TASK-15] Portal do Cliente Backend & Isolamento Estrito de Tenant\n\n### 📖 Descrição\nEndpoints dedicados `/api/v1/clients/portal/me` e `/api/v1/norms/customer-rules`, garantindo que usuários `CLIENT` acessem apenas seus dados.\n\n### ⚖️ Critérios de Aceitação\nTentativas de acesso a clientes de terceiros retornam 403/404; zero vazamento de dados.\n\n---\n- **Épico:** ⚙️ ÉPICO 4: APIs RESTful, Background Worker e Multi-Tenancy\n- **Agente Especialista Sugerido:** `@backend-engineer` / `@security-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 14,
+    "title": "[TASK-14] Endpoints de Gestão de Clientes e Agentes Regulatórios",
+    "state": "open",
+    "labels": [
+      "backend",
+      "api",
+      "crud"
+    ],
+    "body": "## 📌 [TASK-14] Endpoints de Gestão de Clientes e Agentes Regulatórios\n\n### 📖 Descrição\nRotas `/api/v1/clients` e `/api/v1/agents` com suporte a agendamento automático e disparo imediato (`POST /api/v1/agents/:id/run`).\n\n### ⚖️ Critérios de Aceitação\nValidação Zod em todos os payloads e paginação eficiente nas listagens.\n\n---\n- **Épico:** ⚙️ ÉPICO 4: APIs RESTful, Background Worker e Multi-Tenancy\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 13,
+    "title": "[TASK-13] Worker Assíncrono de Auditoria (`audit-worker`)",
+    "state": "open",
+    "labels": [
+      "backend",
+      "worker",
+      "bullmq"
+    ],
+    "body": "## 📌 [TASK-13] Worker Assíncrono de Auditoria (`audit-worker`)\n\n### 📖 Descrição\nProcessamento em lote de auditorias, atualização de status (`QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`) e emissão de telemetria.\n\n### ⚖️ Critérios de Aceitação\nJobs processados em paralelo com limite de concorrência e isolamento de exceções.\n\n---\n- **Épico:** ⚙️ ÉPICO 4: APIs RESTful, Background Worker e Multi-Tenancy\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 12,
+    "title": "[TASK-12] Motor de Reconciliação Deontológica com Cascata de Fallback",
+    "state": "open",
+    "labels": [
+      "ai",
+      "resilience",
+      "engine"
+    ],
+    "body": "## 📌 [TASK-12] Motor de Reconciliação Deontológica com Cascata de Fallback\n\n### 📖 Descrição\nReconciliação com cascata de resiliência: Gemini API ➔ Ollama Local ➔ Heurística por Regex.\n\n### ⚖️ Critérios de Aceitação\nSe o provedor primário falhar ou sofrer rate limit, o motor comuta automaticamente sem abortar o job.\n\n---\n- **Épico:** 🧠 ÉPICO 3: Inteligência Regulatória, Deontologia e RAG\n- **Agente Especialista Sugerido:** `@ai-software-engineer` / `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 11,
+    "title": "[TASK-11] Integração com Google Gemini 2.0 Flash e Structured Outputs",
+    "state": "open",
+    "labels": [
+      "ai",
+      "gemini",
+      "zod"
+    ],
+    "body": "## 📌 [TASK-11] Integração com Google Gemini 2.0 Flash e Structured Outputs\n\n### 📖 Descrição\nImplementação de inferência com Google Gemini SDK e garantia de saída JSON estrita via Zod Schema.\n\n### ⚖️ Critérios de Aceitação\nRespostas da IA sempre aderem ao contrato de auditoria sem alucinações de formato.\n\n---\n- **Épico:** 🧠 ÉPICO 3: Inteligência Regulatória, Deontologia e RAG\n- **Agente Especialista Sugerido:** `@ai-software-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 10,
+    "title": "[TASK-10] Chunking Semântico e Busca Vetorial (RAG no Atlas)",
+    "state": "open",
+    "labels": [
+      "ai",
+      "rag",
+      "mongodb-atlas"
+    ],
+    "body": "## 📌 [TASK-10] Chunking Semântico e Busca Vetorial (RAG no Atlas)\n\n### 📖 Descrição\nFracionamento de normas em unidades legais atômicas (*atomic legal chunks*) com embeddings e índice vetorial `$vectorSearch`.\n\n### ⚖️ Critérios de Aceitação\nChunks recuperados correspondem aos artigos pertinentes da infração identificada.\n\n---\n- **Épico:** 🧠 ÉPICO 3: Inteligência Regulatória, Deontologia e RAG\n- **Agente Especialista Sugerido:** `@ai-software-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 9,
+    "title": "[TASK-09] Catálogo de Normas e Resoluções Deontológicas (CFM 2.336/2023)",
+    "state": "open",
+    "labels": [
+      "compliance",
+      "regulatory",
+      "cfm"
+    ],
+    "body": "## 📌 [TASK-09] Catálogo de Normas e Resoluções Deontológicas (CFM 2.336/2023)\n\n### 📖 Descrição\nMapeamento de regras críticas: ausência de CRM/RQE, proibição de sensacionalismo, promessa de cura, regras de imagens de antes/depois educativo e mercantilização.\n\n### ⚖️ Critérios de Aceitação\nCatálogo com matriz de risco catalogando severidades (`LEVE`, `MEDIA`, `GRAVE`, `CRITICA`).\n\n---\n- **Épico:** 🧠 ÉPICO 3: Inteligência Regulatória, Deontologia e RAG\n- **Agente Especialista Sugerido:** `@compliance-specialist`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 8,
+    "title": "[TASK-08] Pipeline de Sanitização e Coleta de Evidências",
+    "state": "open",
+    "labels": [
+      "backend",
+      "security",
+      "data-cleaning"
+    ],
+    "body": "## 📌 [TASK-08] Pipeline de Sanitização e Coleta de Evidências\n\n### 📖 Descrição\nRemoção de tags perigosas (`<script>`, `<style>`, SVGs pesados) e preservação estrita de textos legais, links de rodapé e imagens.\n\n### ⚖️ Critérios de Aceitação\nHTML limpo e compacto armazenado no payload da auditoria sem risco de XSS.\n\n---\n- **Épico:** 🕷️ ÉPICO 2: Motor de Extração e Web Scraping Resiliente\n- **Agente Especialista Sugerido:** `@backend-engineer` / `@security-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 7,
+    "title": "[TASK-07] Integração com Firecrawl API e Modo MCP",
+    "state": "open",
+    "labels": [
+      "ai",
+      "scraping",
+      "mcp"
+    ],
+    "body": "## 📌 [TASK-07] Integração com Firecrawl API e Modo MCP\n\n### 📖 Descrição\nSuporte a extração via Firecrawl API e protocolo MCP (Model Context Protocol) como contingência avançada.\n\n### ⚖️ Critérios de Aceitação\nFallback automático entre extratores em caso de bloqueio ou timeout.\n\n---\n- **Épico:** 🕷️ ÉPICO 2: Motor de Extração e Web Scraping Resiliente\n- **Agente Especialista Sugerido:** `@ai-software-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 6,
+    "title": "[TASK-06] Extrator Leve em Alta Velocidade com Cheerio",
+    "state": "open",
+    "labels": [
+      "backend",
+      "scraping",
+      "performance"
+    ],
+    "body": "## 📌 [TASK-06] Extrator Leve em Alta Velocidade com Cheerio\n\n### 📖 Descrição\nImplementar extrator estático baseado em Cheerio para páginas institucionais simples, economizando memória e CPU.\n\n### ⚖️ Critérios de Aceitação\nExtração com latência inferior a 500ms para HTMLs estáticos.\n\n---\n- **Épico:** 🕷️ ÉPICO 2: Motor de Extração e Web Scraping Resiliente\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 5,
+    "title": "[TASK-05] Serviço de Scraping com Puppeteer (Headless Browser)",
+    "state": "open",
+    "labels": [
+      "backend",
+      "scraping",
+      "puppeteer"
+    ],
+    "body": "## 📌 [TASK-05] Serviço de Scraping com Puppeteer (Headless Browser)\n\n### 📖 Descrição\nImplementar captura com Puppeteer para páginas dinâmicas (Single Page Applications) com desativação de GPU e modo sandbox otimizado.\n\n### ⚖️ Critérios de Aceitação\nExtração completa do DOM renderizado, texto visível e metadados de páginas ricas em JavaScript.\n\n---\n- **Épico:** 🕷️ ÉPICO 2: Motor de Extração e Web Scraping Resiliente\n- **Agente Especialista Sugerido:** `@software-architect` / `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 4,
+    "title": "[TASK-04] Autenticação JWT e RBAC Multi-Tenant Base",
+    "state": "open",
+    "labels": [
+      "security",
+      "auth",
+      "rbac"
+    ],
+    "body": "## 📌 [TASK-04] Autenticação JWT e RBAC Multi-Tenant Base\n\n### 📖 Descrição\nMiddlewares `authenticate` e `authorize` suportando perfis `ADMIN`, `AUDITOR`, `CLIENT` e `VIEWER`. Criptografia de senhas com `bcryptjs`.\n\n### ⚖️ Critérios de Aceitação\nRotas protegidas rejeitam tokens inválidos (401) e perfis não autorizados (403).\n\n---\n- **Épico:** 🏛️ ÉPICO 1: Fundação, Arquitetura e Modelagem de Dados\n- **Agente Especialista Sugerido:** `@security-engineer` / `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 3,
+    "title": "[TASK-03] Infraestrutura de Filas BullMQ e Conexão Redis",
+    "state": "open",
+    "labels": [
+      "backend",
+      "redis",
+      "queues"
+    ],
+    "body": "## 📌 [TASK-03] Infraestrutura de Filas BullMQ e Conexão Redis\n\n### 📖 Descrição\nConfigurar cliente `ioredis`, filas `auditQueue` e workers com tratamento de conexões, retries e exponential backoff.\n\n### ⚖️ Critérios de Aceitação\nConexão estável com Redis local e em container; fila responde a eventos de enqueue e processamento.\n\n---\n- **Épico:** 🏛️ ÉPICO 1: Fundação, Arquitetura e Modelagem de Dados\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 2,
+    "title": "[TASK-02] Modelagem Prisma com MongoDB Replica Set",
+    "state": "open",
+    "labels": [
+      "backend",
+      "database",
+      "prisma"
+    ],
+    "body": "## 📌 [TASK-02] Modelagem Prisma com MongoDB Replica Set\n\n### 📖 Descrição\nDesenhar `schema.prisma` com coleções `User`, `Client`, `AgentModule`, `AuditReport`, `Violation` e enums (`Role`, `ClientStatus`, `AuditStatus`, `RuleSeverity`, `ExtractionMode`).\n\n### ⚖️ Critérios de Aceitação\n`npx prisma generate` cria os tipos estritos; migração e seed funcionam com idempotência.\n\n---\n- **Épico:** 🏛️ ÉPICO 1: Fundação, Arquitetura e Modelagem de Dados\n- **Agente Especialista Sugerido:** `@backend-engineer`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  },
+  {
+    "number": 1,
+    "title": "[TASK-01] Configuração do Monorepo e Workspace TypeScript",
+    "state": "open",
+    "labels": [
+      "architecture",
+      "setup"
+    ],
+    "body": "## 📌 [TASK-01] Configuração do Monorepo e Workspace TypeScript\n\n### 📖 Descrição\nEstruturar repositório com `dashboard` (API Express), `dashboard-web` (SPA React) e scripts integrados no `package.json` raiz (`typecheck`, `dev`, `build`).\n\n### ⚖️ Critérios de Aceitação\n`npm run typecheck` e `npm run build` executam sem erros na raiz.\n\n---\n- **Épico:** 🏛️ ÉPICO 1: Fundação, Arquitetura e Modelagem de Dados\n- **Agente Especialista Sugerido:** `@software-architect`\n- **Status:** Backlog / A Fazer\n\n*Criado automaticamente pela automação de onboarding ConformIA.*\n"
+  }
+]

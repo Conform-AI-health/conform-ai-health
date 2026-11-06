@@ -2,99 +2,63 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../config/prisma.js';
 
 export async function runAutoMigrateAndSeed() {
-  console.log('🌱 [AutoMigrate & Seed] Iniciando verificação e carga de dados padrão...');
+  console.log('🌱 [AutoMigrate & Seed] Verificando e provisionando administrador e módulos oficiais...');
 
   try {
-    // 1. Criar ou Obter Cliente Modelo Sintético
-    let demoClient = await prisma.client.findFirst({
-      where: { email: 'contato@dermatosaude.med.br' },
-    });
+    // 1. Usuário Administrador Oficial (lido das variáveis de ambiente reais)
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@conform.ai';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123456';
+    const saltRounds = 12;
+    const adminPasswordHash = await bcrypt.hash(adminPassword, saltRounds);
 
-    if (!demoClient) {
-      demoClient = await prisma.client.create({
-        data: {
-          name: 'Clínica Dermatológica Pele & Saúde Digital Ltda',
-          tradeName: 'Pele & Saúde Digital',
-          cnpj: '12.345.678/0001-90',
-          crmResponsavel: '123456',
-          crmUf: 'SP',
-          rqeResponsavel: '98765',
-          especialidade: 'Dermatologia',
-          websiteUrl: 'https://exemplo-clinica-saude-sintetica.med.br',
-          instagramHandle: '@clinica.pelesaudedigital',
-          status: 'ATIVO',
-          phone: '(11) 98765-4321',
-          email: 'contato@dermatosaude.med.br',
-        },
-      });
-      console.log(`✅ [Seed] Cliente modelo criado: ${demoClient.name} (ID: ${demoClient.id})`);
+    // Auto-recuperação resiliente para documentos corrompidos ou legados do MongoDB
+    let user = null;
+    try {
+      user = await prisma.user.findUnique({ where: { email: adminEmail } });
+    } catch {
+      console.log('⚠️ [Seed] Detectado usuário com tipos legados incompatíveis no Mongo. Limpando registro corrompido...');
+      try {
+        await prisma.$runCommandRaw({
+          delete: 'users',
+          deletes: [{ q: { email: adminEmail }, limit: 0 }],
+        });
+      } catch {
+        // Continua
+      }
     }
 
-    // 2. Hash seguro das senhas
-    const saltRounds = 12;
-    const adminPasswordHash = await bcrypt.hash('Admin@2026', saltRounds);
-    const auditorPasswordHash = await bcrypt.hash('Auditor@2026', saltRounds);
-    const clientPasswordHash = await bcrypt.hash('Cliente@2026', saltRounds);
+    if (!user) {
+      await prisma.user.create({
+        data: {
+          email: adminEmail,
+          passwordHash: adminPasswordHash,
+          name: 'Administrador ConformIA',
+          role: 'ADMIN',
+        },
+      });
+    } else {
+      await prisma.user.update({
+        where: { email: adminEmail },
+        data: {
+          name: 'Administrador ConformIA',
+          role: 'ADMIN',
+          passwordHash: adminPasswordHash,
+        },
+      });
+    }
+    console.log(`✅ [Seed] Administrador oficial ativo: ${adminEmail}`);
 
-    // 3. Usuário Administrador
-    await prisma.user.upsert({
-      where: { email: 'admin@conformia.med.br' },
-      update: {
-        name: 'Administrador Master ConformIA',
-        role: 'ADMIN',
-      },
-      create: {
-        email: 'admin@conformia.med.br',
-        passwordHash: adminPasswordHash,
-        name: 'Administrador Master ConformIA',
-        role: 'ADMIN',
-      },
-    });
-    console.log('✅ [Seed] Usuário ADMIN pronto: admin@conformia.med.br');
-
-    // 4. Usuário Auditor
-    await prisma.user.upsert({
-      where: { email: 'auditor@conformia.med.br' },
-      update: {
-        name: 'Auditor Deontológico Sênior',
-        role: 'AUDITOR',
-      },
-      create: {
-        email: 'auditor@conformia.med.br',
-        passwordHash: auditorPasswordHash,
-        name: 'Auditor Deontológico Sênior',
-        role: 'AUDITOR',
-      },
-    });
-    console.log('✅ [Seed] Usuário AUDITOR pronto: auditor@conformia.med.br');
-
-    // 5. Usuário Cliente (Vinculado ao tenant da clínica)
-    await prisma.user.upsert({
-      where: { email: 'clinica@dermato.med.br' },
-      update: {
-        name: 'Dra. Mariana Santos (Responsável Técnica)',
-        role: 'CLIENT',
-        clientId: demoClient.id,
-      },
-      create: {
-        email: 'clinica@dermato.med.br',
-        passwordHash: clientPasswordHash,
-        name: 'Dra. Mariana Santos (Responsável Técnica)',
-        role: 'CLIENT',
-        clientId: demoClient.id,
-      },
-    });
-    console.log('✅ [Seed] Usuário CLIENT pronto: clinica@dermato.med.br (Isolado no Tenant)');
-
-    // 6. Módulos de Agente Regulatórios
+    // 2. Módulos Oficiais de Auditoria Deontológica & Sanitária
     const defaultModules = [
       {
         code: 'CFM-2336-PUBLICIDADE',
-        name: 'Auditor de Publicidade Médica (CFM nº 2.336/2023)',
+        name: 'Auditor de Publicidade Médica (CFM nº)',
         description: 'Verificação contínua de CRM/RQE, proibição de promessa de resultado, antes/depois educativo e mercantilização.',
         category: 'DEONTOLOGIA_MEDICA',
         rulesCount: 18,
         extractionMode: 'CHEERIO' as const,
+        tags: ['CFM'],
+        targetNorms: ['CFM-2336-ART-01', 'CFM-2336-ART-02', 'CFM-2336-ART-03', 'CFM-2336-ART-04', 'CFM-2336-ART-05'],
       },
       {
         code: 'LGPD-SAUDE-ART11',
@@ -103,6 +67,8 @@ export async function runAutoMigrateAndSeed() {
         category: 'PRIVACIDADE_DADOS',
         rulesCount: 12,
         extractionMode: 'CHEERIO' as const,
+        tags: ['LGPD'],
+        targetNorms: ['LGPD-SAUDE-ART-11'],
       },
       {
         code: 'ANS-TRANSPARENCIA-509',
@@ -111,6 +77,8 @@ export async function runAutoMigrateAndSeed() {
         category: 'SAUDE_SUPLEMENTAR',
         rulesCount: 9,
         extractionMode: 'PUPPETEER' as const,
+        tags: ['ANS'],
+        targetNorms: ['ANS-RN-509-395'],
       },
       {
         code: 'ANVISA-PROPAGANDA-727',
@@ -119,6 +87,8 @@ export async function runAutoMigrateAndSeed() {
         category: 'VIGILANCIA_SANITARIA',
         rulesCount: 14,
         extractionMode: 'CHEERIO' as const,
+        tags: ['ANVISA'],
+        targetNorms: ['ANVISA-RDC-727'],
       },
     ];
 
@@ -131,6 +101,8 @@ export async function runAutoMigrateAndSeed() {
           category: mod.category,
           rulesCount: mod.rulesCount,
           extractionMode: mod.extractionMode,
+          tags: mod.tags,
+          targetNorms: mod.targetNorms,
         },
         create: {
           code: mod.code,
@@ -139,39 +111,39 @@ export async function runAutoMigrateAndSeed() {
           category: mod.category,
           rulesCount: mod.rulesCount,
           extractionMode: mod.extractionMode,
+          tags: mod.tags,
+          targetNorms: mod.targetNorms,
         },
       });
     }
-    console.log(`✅ [Seed] ${defaultModules.length} Módulos de Agente configurados.`);
+    console.log(`✅ [Seed] ${defaultModules.length} Módulos Regulatórios Oficiais provisionados.`);
 
-    // 7. Definição do Agente de Deontologia
+    // 3. Definição do Agente Deontológico
     await prisma.agentDefinition.upsert({
       where: { name: 'CFM_DEONTOLOGY_AUDITOR_V1' },
       update: {
-        systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista na Resolução CFM nº 2.336/2023...',
-        targetNorm: 'Resolução CFM nº 2.336/2023, ANS RN 509 e LGPD Art. 11',
+        systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista na Resolução CFM nº...',
+        targetNorm: 'Resolução CFM nº, ANS RN 509 e LGPD Art. 11',
       },
       create: {
         name: 'CFM_DEONTOLOGY_AUDITOR_V1',
-        systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista na Resolução CFM nº 2.336/2023...',
-        targetNorm: 'Resolução CFM nº 2.336/2023, ANS RN 509 e LGPD Art. 11',
+        systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista na Resolução CFM nº...',
+        targetNorm: 'Resolução CFM nº, ANS RN 509 e LGPD Art. 11',
         defaultMode: 'CHEERIO',
         temperature: 0.1,
       },
     });
-    console.log('✅ [Seed] Definição de Agente pronta.');
 
-    console.log('✨ [AutoMigrate & Seed] Concluído com sucesso!');
+    console.log('✨ [AutoMigrate & Seed] Concluído com sucesso (Zero mocks).');
   } catch (error) {
-    console.error('❌ [AutoMigrate & Seed] Erro ao executar migração/seed:', error);
+    console.error('❌ [AutoMigrate & Seed] Erro ao provisionar dados:', error);
     throw error;
   }
 }
 
-// Executar se chamado diretamente
+// Executar se chamado diretamente via CLI
 if (process.argv[1]?.includes('autoMigrate.ts')) {
   runAutoMigrateAndSeed()
     .then(() => process.exit(0))
     .catch(() => process.exit(1));
 }
-
