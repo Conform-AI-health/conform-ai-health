@@ -1,0 +1,23 @@
+{
+  "name": "conform-ai-health",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "dashboard",
+    "dashboard-web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"API,WEB\" -c \"blue,green\" \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm --prefix dashboard run dev",
+    "dev:web": "npm --prefix dashboard-web run dev",
+    "build": "npm --prefix dashboard run build && npm --prefix dashboard-web run build",
+    "typecheck": "npm --prefix dashboard run typecheck && npm --prefix dashboard-web run typecheck",
+    "test": "npm --prefix dashboard test && npm --prefix dashboard-web test",
+    "prisma:generate": "npm --prefix dashboard run prisma:generate",
+    "prisma:seed": "npm --prefix dashboard run prisma:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
+
