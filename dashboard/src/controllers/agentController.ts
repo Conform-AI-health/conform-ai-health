@@ -131,17 +131,17 @@ export class AgentController {
 
       const agent = await prisma.agentModule.create({
         data: {
-          name: data.name,
+          name: data.name.trim(),
           code: resolvedCode,
-          description: data.description, // Atua como a Skill comportamental e persona da IA
-          targetUrl: data.targetUrl || null,
+          description: data.description ? data.description.trim() : null, // Atua como a Skill comportamental e persona da IA
+          targetUrl: data.targetUrl?.trim() || null,
           tags: tagsNormalized, // Isolamento: Vínculo com resoluções ocorre exclusivamente via Tags
           category: data.category || 'DEONTOLOGIA_MEDICA',
           extractionMode: (data.extractionMode as any) || 'FIRECRAWL',
           rulesCount: tagsNormalized.length * 4,
           targetNorms: [], // Nenhuma norma ou arquivo físico .md é vinculado diretamente no cadastro
-          systemPrompt: data.systemPrompt || null,
-          clientId: data.clientId || null,
+          systemPrompt: data.systemPrompt ? data.systemPrompt.trim() : (data.description ? data.description.trim() : null),
+          clientId: data.clientId && data.clientId.trim().length > 0 ? data.clientId.trim() : null,
           regulatoryFramework: data.regulatoryFramework || 'Conformidade Deontológica em Saúde',
           cronSchedule: data.cronSchedule || '0 */6 * * *',
           enabled: data.enabled ?? true,
@@ -167,18 +167,34 @@ export class AgentController {
           ? data.tags.map((t: string) => t.trim().toLowerCase()).filter(Boolean)
           : undefined;
 
+      const resolvedClientId =
+        data.clientId !== undefined
+          ? data.clientId && data.clientId.trim().length > 0
+            ? data.clientId.trim()
+            : null
+          : undefined;
+
+      const resolvedDescription = data.description !== undefined ? data.description.trim() : undefined;
+      const resolvedSystemPrompt =
+        data.systemPrompt !== undefined
+          ? data.systemPrompt.trim()
+          : resolvedDescription !== undefined
+          ? resolvedDescription
+          : undefined;
+
       const updated = await prisma.agentModule.update({
         where: { id },
         data: {
-          ...(data.name && { name: data.name }),
-          ...(data.targetUrl !== undefined && { targetUrl: data.targetUrl }),
-          ...(data.description !== undefined && { description: data.description }),
+          ...(data.name && { name: data.name.trim() }),
+          ...(data.targetUrl !== undefined && { targetUrl: data.targetUrl?.trim() || null }),
+          ...(resolvedDescription !== undefined && { description: resolvedDescription }),
+          ...(resolvedSystemPrompt !== undefined && { systemPrompt: resolvedSystemPrompt }),
           ...(tagsNormalized && { tags: tagsNormalized, rulesCount: tagsNormalized.length * 4 }),
-          ...(data.code && { code: data.code.toUpperCase() }),
+          ...(data.code && { code: data.code.trim().toUpperCase() }),
           ...(data.enabled !== undefined && { enabled: data.enabled }),
           ...(data.category && { category: data.category }),
           ...(data.extractionMode && { extractionMode: data.extractionMode as any }),
-          ...(data.clientId !== undefined && { clientId: data.clientId }),
+          ...(resolvedClientId !== undefined && { clientId: resolvedClientId }),
         },
       });
 

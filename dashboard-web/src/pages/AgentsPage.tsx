@@ -217,7 +217,7 @@ export const AgentsPage: React.FC = () => {
     fetchData(currentPage, pageSize);
   }, [currentPage, pageSize]);
 
-  // Sincroniza o Cockpit com o Módulo Selecionado
+  // Sincroniza o Cockpit com o Módulo Selecionado inicialmente
   useEffect(() => {
     if (modules.length > 0) {
       const targetId = selectedModuleId || modules[0]?.id;
@@ -228,9 +228,9 @@ export const AgentsPage: React.FC = () => {
           id: mod.id,
           name: mod.name || '',
           targetUrl: mod.targetUrl || '',
-          description: mod.description || '',
+          description: mod.description || mod.systemPrompt || '',
           tags: mod.tags && mod.tags.length > 0 ? mod.tags : ['cfm'],
-          clientId: mod.clientId || clients[0]?.id || '',
+          clientId: mod.clientId || '',
         });
       }
     }
@@ -243,9 +243,9 @@ export const AgentsPage: React.FC = () => {
       id: mod.id,
       name: mod.name || '',
       targetUrl: mod.targetUrl || '',
-      description: mod.description || '',
+      description: mod.description || mod.systemPrompt || '',
       tags: mod.tags && mod.tags.length > 0 ? mod.tags : ['cfm'],
-      clientId: mod.clientId || clients[0]?.id || '',
+      clientId: mod.clientId || '',
     });
     setCockpitTagInput('');
     setActiveTab('run');
@@ -295,12 +295,32 @@ export const AgentsPage: React.FC = () => {
     }
     try {
       setSavingModule(true);
-      await api.put(`/agents/${cockpitData.id}`, {
+      const res = await api.put(`/agents/${cockpitData.id}`, {
         name: cockpitData.name.trim(),
         targetUrl: cockpitData.targetUrl.trim(),
         description: cockpitData.description.trim(),
+        systemPrompt: cockpitData.description.trim(),
+        clientId: cockpitData.clientId && cockpitData.clientId.trim().length > 0 ? cockpitData.clientId.trim() : null,
         tags: cockpitData.tags,
       });
+
+      const updatedAgent = res.data?.agent;
+      if (updatedAgent) {
+        // Atualiza imediatamente a lista local de módulos
+        setModules((prev) =>
+          prev.map((m) => (m.id === updatedAgent.id ? { ...m, ...updatedAgent } : m))
+        );
+        // Atualiza o estado do Cockpit com os dados persistidos
+        setCockpitData({
+          id: updatedAgent.id,
+          name: updatedAgent.name || '',
+          targetUrl: updatedAgent.targetUrl || '',
+          description: updatedAgent.description || updatedAgent.systemPrompt || '',
+          tags: updatedAgent.tags && updatedAgent.tags.length > 0 ? updatedAgent.tags : ['cfm'],
+          clientId: updatedAgent.clientId || '',
+        });
+      }
+
       await fetchData(currentPage, pageSize);
       toast.success('Módulo de agente atualizado com sucesso no MongoDB!');
     } catch (err: any) {
@@ -328,17 +348,19 @@ export const AgentsPage: React.FC = () => {
       setRunning(true);
       // Salva qualquer alteração recente no módulo de forma transparente
       await api.put(`/agents/${selectedModuleId}`, {
-        name: cockpitData.name?.trim() || currentMod.name,
+        name: cockpitData.name?.trim() || currentMod?.name,
         targetUrl: effectiveUrl,
-        description: cockpitData.description?.trim() || currentMod.description,
-        tags: cockpitData.tags && cockpitData.tags.length > 0 ? cockpitData.tags : currentMod.tags,
+        description: cockpitData.description?.trim() || currentMod?.description,
+        systemPrompt: cockpitData.description?.trim() || currentMod?.description,
+        clientId: cockpitData.clientId && cockpitData.clientId.trim().length > 0 ? cockpitData.clientId.trim() : null,
+        tags: cockpitData.tags && cockpitData.tags.length > 0 ? cockpitData.tags : currentMod?.tags,
       });
 
       // Dispara a auditoria usando o corpo unificado de URL Alvo Oficial e Persona/Skill
       await api.post(`/agents/${selectedModuleId}/run`, {
-        clientId: cockpitData.clientId || clients[0]?.id || currentMod.clientId,
+        clientId: cockpitData.clientId || clients[0]?.id || currentMod?.clientId,
         targetUrl: effectiveUrl,
-        skill: cockpitData.description?.trim() || currentMod.description,
+        skill: cockpitData.description?.trim() || currentMod?.description,
         extractionMode: 'FIRECRAWL',
       });
 
@@ -1179,7 +1201,14 @@ export const AgentsPage: React.FC = () => {
                       <div className="flex justify-between items-center text-slate-400">
                         <span>URL Alvo Canônica:</span>
                         <span className="text-cyan-400 font-mono font-semibold truncate max-w-[130px]" title={cockpitData.targetUrl}>
-                          {cockpitData.targetUrl ? new URL(cockpitData.targetUrl).hostname : 'Não informada'}
+                          {(() => {
+                            if (!cockpitData.targetUrl) return 'Não informada';
+                            try {
+                              return new URL(cockpitData.targetUrl).hostname;
+                            } catch {
+                              return cockpitData.targetUrl;
+                            }
+                          })()}
                         </span>
                       </div>
 

@@ -8,6 +8,9 @@ import { errorHandler } from './middlewares/errorHandler.js';
 export function createApp(): Express {
   const app = express();
 
+  // Configura proxy reverso seguro (Nginx / Docker)
+  app.set('trust proxy', 1);
+
   // 1. Hardening com Helmet & Content Security Policy
   app.use(
     helmet({
