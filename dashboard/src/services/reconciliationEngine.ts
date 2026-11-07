@@ -32,9 +32,9 @@ export type ReconciliationOutput = z.infer<typeof reconciliationOutputSchema>;
 export interface AgentContext {
   id?: string;
   name: string;
-  code?: string;
-  description?: string;
-  regulatoryFramework?: string;
+  code?: string | null;
+  description?: string | null;
+  regulatoryFramework?: string | null;
   systemPrompt: string;
   targetNorms: string[];
   activeNorms: NormChunk[];
@@ -278,8 +278,8 @@ Normas vinculadas: ${activeNorms.map((n) => n.normCode).join(', ')}.`;
           return {
             id: agent.id,
             name: agent.name,
-            code: agent.code,
-            description: agent.description,
+            code: agent.code || undefined,
+            description: agent.description || undefined,
             regulatoryFramework: agent.regulatoryFramework || undefined,
             systemPrompt,
             targetNorms: agent.targetNorms || [],
