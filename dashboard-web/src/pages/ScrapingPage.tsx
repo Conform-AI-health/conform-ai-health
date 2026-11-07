@@ -117,6 +117,7 @@ export const ScrapingPage: React.FC = () => {
   };
 
   const isGitHubDirectory = url.includes('github.com') && url.includes('/tree/');
+  const isDouPortal = url.includes('in.gov.br');
 
   const handleScrapeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +130,9 @@ export const ScrapingPage: React.FC = () => {
       });
 
       if (res.data?.isBatch) {
-        alert(`🎉 Varredura em lote concluída com sucesso!\n\n${res.data.totalIndexed} normas/documentos foram baixados do diretório e salvos individualmente no MongoDB Atlas.`);
+        alert(
+          `🎉 Varredura concluída com sucesso!\n\n${res.data.totalIndexed} normas/documentos foram detectados (navegando submenus, paginação ou diretórios) e salvos individualmente no MongoDB Atlas.`
+        );
       } else {
         alert(`Norma/Página indexada com sucesso! Tags atribuídas: [${res.data?.page?.tags?.join(', ')}]`);
       }
@@ -205,7 +208,13 @@ export const ScrapingPage: React.FC = () => {
               {isGitHubDirectory && (
                 <span className="text-[10px] font-bold text-amber-400 bg-amber-950/70 border border-amber-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
                   <span>📂</span>
-                  <span>Diretório / Varredura em Lote Detectada</span>
+                  <span>Diretório GitHub / Lote Detectado</span>
+                </span>
+              )}
+              {isDouPortal && (
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/70 border border-emerald-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  <span>📰</span>
+                  <span>Diário Oficial (DOU) / Multi-Atos & Submenus</span>
                 </span>
               )}
             </label>
@@ -214,13 +223,13 @@ export const ScrapingPage: React.FC = () => {
               required
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="Ex: https://github.com/md-augustolinhares/cfm-normas/tree/main/normas/resolucoes/1957"
+              placeholder="Ex: https://www.in.gov.br/leiturajornal?secao=dou1&data=29-10-2026&org=Ministério%20da%20Saúde&ato=Resolução"
               className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
             />
             <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
               <span>💡</span>
               <span>
-                Suporta páginas avulsas ou <strong>diretórios/árvores do GitHub</strong> (ex: <code className="text-emerald-400">.../tree/main/normas/...</code>) para baixar e indexar todos os arquivos como documentos individuais no MongoDB.
+                Suporta páginas avulsas, repositórios GitHub e <strong>portais oficiais com submenus/paginação</strong> (ex: <code className="text-emerald-400">in.gov.br/leiturajornal</code>). O sistema navega automaticamente por submenus e paginações, salvando cada resolução ou ato como um documento independente no MongoDB.
               </span>
             </p>
           </div>

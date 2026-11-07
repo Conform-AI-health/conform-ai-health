@@ -28,107 +28,76 @@ export class ScrapedPageController {
         return;
       }
 
-      // 2. Execução do Web Scraping (detecção automática de diretório GitHub vs página única)
-      const treeCheck = ScraperService.isGitHubTreeUrl(url);
+      // 2. Execução do Web Scraping Inteligente (Multi-documentos, DOU in.gov.br, GitHub ou Página Única)
+      const scrapeResults = await ScraperService.scrapeMultiDocOrSingle(url, customTags, mode);
 
-      if (treeCheck.isTree) {
-        const batchResults = await ScraperService.scrapeGitHubTree(url, customTags);
+      if (!scrapeResults || scrapeResults.length === 0) {
+        throw new Error('Nenhum conteúdo ou documento regulatório pôde ser extraído da URL fornecida.');
+      }
 
-        const savedDocs = [];
-        for (const item of batchResults) {
-          const effectiveTags = Array.from(
-            new Set([...(customTags || []), ...item.detectedTags])
-          );
+      const isBatch = scrapeResults.length > 1;
 
-          const doc = await prisma.scrapedPage.upsert({
-            where: { url: item.url },
-            update: {
-              title: item.title,
-              cleanMarkdown: item.cleanMarkdown,
-              rawLength: item.rawHtmlLength,
-              tokensCount: item.tokensEstimatedClean,
-              tags: effectiveTags,
-              extractedEntities: JSON.stringify(item.extractedEntities),
-            },
-            create: {
-              url: item.url,
-              title: item.title,
-              cleanMarkdown: item.cleanMarkdown,
-              rawLength: item.rawHtmlLength,
-              tokensCount: item.tokensEstimatedClean,
-              tags: effectiveTags,
-              extractedEntities: JSON.stringify(item.extractedEntities),
-            },
-          });
-          savedDocs.push(doc);
-        }
+      // 3. Persistência de CADA documento individualmente no MongoDB (scraped_pages)
+      const savedDocs = [];
+      for (const item of scrapeResults) {
+        const effectiveTags = Array.from(
+          new Set([...(customTags || []), ...item.detectedTags])
+        );
 
-        // Registro de log em lote
+        const doc = await prisma.scrapedPage.upsert({
+          where: { url: item.url },
+          update: {
+            title: item.title,
+            cleanMarkdown: item.cleanMarkdown,
+            rawLength: item.rawHtmlLength,
+            tokensCount: item.tokensEstimatedClean,
+            tags: effectiveTags,
+            extractedEntities: JSON.stringify(item.extractedEntities),
+          },
+          create: {
+            url: item.url,
+            title: item.title,
+            cleanMarkdown: item.cleanMarkdown,
+            rawLength: item.rawHtmlLength,
+            tokensCount: item.tokensEstimatedClean,
+            tags: effectiveTags,
+            extractedEntities: JSON.stringify(item.extractedEntities),
+          },
+        });
+        savedDocs.push(doc);
+
+        console.log(`📄 [SCRAPER] Documento individual indexado no MongoDB: "${doc.title}" (${doc.url}) | Tokens: ${doc.tokensCount} | Tags: [${doc.tags.join(', ')}]`);
+      }
+
+      // 4. Registro de Log do Sistema / Telemetria
+      if (isBatch) {
         await prisma.systemLog.create({
           data: {
             level: 'INFO',
-            message: `Varredura de diretório GitHub concluída: ${savedDocs.length} normas/documentos indexados individualmente no MongoDB Atlas (${treeCheck.owner}/${treeCheck.repo}/${treeCheck.path}).`,
+            message: `Varredura de repositório/portal concluída: ${savedDocs.length} normas/atos indexados individualmente no MongoDB (${url}).`,
             module: 'SCRAPER_BATCH',
             correlationId: savedDocs[0]?.id || null,
           },
         });
-
-        res.status(201).json({
-          message: `Varredura em lote concluída com sucesso! ${savedDocs.length} documentos indexados no MongoDB.`,
-          isBatch: true,
-          totalIndexed: savedDocs.length,
-          page: savedDocs[0],
-          pages: savedDocs,
+      } else {
+        await prisma.systemLog.create({
+          data: {
+            level: 'INFO',
+            message: `Norma/Página varrida e indexada no MongoDB com tags: [${savedDocs[0]?.tags?.join(', ')}] (${savedDocs[0]?.title})`,
+            module: 'SCRAPER_TAGGING',
+            correlationId: savedDocs[0]?.id || null,
+          },
         });
-        return;
       }
 
-      // Fluxo de Página Única
-      const scrapeResult = await ScraperService.scrape(url, mode);
-
-      // 3. Consolidação das Tags Regulatórias
-      const effectiveTags = Array.from(
-        new Set([...(customTags || []), ...scrapeResult.detectedTags])
-      );
-
-      // 4. Persistência no MongoDB (upsert por URL)
-      const scrapedDoc = await prisma.scrapedPage.upsert({
-        where: { url },
-        update: {
-          title: scrapeResult.title,
-          cleanMarkdown: scrapeResult.cleanMarkdown,
-          rawLength: scrapeResult.rawHtmlLength,
-          tokensCount: scrapeResult.tokensEstimatedClean,
-          tags: effectiveTags,
-          extractedEntities: JSON.stringify(scrapeResult.extractedEntities),
-        },
-        create: {
-          url,
-          title: scrapeResult.title,
-          cleanMarkdown: scrapeResult.cleanMarkdown,
-          rawLength: scrapeResult.rawHtmlLength,
-          tokensCount: scrapeResult.tokensEstimatedClean,
-          tags: effectiveTags,
-          extractedEntities: JSON.stringify(scrapeResult.extractedEntities),
-        },
-      });
-
-      // 5. Registro de Log do Sistema
-      await prisma.systemLog.create({
-        data: {
-          level: 'INFO',
-          message: `Norma/Página varrida e indexada no MongoDB com tags: [${effectiveTags.join(', ')}] (${scrapedDoc.title})`,
-          module: 'SCRAPER_TAGGING',
-          correlationId: scrapedDoc.id,
-        },
-      });
-
       res.status(201).json({
-        message: 'Norma/Página varrida e indexada com sucesso!',
-        isBatch: false,
-        totalIndexed: 1,
-        page: scrapedDoc,
-        pages: [scrapedDoc],
+        message: isBatch
+          ? `Varredura concluída com sucesso! ${savedDocs.length} normas/documentos foram extraídos e indexados individualmente no MongoDB.`
+          : 'Norma/Página varrida e indexada com sucesso!',
+        isBatch,
+        totalIndexed: savedDocs.length,
+        page: savedDocs[0],
+        pages: savedDocs,
       });
     } catch (error) {
       next(error);
