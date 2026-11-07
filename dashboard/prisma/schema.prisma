@@ -81,6 +81,7 @@ model Client {
   email             String?
   users             User[]
   auditReports      AuditReport[]
+  scrapedData       ClientScrapedData[]
   createdAt         DateTime?     @default(now())
   updatedAt         DateTime?     @updatedAt
 
@@ -127,20 +128,20 @@ model AuditReport {
   id              String         @id @default(auto()) @map("_id") @db.ObjectId
   clientId        String?        @db.ObjectId
   client          Client?        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  targetUrl       String
+  targetUrl       String?
   extractionMode  ExtractionMode @default(CHEERIO)
   verdict         Verdict        @default(PARCIALMENTE_CONFORME)
-  score           Int            @default(0)
-  summary         String
+  score           Int?           @default(0)
+  summary         String?
   rawContent      String?
   cleanMarkdown   String?
-  tokensSaved     Int            @default(0)
-  promptTokens    Int            @default(0)
-  completionTokens Int           @default(0)
-  totalTokens     Int            @default(0)
+  tokensSaved     Int?           @default(0)
+  promptTokens    Int?           @default(0)
+  completionTokens Int?          @default(0)
+  totalTokens     Int?           @default(0)
   sourcesUsed     String[]       @default([])
   aiModelUsed     String?
-  executionTimeMs Int            @default(0)
+  executionTimeMs Int?           @default(0)
   status          AuditStatus    @default(PENDING)
   violations      Violation[]
   createdAt       DateTime?      @default(now())
@@ -154,11 +155,11 @@ model Violation {
   id               String       @id @default(auto()) @map("_id") @db.ObjectId
   auditReportId    String       @db.ObjectId
   auditReport      AuditReport  @relation(fields: [auditReportId], references: [id], onDelete: Cascade)
-  normArticle      String
-  normCode         String
+  normArticle      String?
+  normCode         String?
   severity         RuleSeverity @default(MEDIA)
-  detectedText     String
-  correctiveAdvice String
+  detectedText     String?
+  correctiveAdvice String?
   resolved         Boolean      @default(false)
   createdAt        DateTime?    @default(now())
 
@@ -194,6 +195,26 @@ model ScrapedPage {
   @@index([tags])
   @@index([tags, createdAt])
   @@map("scraped_pages")
+}
+
+model ClientScrapedData {
+  id                String         @id @default(auto()) @map("_id") @db.ObjectId
+  clientId          String         @db.ObjectId
+  client            Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  url               String
+  title             String?
+  cleanMarkdown     String
+  rawLength         Int            @default(0)
+  tokensCount       Int            @default(0)
+  extractionMode    ExtractionMode @default(CHEERIO)
+  detectedTags      String[]       @default([])
+  extractedEntities String?
+  status            String         @default("COMPLETED")
+  createdAt         DateTime?      @default(now())
+  updatedAt         DateTime?      @updatedAt
+
+  @@index([clientId, createdAt])
+  @@map("client_scraped_data")
 }
 
 model AiModelConfig {

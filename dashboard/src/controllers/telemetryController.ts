@@ -18,7 +18,7 @@ export class TelemetryController {
 
       const totalPromptTokens = reports.reduce((acc, r) => acc + (r.promptTokens || 0), 0);
       const totalCompletionTokens = reports.reduce((acc, r) => acc + (r.completionTokens || 0), 0);
-      const totalTokens = reports.reduce((acc, r) => acc + (r.totalTokens || (r.promptTokens + r.completionTokens)), 0);
+      const totalTokens = reports.reduce((acc, r) => acc + (r.totalTokens || ((r.promptTokens || 0) + (r.completionTokens || 0))), 0);
       const totalTokensSaved = reports.reduce((acc, r) => acc + (r.tokensSaved || 0), 0);
 
       const totalAudits = reports.length;
@@ -45,10 +45,10 @@ export class TelemetryController {
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
 
-      // Logs recentes do sistema
+      // Logs recentes do sistema (com alta granularidade para o terminal operacional)
       const recentLogs = await prisma.systemLog.findMany({
         orderBy: { createdAt: 'desc' },
-        take: 30,
+        take: 100,
       });
 
       res.status(200).json({
@@ -65,17 +65,17 @@ export class TelemetryController {
         sourcesDistribution,
         auditsTelemetry: reports.map((r) => ({
           id: r.id,
-          targetUrl: r.targetUrl,
+          targetUrl: r.targetUrl || 'N/A',
           clientName: r.client?.tradeName || r.client?.name || 'Clínica Médica',
           crm: `CRM/${r.client?.crmUf} ${r.client?.crmResponsavel}`,
           verdict: r.verdict,
-          score: r.score,
+          score: r.score ?? 0,
           aiModelUsed: r.aiModelUsed || 'gemini-2.0-flash',
           promptTokens: r.promptTokens || 0,
           completionTokens: r.completionTokens || 0,
-          totalTokens: r.totalTokens || (r.promptTokens + r.completionTokens) || 0,
+          totalTokens: r.totalTokens || ((r.promptTokens || 0) + (r.completionTokens || 0)) || 0,
           tokensSaved: r.tokensSaved || 0,
-          executionTimeMs: r.executionTimeMs,
+          executionTimeMs: r.executionTimeMs ?? 0,
           sourcesUsed: r.sourcesUsed || [],
           createdAt: r.createdAt,
         })),

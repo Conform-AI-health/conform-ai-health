@@ -233,22 +233,47 @@ export async function runAutoMigrateAndSeed() {
         console.log(`🛡️ [AutoMigrate] ${clientsWithoutDates.length} Cliente(s) legados sanitizados com timestamps válidos.`);
       }
 
-      // 5.4 Atualizar Laudos legados com clientId nulo
+      // 5.4 Atualizar Laudos legados com clientId, targetUrl ou summary nulos
       const defaultClient = await prisma.client.findFirst({ orderBy: { createdAt: 'asc' } }).catch(() => null);
-      if (defaultClient) {
-        const reportsWithoutClient = await prisma.auditReport.findMany({
-          where: { clientId: null },
-        }).catch(() => []);
+      const reportsNeedingHealing = await prisma.auditReport.findMany({
+        where: {
+          OR: [
+            { clientId: null },
+            { targetUrl: null },
+            { summary: null },
+          ],
+        },
+      }).catch(() => []);
 
-        for (const rep of reportsWithoutClient) {
-          await prisma.auditReport.update({
-            where: { id: rep.id },
-            data: { clientId: defaultClient.id },
-          }).catch(() => {});
-        }
-        if (reportsWithoutClient.length > 0) {
-          console.log(`🛡️ [AutoMigrate] ${reportsWithoutClient.length} Laudo(s) legados vinculados ao cliente padrão.`);
-        }
+      for (const rep of reportsNeedingHealing) {
+        await prisma.auditReport.update({
+          where: { id: rep.id },
+          data: {
+            ...(defaultClient && !rep.clientId ? { clientId: defaultClient.id } : {}),
+            ...(!rep.targetUrl ? { targetUrl: 'https://conform-ia.med.br' } : {}),
+            ...(!rep.summary ? { summary: 'Laudo de conformidade deontológica emitido pela plataforma ConformIA.' } : {}),
+          },
+        }).catch(() => {});
+      }
+      if (reportsNeedingHealing.length > 0) {
+        console.log(`🛡️ [AutoMigrate] ${reportsNeedingHealing.length} Laudo(s) legados sanitizados (targetUrl, summary, clientId).`);
+      }
+
+      // 5.5 Limpar registros de clínicas do repositório de normas (scraped_pages deve conter exclusivamente normas regulatórias)
+      const allClients = await prisma.client.findMany({ select: { websiteUrl: true } }).catch(() => []);
+      const clinicUrls = allClients.map((c) => c.websiteUrl).filter(Boolean) as string[];
+
+      const deletedClinicPages = await prisma.scrapedPage.deleteMany({
+        where: {
+          OR: [
+            ...(clinicUrls.length > 0 ? [{ url: { in: clinicUrls } }] : []),
+            { url: { contains: 'dermotologista' } },
+          ],
+        },
+      }).catch(() => ({ count: 0 }));
+
+      if (deletedClinicPages && deletedClinicPages.count > 0) {
+        console.log(`🛡️ [AutoMigrate] ${deletedClinicPages.count} página(s) de clínica removidas do repositório de normas.`);
       }
     } catch (healErr: any) {
       console.warn('⚠️ [AutoMigrate] Aviso na autocura de registros legados:', healErr.message);

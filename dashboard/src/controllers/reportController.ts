@@ -63,6 +63,8 @@ export class ReportController {
       res.status(200).json({
         data: reports.map((r) => ({
           ...r,
+          targetUrl: r.targetUrl || 'https://conform-ia.med.br',
+          summary: r.summary || 'Laudo de conformidade deontológica.',
           client: r.client || {
             id: r.clientId || 'avulso',
             name: 'Auditoria Direta / Avulsa',
@@ -115,7 +117,18 @@ export class ReportController {
         return;
       }
 
-      res.status(200).json(report);
+      res.status(200).json({
+        ...report,
+        targetUrl: report.targetUrl || 'https://conform-ia.med.br',
+        summary: report.summary || 'Laudo de conformidade deontológica.',
+        client: report.client || {
+          id: report.clientId || 'avulso',
+          name: 'Auditoria Direta / Avulsa',
+          tradeName: 'Sem vínculo',
+          crmResponsavel: '-',
+          crmUf: '-',
+        },
+      });
     } catch (error) {
       next(error);
     }
@@ -165,15 +178,15 @@ export class ReportController {
       md += `### 📋 Dados da Instituição Auditada\n`;
       md += `- **Clínica:** ${clientName}\n`;
       md += `- **Responsável Técnico:** ${techResp}\n`;
-      md += `- **Canal / URL Auditada:** ${report.targetUrl}\n`;
+      md += `- **Canal / URL Auditada:** ${report.targetUrl || 'N/A'}\n`;
       md += `- **Data da Auditoria:** ${dateStr}\n`;
       md += `- **Status da Auditoria:** ${report.status}\n\n`;
       md += `### 🚥 Veredito Semáforo & Pontuação\n`;
       md += `- **Veredito:** ${semaphore}\n`;
-      md += `- **Score de Conformidade:** ${report.score} / 100\n`;
-      md += `- **Eficiência de Contexto:** ${report.tokensSaved} tokens economizados via sanitização\n\n`;
+      md += `- **Score de Conformidade:** ${report.score ?? 0} / 100\n`;
+      md += `- **Eficiência de Contexto:** ${report.tokensSaved ?? 0} tokens economizados via sanitização\n\n`;
       md += `### 📝 Resumo Executivo\n`;
-      md += `${report.summary}\n\n`;
+      md += `${report.summary || 'Resumo executivo não disponível.'}\n\n`;
       md += `---\n\n`;
       md += `### ⚠️ Apontamentos de Não-Conformidade (${report.violations.length})\n\n`;
 

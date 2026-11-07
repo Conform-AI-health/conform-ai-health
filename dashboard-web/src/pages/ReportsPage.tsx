@@ -14,8 +14,10 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
+import { useToast } from '../context/ToastContext';
 
 export const ReportsPage: React.FC = () => {
+  const toast = useToast();
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [verdictFilter, setVerdictFilter] = useState('');
@@ -64,7 +66,7 @@ export const ReportsPage: React.FC = () => {
       const res = await api.get(`/reports/${id}`);
       setSelectedReport(res.data);
     } catch (err: any) {
-      alert(`Erro ao abrir detalhes: ${err.message}`);
+      toast.error(`Erro ao abrir detalhes: ${err.message}`);
     } finally {
       setLoadingDetails(false);
     }
@@ -82,8 +84,9 @@ export const ReportsPage: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
+      toast.success('Laudo técnico exportado com sucesso em Markdown!');
     } catch (err: any) {
-      alert(`Falha no download: ${err.message}`);
+      toast.error(`Falha no download: ${err.message}`);
     }
   };
 
@@ -159,7 +162,7 @@ export const ReportsPage: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-xs font-mono text-slate-400 max-w-[200px] truncate">
-                      {r.targetUrl}
+                      {r.targetUrl || 'N/A'}
                     </td>
                     <td className="py-3.5 px-4">
                       <span
@@ -233,8 +236,11 @@ export const ReportsPage: React.FC = () => {
                   Laudo ID: {selectedReport.id}
                 </span>
                 <h2 className="text-lg font-bold text-white mt-0.5">
-                  {selectedReport.client?.name}
+                  {selectedReport.client?.tradeName || selectedReport.client?.name || 'Clínica Médica'}
                 </h2>
+                <span className="text-xs font-mono text-slate-400 block mt-0.5">
+                  {selectedReport.targetUrl || 'Canal não informado'}
+                </span>
               </div>
               <button
                 onClick={() => setSelectedReport(null)}
@@ -272,7 +278,7 @@ export const ReportsPage: React.FC = () => {
                 <span className="text-xs font-bold text-slate-300 block mb-1">
                   Parecer Deontológico Sintético:
                 </span>
-                <p className="text-xs text-slate-300 leading-relaxed">{selectedReport.summary}</p>
+                <p className="text-xs text-slate-300 leading-relaxed">{selectedReport.summary || 'Resumo executivo não registrado.'}</p>
               </div>
 
               {/* Violações */}

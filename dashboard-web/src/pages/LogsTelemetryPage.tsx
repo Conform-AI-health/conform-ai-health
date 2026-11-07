@@ -23,26 +23,31 @@ import { Pagination } from '../components/Pagination';
 export const LogsTelemetryPage: React.FC = () => {
   const [telemetry, setTelemetry] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [livePolling, setLivePolling] = useState(true);
   const [logFilter, setLogFilter] = useState('ALL');
   const [logSearch, setLogSearch] = useState('');
 
-  const fetchTelemetry = async () => {
+  const fetchTelemetry = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
+      setRefreshing(true);
       const res = await api.get('/system/telemetry');
       setTelemetry(res.data);
     } catch (err) {
       console.error('Erro ao buscar telemetria:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
     fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 15000); // Polling a cada 15s para telemetria viva
+    const intervalTime = livePolling ? 3000 : 15000;
+    const interval = setInterval(() => fetchTelemetry(true), intervalTime);
     return () => clearInterval(interval);
-  }, []);
+  }, [livePolling]);
 
   const metrics = telemetry?.metrics || {
     totalPromptTokens: 0,
@@ -89,7 +94,7 @@ export const LogsTelemetryPage: React.FC = () => {
         </div>
 
         <button
-          onClick={fetchTelemetry}
+          onClick={() => fetchTelemetry(false)}
           disabled={loading}
           className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition flex items-center gap-2 self-start md:self-auto text-xs font-semibold"
         >
@@ -331,26 +336,51 @@ export const LogsTelemetryPage: React.FC = () => {
       </div>
 
       {/* Terminal de Logs Operacionais do Sistema */}
-      <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+      <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Terminal className="h-5 w-5 text-emerald-400" />
               <span>Terminal de Logs Operacionais & Eventos de IA</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Rastreabilidade dos workers assíncronos, chamadas de extração e diagnósticos
+              Rastreabilidade em tempo real de execuções do Cockpit, extrações de conteúdo e consumo de tokens da IA
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setLivePolling((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition ${
+                livePolling
+                  ? 'bg-emerald-950/60 border-emerald-800/80 text-emerald-300 shadow-sm'
+                  : 'bg-slate-900 border-slate-700/80 text-slate-400 hover:text-white'
+              }`}
+              title="Alternar atualização automática a cada 3 segundos"
+            >
+              <span className={`w-2 h-2 rounded-full ${livePolling ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+              <span>{livePolling ? 'Live (3s)' : 'Pausado'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fetchTelemetry(false)}
+              disabled={refreshing}
+              className="bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
+              title="Atualizar logs agora"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
+              <span>Atualizar</span>
+            </button>
+
             <div className="relative">
               <Search className="h-3.5 w-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={logSearch}
                 onChange={(e) => setLogSearch(e.target.value)}
-                placeholder="Filtrar mensagem ou módulo..."
+                placeholder="Filtrar por mensagem ou módulo..."
                 className="bg-slate-900 border border-slate-700/80 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -368,39 +398,96 @@ export const LogsTelemetryPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Terminal Window */}
-        <div className="bg-slate-950 rounded-xl border border-slate-800 p-4 font-mono text-xs max-h-96 overflow-y-auto space-y-2">
-          {filteredLogs.length === 0 ? (
-            <p className="text-slate-600 text-center py-6">Nenhum evento registrado.</p>
-          ) : (
-            filteredLogs.map((l: any) => {
-              const isError = l.level === 'ERROR';
-              const isWarn = l.level === 'WARN';
+        {/* Terminal Window com Design de Console Autêntico */}
+        <div className="bg-[#050914] rounded-2xl border border-slate-800/90 shadow-2xl overflow-hidden font-mono text-xs">
+          {/* Header Bar do Console */}
+          <div className="bg-[#080f24] px-4 py-2.5 border-b border-slate-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 inline-block" />
+                <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/80 inline-block" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block" />
+              </div>
+              <span className="text-[11px] text-slate-400 ml-2 font-mono">
+                conformia-audit@cockpit:~$ stream --tail -n 100
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-500 font-semibold">
+              {filteredLogs.length} eventos registrados
+            </span>
+          </div>
 
-              return (
-                <div key={l.id} className="flex items-start gap-2.5 leading-relaxed hover:bg-slate-900/50 p-1 rounded">
-                  <span className="text-slate-500 select-none flex-shrink-0">
-                    {new Date(l.createdAt).toLocaleTimeString('pt-BR')}
-                  </span>
-                  <span
-                    className={`px-1.5 py-0.2 rounded text-[10px] font-bold flex-shrink-0 ${
-                      isError
-                        ? 'bg-red-950/60 text-red-400 border border-red-800/40'
-                        : isWarn
-                        ? 'bg-amber-950/60 text-amber-400 border border-amber-800/40'
-                        : 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/40'
-                    }`}
+          {/* Área de Linhas de Log */}
+          <div className="p-4 max-h-[460px] overflow-y-auto space-y-2 select-text">
+            {filteredLogs.length === 0 ? (
+              <div className="text-center py-10 text-slate-500 italic">
+                <Terminal className="h-6 w-6 mx-auto mb-2 opacity-40 text-emerald-400" />
+                Nenhum evento registrado no momento. Execute uma ação no Cockpit ou Coleta de Informações.
+              </div>
+            ) : (
+              filteredLogs.map((l: any) => {
+                const isError = l.level === 'ERROR';
+                const isWarn = l.level === 'WARN';
+                const mod = (l.module || '').toUpperCase();
+
+                const isCockpit = mod.includes('COCKPIT');
+                const isAi = mod.includes('AI') || mod.includes('INTERACTION');
+                const isScraper = mod.includes('SCRAPER');
+                const isRecon = mod.includes('RECON');
+                const isClient = mod.includes('CLIENT');
+
+                return (
+                  <div
+                    key={l.id}
+                    className="flex items-start gap-2.5 leading-relaxed hover:bg-slate-900/40 px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-800/60 transition"
                   >
-                    {l.level}
-                  </span>
-                  <span className="text-purple-400 font-semibold flex-shrink-0">
-                    [{l.module}]
-                  </span>
-                  <span className="text-slate-300 break-all">{l.message}</span>
-                </div>
-              );
-            })
-          )}
+                    <span className="text-slate-500 select-none flex-shrink-0 text-[11px] pt-0.5">
+                      {new Date(l.createdAt).toLocaleTimeString('pt-BR')}
+                    </span>
+
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase flex-shrink-0 ${
+                        isError
+                          ? 'bg-red-950/80 text-red-400 border border-red-800/50'
+                          : isWarn
+                          ? 'bg-amber-950/80 text-amber-400 border border-amber-800/50'
+                          : 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/40'
+                      }`}
+                    >
+                      {l.level}
+                    </span>
+
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono flex-shrink-0 border ${
+                        isCockpit
+                          ? 'bg-cyan-950/70 text-cyan-300 border-cyan-800/60'
+                          : isAi
+                          ? 'bg-purple-950/70 text-purple-300 border-purple-800/60'
+                          : isScraper
+                          ? 'bg-emerald-950/70 text-emerald-300 border-emerald-800/60'
+                          : isRecon
+                          ? 'bg-amber-950/70 text-amber-300 border-amber-800/60'
+                          : isClient
+                          ? 'bg-blue-950/70 text-blue-300 border-blue-800/60'
+                          : 'bg-slate-900 text-slate-400 border-slate-800'
+                      }`}
+                    >
+                      [{l.module}]
+                    </span>
+
+                    <div className="flex-1 min-w-0">
+                      <span className="text-slate-200 break-words">{l.message}</span>
+                      {l.details && (
+                        <div className="mt-1 text-[11px] text-slate-400 bg-[#080d1a] border border-slate-800/80 rounded px-2.5 py-1 font-mono inline-block max-w-full overflow-x-auto">
+                          {l.details}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
     </div>

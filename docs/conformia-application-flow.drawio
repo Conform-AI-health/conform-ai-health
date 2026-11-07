@@ -1,0 +1,275 @@
+<mxfile host="app.diagrams.net" modified="2026-11-07T14:30:00.000Z" agent="ConformIA-Architect" version="24.0.0" type="device">
+  <diagram id="conformia-architecture-flow" name="Fluxo da Aplicação ConformIA">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" background="#080D1A" math="0" shadow="1">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- ========================================== -->
+        <!-- HEADER & TITLE -->
+        <!-- ========================================== -->
+        <mxCell id="title" value="&lt;b style='font-size: 24px; color: #10B981;'&gt;ConformIA Health&lt;/b&gt;&lt;br&gt;&lt;span style='font-size: 13px; color: #94A3B8;'&gt;Arquitetura Integrada &amp;amp; Fluxo de Execução Deontológica (CFM 2.336/23, LGPD, ANVISA, ANS)&lt;/span&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fillColor=#0B132B;strokeColor=#1E293B;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="650" y="30" width="900" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- SWIMLANE 1: FRONTEND / DASHBOARD WEB -->
+        <!-- ========================================== -->
+        <mxCell id="lane_frontend" value="1. CAMADA FRONTEND (React 18 + Vite + Tailwind CSS + Toast System)" style="swimlane;html=1;startSize=35;rounded=1;arcSize=10;fillColor=#0B1329;strokeColor=#0284C7;strokeWidth=2;fontStyle=1;fontSize=13;fontColor=#38BDF8;align=left;spacingLeft=15;" vertex="1" parent="1">
+          <mxGeometry x="50" y="130" width="2100" height="230" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_clinics" value="&lt;b style='color:#38BDF8;'&gt;Gestão de Clínicas&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Cadastro CRM/RQE/UF&lt;br&gt;CRUD Completo (Modais)&lt;/span&gt;&lt;br&gt;&lt;b style='color:#10B981;'&gt;[Buscar Informações]&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#0284C7;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_frontend">
+          <mxGeometry x="40" y="55" width="220" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_extract_modal" value="&lt;b style='color:#F59E0B;'&gt;Modal Coleta Digital&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#CBD5E1;'&gt;Scraping Web / Datalink / MCP&lt;br&gt;Salva em ClientScrapedData&lt;br&gt;(Sem poluir normas)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E1B4B;strokeColor=#818CF8;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_frontend">
+          <mxGeometry x="310" y="55" width="210" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_agents" value="&lt;b style='color:#A855F7;'&gt;Governança de Agentes &amp;amp; IA&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Módulos com Regras &amp;amp; Cron&lt;br&gt;Catálogo de Normas Vinculadas&lt;br&gt;CRUD Modelos no MongoDB&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#A855F7;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_frontend">
+          <mxGeometry x="570" y="55" width="230" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_cockpit" value="&lt;b style='color:#10B981;'&gt;Cockpit de Disparo Imediato&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Seleção de Agente + Clínica + URL&lt;br&gt;&lt;b style='color:#38BDF8;'&gt;Seletor de Skill / Persona IA&lt;/b&gt;&lt;br&gt;(CFM, LGPD, LLMOps, ANS, ANVISA)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064E3B;strokeColor=#10B981;strokeWidth=2;fontColor=#FFFFFF;shadow=1;" vertex="1" parent="lane_frontend">
+          <mxGeometry x="850" y="50" width="270" height="105" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_norms" value="&lt;b style='color:#F59E0B;'&gt;Repositório de Normas Web&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Páginas Oficiais de Normas&lt;br&gt;(CFM, ANS, ANVISA, LGPD)&lt;br&gt;Exclusivo Legislações Sanitárias&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_frontend">
+          <mxGeometry x="1170" y="55" width="230" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_reports" value="&lt;b style='color:#34D399;'&gt;Laudos Deontológicos&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Semáforo (Conforme/Infração)&lt;br&gt;Score 0-100 &amp;amp; Violações CFM&lt;br&gt;Exportação de Laudo Markdown&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#34D399;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_frontend">
+          <mxGeometry x="1450" y="55" width="240" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_terminal" value="&lt;b style='color:#4ADE80;'&gt;Terminal de Logs &amp;amp; Telemetria&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Console Live (Auto-refresh 3s)&lt;br&gt;Logs [COCKPIT] [SCRAPER] [AI]&lt;br&gt;Prompt, Completion Tokens, Latência&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#022C22;strokeColor=#4ADE80;strokeWidth=2;fontColor=#FFFFFF;" vertex="1" parent="lane_frontend">
+          <mxGeometry x="1740" y="50" width="280" height="105" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- SWIMLANE 2: BACKEND CONTROLLERS & API -->
+        <!-- ========================================== -->
+        <mxCell id="lane_backend" value="2. CAMADA BACKEND API REST &amp;amp; CONTROLADORES (Express + TypeScript + RBAC + Zod)" style="swimlane;html=1;startSize=35;rounded=1;arcSize=10;fillColor=#0B1329;strokeColor=#6366F1;strokeWidth=2;fontStyle=1;fontSize=13;fontColor=#818CF8;align=left;spacingLeft=15;" vertex="1" parent="1">
+          <mxGeometry x="50" y="400" width="2100" height="210" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ctrl_auth" value="&lt;b style='color:#818CF8;'&gt;Auth &amp;amp; RBAC Middleware&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;JWT Validation&lt;br&gt;Roles: ADMIN, AUDITOR, CLIENT&lt;br&gt;Tenant Isolation Estrito&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#6366F1;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_backend">
+          <mxGeometry x="40" y="55" width="220" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ctrl_client" value="&lt;b style='color:#38BDF8;'&gt;ClientController&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;POST /clients/:id/scrape&lt;br&gt;GET /clients/:id/scraped-data&lt;br&gt;Emite log [CLIENT_EXTRACTION]&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_backend">
+          <mxGeometry x="310" y="55" width="220" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ctrl_agent" value="&lt;b style='color:#10B981;'&gt;AgentController&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;POST /agents/:id/run&lt;br&gt;Recebe { clientId, url, skill, mode }&lt;br&gt;Registra log [COCKPIT] no MongoDB&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#10B981;strokeWidth=2;fontColor=#FFFFFF;" vertex="1" parent="lane_backend">
+          <mxGeometry x="610" y="55" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ctrl_queue_dispatch" value="&lt;b style='color:#F59E0B;'&gt;Despachador de Execução&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Enfileira no BullMQ (Redis)&lt;br&gt;ou Fallback Síncrono Imediato&lt;br&gt;(Resiliência sem paradas)&lt;/span&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#1E1B4B;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_backend">
+          <mxGeometry x="940" y="45" width="210" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ctrl_report" value="&lt;b style='color:#34D399;'&gt;ReportController&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;GET /reports (Paginação)&lt;br&gt;GET /reports/:id/export&lt;br&gt;Tratamento defensivo null-safe&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#34D399;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_backend">
+          <mxGeometry x="1230" y="55" width="230" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ctrl_telemetry" value="&lt;b style='color:#4ADE80;'&gt;TelemetryController&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;GET /system/telemetry&lt;br&gt;Stream de SystemLogs (take: 100)&lt;br&gt;Métricas Agregadas de Tokens&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#4ADE80;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_backend">
+          <mxGeometry x="1540" y="55" width="250" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- SWIMLANE 3: EXTRAÇÃO & FILAS ASSÍNCRONAS -->
+        <!-- ========================================== -->
+        <mxCell id="lane_extraction" value="3. CAMADA DE EXTRAÇÃO POLIMÓRFICA &amp;amp; FILAS (ScraperService + BullMQ + Redis)" style="swimlane;html=1;startSize=35;rounded=1;arcSize=10;fillColor=#0B1329;strokeColor=#EC4899;strokeWidth=2;fontStyle=1;fontSize=13;fontColor=#F472B6;align=left;spacingLeft=15;" vertex="1" parent="1">
+          <mxGeometry x="50" y="650" width="2100" height="210" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="scraper_cheerio" value="&lt;b style='color:#F472B6;'&gt;Cheerio Scraper&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#CBD5E1;'&gt;HTML Parser de Alta Velocidade&lt;br&gt;Sanitização de Tags Inúteis&lt;br&gt;Conversão para Markdown Puro&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#EC4899;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_extraction">
+          <mxGeometry x="50" y="55" width="230" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="scraper_puppeteer" value="&lt;b style='color:#F472B6;'&gt;Puppeteer Engine&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#CBD5E1;'&gt;Headless Chromium SPA&lt;br&gt;Renderização JS Dinâmica&lt;br&gt;Captura de DOM em Tempo Real&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#EC4899;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_extraction">
+          <mxGeometry x="320" y="55" width="230" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="scraper_datalink" value="&lt;b style='color:#F472B6;'&gt;Datalink / API&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#CBD5E1;'&gt;Conector REST JSON&lt;br&gt;Interoperabilidade Clínica&lt;br&gt;Consumo de Endpoints Diretos&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#EC4899;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_extraction">
+          <mxGeometry x="590" y="55" width="220" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="scraper_mcp" value="&lt;b style='color:#F472B6;'&gt;MCP Server Adapter&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#CBD5E1;'&gt;Model Context Protocol&lt;br&gt;Contextos Médicos Seguros&lt;br&gt;Padronização Deontológica&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#EC4899;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_extraction">
+          <mxGeometry x="850" y="55" width="230" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="queue_bullmq" value="&lt;b style='color:#FBBF24;'&gt;BullMQ Audit Queue&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#CBD5E1;'&gt;Redis-Backed Queue&lt;br&gt;Tentativas, Backoff &amp;amp; Métricas&lt;br&gt;Isolamento de Jobs por Cliente&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E1B4B;strokeColor=#FBBF24;strokeWidth=2;fontColor=#FFFFFF;" vertex="1" parent="lane_extraction">
+          <mxGeometry x="1170" y="55" width="240" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="audit_worker" value="&lt;b style='color:#10B981;'&gt;Audit Worker Service&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#CBD5E1;'&gt;Consumo Contínuo de Jobs&lt;br&gt;Logs [SCRAPER] e [AI_ENGINE]&lt;br&gt;Cálculo de Eficiência de Tokens&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064E3B;strokeColor=#10B981;strokeWidth=2;fontColor=#FFFFFF;" vertex="1" parent="lane_extraction">
+          <mxGeometry x="1500" y="55" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- SWIMLANE 4: MOTOR DE IA & RECONCILIAÇÃO -->
+        <!-- ========================================== -->
+        <mxCell id="lane_ai" value="4. MOTOR DE RECONCILIAÇÃO DEONTOLÓGICA (ReconciliationEngine + Cascata de Resiliência)" style="swimlane;html=1;startSize=35;rounded=1;arcSize=10;fillColor=#0B1329;strokeColor=#8B5CF6;strokeWidth=2;fontStyle=1;fontSize=13;fontColor=#C084FC;align=left;spacingLeft=15;" vertex="1" parent="1">
+          <mxGeometry x="50" y="900" width="2100" height="210" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ai_context" value="&lt;b style='color:#C084FC;'&gt;Injeção de Contexto do Agente&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;System Prompt Especializado&lt;br&gt;Catálogo de Normas CFM/LGPD&lt;br&gt;Persona / Skill Selecionada&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#8B5CF6;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_ai">
+          <mxGeometry x="50" y="55" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ai_gemini" value="&lt;b style='color:#38BDF8;'&gt;Google Gemini 2.0 Flash&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;SDK Oficial @google/genai&lt;br&gt;Structured JSON Output Schema&lt;br&gt;Alta Acurácia e Baixa Latência&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#082F49;strokeColor=#38BDF8;strokeWidth=2;fontColor=#FFFFFF;" vertex="1" parent="lane_ai">
+          <mxGeometry x="380" y="50" width="250" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ai_ollama" value="&lt;b style='color:#F59E0B;'&gt;Ollama Local / Privado&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Fallback Local On-Premise&lt;br&gt;Modelos: Qwen 2.5 / Llama 3&lt;br&gt;Total Privacidade de Dados&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#451A03;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_ai">
+          <mxGeometry x="700" y="55" width="240" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ai_heuristic" value="&lt;b style='color:#34D399;'&gt;Motor Heurístico Garantido&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Varredura por Padrões Regex&lt;br&gt;Resoluções CFM 2.336/23&lt;br&gt;Fallback Final à Prova de Falhas&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064E3B;strokeColor=#34D399;strokeWidth=1.5;fontColor=#FFFFFF;" vertex="1" parent="lane_ai">
+          <mxGeometry x="1010" y="55" width="250" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ai_telemetry_out" value="&lt;b style='color:#4ADE80;'&gt;Auditoria de Tokens &amp;amp; Laudo&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Prompt Tokens + Completion Tokens&lt;br&gt;Tokens Salvos pela Sanitização&lt;br&gt;Veredito Semáforo + Score 0-100&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#080D1A;strokeColor=#4ADE80;strokeWidth=2;fontColor=#FFFFFF;" vertex="1" parent="lane_ai">
+          <mxGeometry x="1350" y="50" width="270" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- SWIMLANE 5: PERSISTÊNCIA & BANCO DE DADOS -->
+        <!-- ========================================== -->
+        <mxCell id="lane_db" value="5. CAMADA DE PERSISTÊNCIA (MongoDB Replica Set + Prisma ORM)" style="swimlane;html=1;startSize=35;rounded=1;arcSize=10;fillColor=#0B1329;strokeColor=#10B981;strokeWidth=2;fontStyle=1;fontSize=13;fontColor=#34D399;align=left;spacingLeft=15;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1150" width="2100" height="200" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="db_clients" value="&lt;b style='color:#38BDF8;'&gt;clients&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;CRM/UF, RQE, CNPJ&lt;br&gt;Status e Website&lt;/span&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#080D1A;strokeColor=#38BDF8;fontColor=#FFFFFF;" vertex="1" parent="lane_db">
+          <mxGeometry x="50" y="50" width="160" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="db_client_scraped" value="&lt;b style='color:#38BDF8;'&gt;client_scraped_data&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Isolado por clientId&lt;br&gt;DOM, Tokens, Entidades&lt;br&gt;(Sem poluir normas)&lt;/span&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#0C4A6E;strokeColor=#38BDF8;strokeWidth=2;fontColor=#FFFFFF;" vertex="1" parent="lane_db">
+          <mxGeometry x="270" y="50" width="180" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="db_scraped_pages" value="&lt;b style='color:#F59E0B;'&gt;scraped_pages&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Exclusivo Normas Oficiais&lt;br&gt;CFM, ANS, ANVISA, LGPD&lt;/span&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#080D1A;strokeColor=#F59E0B;fontColor=#FFFFFF;" vertex="1" parent="lane_db">
+          <mxGeometry x="520" y="50" width="170" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="db_agents" value="&lt;b style='color:#C084FC;'&gt;agent_modules &amp;amp; models&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Configuração de Agentes&lt;br&gt;Modelos de IA Persistidos&lt;br&gt;(Chaves, endpoints, temp)&lt;/span&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#080D1A;strokeColor=#C084FC;fontColor=#FFFFFF;" vertex="1" parent="lane_db">
+          <mxGeometry x="760" y="50" width="190" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="db_reports" value="&lt;b style='color:#10B981;'&gt;audit_reports &amp;amp; violations&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Laudos Imutáveis&lt;br&gt;Apontamentos Normativos&lt;br&gt;Score e Veredito Semáforo&lt;/span&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#080D1A;strokeColor=#10B981;fontColor=#FFFFFF;" vertex="1" parent="lane_db">
+          <mxGeometry x="1030" y="50" width="200" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="db_logs" value="&lt;b style='color:#4ADE80;'&gt;system_logs&lt;/b&gt;&lt;br&gt;&lt;span style='font-size:11px;color:#94A3B8;'&gt;Histórico do Terminal Operacional&lt;br&gt;[COCKPIT] [SCRAPER] [AI]&lt;br&gt;Rastreabilidade de Tokens&lt;/span&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#022C22;strokeColor=#4ADE80;strokeWidth=2;fontColor=#FFFFFF;" vertex="1" parent="lane_db">
+          <mxGeometry x="1300" y="50" width="220" height="95" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- CONNECTIONS & EDGES -->
+        <!-- ========================================== -->
+        <!-- Frontend to Backend -->
+        <mxCell id="edge1" value="Buscar Informações" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#38BDF8;strokeWidth=2;fontColor=#38BDF8;" edge="1" parent="1" source="ui_clinics" target="ui_extract_modal">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge2" value="POST /clients/:id/scrape" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#38BDF8;strokeWidth=2;fontColor=#38BDF8;" edge="1" parent="1" source="ui_extract_modal" target="ctrl_client">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge3" value="Disparo Imediato" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10B981;strokeWidth=2.5;fontColor=#10B981;" edge="1" parent="1" source="ui_cockpit" target="ctrl_agent">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge4" value="Gera Log [COCKPIT]" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4ADE80;strokeWidth=1.5;fontColor=#4ADE80;dashed=1;" edge="1" parent="1" source="ctrl_agent" target="db_logs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="750" y="560"/>
+              <mxPoint x="750" y="1120"/>
+              <mxPoint x="1460" y="1120"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge5" value="Envia Job" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#F59E0B;strokeWidth=2;fontColor=#F59E0B;" edge="1" parent="1" source="ctrl_agent" target="ctrl_queue_dispatch">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge6" value="BullMQ Queue" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#FBBF24;strokeWidth=2;fontColor=#FBBF24;" edge="1" parent="1" source="ctrl_queue_dispatch" target="queue_bullmq">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge7" value="Processa Job" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10B981;strokeWidth=2;fontColor=#10B981;" edge="1" parent="1" source="queue_bullmq" target="audit_worker">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge8" value="Dispara Extração" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#EC4899;strokeWidth=2;fontColor=#EC4899;" edge="1" parent="1" source="audit_worker" target="scraper_cheerio">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1630" y="780"/>
+              <mxPoint x="165" y="780"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge9" value="Gera Log [SCRAPER]" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4ADE80;strokeWidth=1.5;fontColor=#4ADE80;dashed=1;" edge="1" parent="1" source="scraper_cheerio" target="db_logs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="165" y="870"/>
+              <mxPoint x="1420" y="870"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge10" value="Envia Markdown Sanitizado" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8B5CF6;strokeWidth=2;fontColor=#C084FC;" edge="1" parent="1" source="audit_worker" target="ai_context">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1630" y="880"/>
+              <mxPoint x="180" y="880"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge11" value="Inferência com Structured Output" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#38BDF8;strokeWidth=2;fontColor=#38BDF8;" edge="1" parent="1" source="ai_context" target="ai_gemini">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge12" value="Fallback Ollama" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F59E0B;dashed=1;" edge="1" parent="1" source="ai_gemini" target="ai_ollama">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge13" value="Fallback Heurístico" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34D399;strokeWidth=1.5;fontColor=#34D399;dashed=1;" edge="1" parent="1" source="ai_ollama" target="ai_heuristic">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge14" value="Gera Log [AI_INTERACTION] &amp; [RECONCILIATION]" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4ADE80;strokeWidth=2;fontColor=#4ADE80;" edge="1" parent="1" source="ai_telemetry_out" target="db_logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge15" value="Salva Laudo &amp; Infrações" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10B981;strokeWidth=2;fontColor=#10B981;" edge="1" parent="1" source="ai_telemetry_out" target="db_reports">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge16" value="Live Stream 3s" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4ADE80;strokeWidth=2;fontColor=#4ADE80;" edge="1" parent="1" source="ctrl_telemetry" target="ui_terminal">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge17" value="Persiste Extração da Clínica" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#38BDF8;strokeWidth=2;fontColor=#38BDF8;" edge="1" parent="1" source="ctrl_client" target="db_client_scraped">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="580"/>
+              <mxPoint x="360" y="580"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge18" value="Consulta Laudos" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34D399;strokeWidth=1.5;fontColor=#34D399;" edge="1" parent="1" source="ctrl_report" target="ui_reports">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -47,7 +47,7 @@ export class NormController {
 
       // Mapeia o catálogo enriquecido com o status de infrações da clínica
       const activeRules = NORMS_CATALOG.map((norm) => {
-        const matchingViolations = violations.filter((v) => v.normCode.includes(norm.normCode) || v.normArticle === norm.article);
+        const matchingViolations = violations.filter((v) => (v.normCode && v.normCode.includes(norm.normCode)) || v.normArticle === norm.article);
         const unresolvedCount = matchingViolations.filter((v) => !v.resolved).length;
         return {
           ...norm,
