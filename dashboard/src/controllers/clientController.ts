@@ -60,7 +60,12 @@ export class ClientController {
       ]);
 
       res.status(200).json({
-        data: clients.map((c) => ({ ...c, email: c.email || 'contato@clinica.com' })),
+        data: clients.map((c) => ({
+          ...c,
+          email: c.email || 'contato@clinica.com',
+          createdAt: c.createdAt || new Date(),
+          updatedAt: c.updatedAt || new Date(),
+        })),
         pagination: {
           total,
           page,
@@ -198,9 +203,14 @@ export class ClientController {
   public static async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const data = createClientSchema.parse(req.body);
+      const now = new Date();
 
       const client = await prisma.client.create({
-        data,
+        data: {
+          ...data,
+          createdAt: now,
+          updatedAt: now,
+        },
       });
 
       res.status(201).json({

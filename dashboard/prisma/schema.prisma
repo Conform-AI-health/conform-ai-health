@@ -81,8 +81,8 @@ model Client {
   email             String?
   users             User[]
   auditReports      AuditReport[]
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  createdAt         DateTime?     @default(now())
+  updatedAt         DateTime?     @updatedAt
 
   @@map("clients")
 }
@@ -104,8 +104,8 @@ model AgentModule {
   regulatoryFramework String?         @default("CFM (Resolução 2.336/2023)")
   cronSchedule        String?         @default("0 */6 * * *")
   targetUrl           String?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  createdAt           DateTime?       @default(now())
+  updatedAt           DateTime?       @updatedAt
 
   @@map("agent_modules")
 }
@@ -117,8 +117,8 @@ model AgentDefinition {
   targetNorm   String
   defaultMode  ExtractionMode  @default(CHEERIO)
   temperature  Float           @default(0.2)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  createdAt    DateTime?       @default(now())
+  updatedAt    DateTime?       @updatedAt
 
   @@map("agent_definitions")
 }
@@ -143,8 +143,8 @@ model AuditReport {
   executionTimeMs Int            @default(0)
   status          AuditStatus    @default(PENDING)
   violations      Violation[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt       DateTime?      @default(now())
+  updatedAt       DateTime?      @updatedAt
 
   @@index([clientId, status, createdAt])
   @@map("audit_reports")
@@ -160,36 +160,36 @@ model Violation {
   detectedText     String
   correctiveAdvice String
   resolved         Boolean      @default(false)
-  createdAt        DateTime     @default(now())
+  createdAt        DateTime?    @default(now())
 
   @@index([auditReportId, severity])
   @@map("violations")
 }
 
 model SystemLog {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  level         String   // INFO, WARN, ERROR, DEBUG
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  level         String    // INFO, WARN, ERROR, DEBUG
   message       String
   module        String
   correlationId String?
   details       String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime? @default(now())
 
   @@index([level, createdAt])
   @@map("system_logs")
 }
 
 model ScrapedPage {
-  id                String       @id @default(auto()) @map("_id") @db.ObjectId
-  url               String       @unique
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  url               String    @unique
   title             String
   cleanMarkdown     String
-  rawLength         Int          @default(0)
-  tokensCount       Int          @default(0)
-  tags              String[]     // CFM, LGPD, ANVISA, ANS
-  extractedEntities String?      // Serialized JSON with entities
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  rawLength         Int       @default(0)
+  tokensCount       Int       @default(0)
+  tags              String[]  // CFM, LGPD, ANVISA, ANS
+  extractedEntities String?   // Serialized JSON with entities
+  createdAt         DateTime? @default(now())
+  updatedAt         DateTime? @updatedAt
 
   @@index([tags])
   @@index([tags, createdAt])
@@ -197,19 +197,19 @@ model ScrapedPage {
 }
 
 model AiModelConfig {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
   name        String
-  provider    String   // gemini, ollama, heuristic
-  modelId     String   // gemini-2.0-flash, qwen2.5:7b, regex-heuristic-v1
-  baseUrl     String?  // URL para Ollama local ou endpoint customizado
-  apiKey      String?  // Chave opcional customizada
-  temperature Float    @default(0.2)
-  maxTokens   Int      @default(2048)
-  isActive    Boolean  @default(false)
-  isDefault   Boolean  @default(false)
+  provider    String    // gemini, ollama, heuristic
+  modelId     String    // gemini-2.0-flash, qwen2.5:7b, regex-heuristic-v1
+  baseUrl     String?   // URL para Ollama local ou endpoint customizado
+  apiKey      String?   // Chave opcional customizada
+  temperature Float     @default(0.2)
+  maxTokens   Int       @default(2048)
+  isActive    Boolean   @default(false)
+  isDefault   Boolean   @default(false)
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime? @default(now())
+  updatedAt   DateTime? @updatedAt
 
   @@index([provider, isActive])
   @@map("ai_model_configs")

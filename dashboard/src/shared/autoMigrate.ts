@@ -211,6 +211,27 @@ export async function runAutoMigrateAndSeed() {
       if (clientsWithoutEmail.length > 0) {
         console.log(`🛡️ [AutoMigrate] ${clientsWithoutEmail.length} Cliente(s) legados sanitizados com e-mail de contato.`);
       }
+
+      // 5.3 Atualizar Clientes e Módulos com datas nulas (createdAt / updatedAt)
+      const clientsWithoutDates = await prisma.client.findMany({
+        where: {
+          OR: [{ createdAt: null }, { updatedAt: null }],
+        },
+      }).catch(() => []);
+
+      const now = new Date();
+      for (const cl of clientsWithoutDates) {
+        await prisma.client.update({
+          where: { id: cl.id },
+          data: {
+            createdAt: cl.createdAt || now,
+            updatedAt: cl.updatedAt || now,
+          },
+        }).catch(() => {});
+      }
+      if (clientsWithoutDates.length > 0) {
+        console.log(`🛡️ [AutoMigrate] ${clientsWithoutDates.length} Cliente(s) legados sanitizados com timestamps válidos.`);
+      }
     } catch (healErr: any) {
       console.warn('⚠️ [AutoMigrate] Aviso na autocura de registros legados:', healErr.message);
     }

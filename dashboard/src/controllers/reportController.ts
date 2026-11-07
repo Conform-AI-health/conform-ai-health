@@ -136,7 +136,7 @@ export class ReportController {
         return;
       }
 
-      const dateStr = new Date(report.createdAt).toLocaleDateString('pt-BR');
+      const dateStr = new Date(report.createdAt || Date.now()).toLocaleDateString('pt-BR');
       const semaphore =
         report.verdict === 'CONFORME'
           ? '🟢 REGULAR / CONFORME'
