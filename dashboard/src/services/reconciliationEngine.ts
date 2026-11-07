@@ -40,6 +40,8 @@ export class ReconciliationEngine {
   }
 
   public static async getActiveModelConfig(): Promise<{
+    id?: string;
+    name: string;
     provider: 'gemini' | 'ollama' | 'heuristic';
     modelId: string;
     baseUrl?: string | null;
@@ -59,6 +61,8 @@ export class ReconciliationEngine {
 
       if (activeFromDb) {
         this.cachedActiveModel = {
+          id: activeFromDb.id,
+          name: activeFromDb.name,
           provider: activeFromDb.provider as any,
           modelId: activeFromDb.modelId,
           baseUrl: activeFromDb.baseUrl || env.OLLAMA_BASE_URL,
@@ -75,6 +79,12 @@ export class ReconciliationEngine {
     }
 
     return {
+      name:
+        this.activeProvider === 'gemini'
+          ? 'Google Gemini 2.0 Flash'
+          : this.activeProvider === 'ollama'
+          ? 'Ollama Local'
+          : 'Motor Heurístico Deontológico',
       provider: this.activeProvider,
       modelId:
         this.activeProvider === 'gemini'
@@ -210,23 +220,69 @@ export class ReconciliationEngine {
   }
 
   /**
-   * Executa a auditoria deontológica com cascata de resiliência:
+   * Resolve o prompt de sistema especializado do agente a partir do banco de dados (MongoDB)
+   */
+  public static async resolveAgentSystemPrompt(agentModuleId?: string): Promise<string> {
+    if (agentModuleId) {
+      try {
+        const agent = await prisma.agentModule.findFirst({
+          where: {
+            OR: [{ id: agentModuleId }, { code: agentModuleId }],
+          },
+        });
+        if (agent) {
+          if (agent.systemPrompt && agent.systemPrompt.trim().length > 10) {
+            return agent.systemPrompt.trim();
+          }
+          return `Você é o agente especialista "${agent.name}" (${agent.code}).
+Finalidade e escopo: ${agent.description}.
+Marco Regulatório auditado: ${agent.regulatoryFramework || 'CFM (Resolução 2.336/2023)'}.
+Normas vinculadas: ${agent.targetNorms && agent.targetNorms.length > 0 ? agent.targetNorms.join(', ') : 'CFM 2.336/2023, LGPD em Saúde, ANS, ANVISA'}.`;
+        }
+      } catch (err: any) {
+        console.warn(`[ReconciliationEngine] Não foi possível carregar o agente ${agentModuleId}: ${err.message}`);
+      }
+    }
+
+    // Busca na definição padrão de agente
+    try {
+      const defaultAgentDef = await prisma.agentDefinition.findFirst({
+        orderBy: { createdAt: 'desc' },
+      });
+      if (defaultAgentDef?.systemPrompt && defaultAgentDef.systemPrompt.trim().length > 10) {
+        return defaultAgentDef.systemPrompt.trim();
+      }
+    } catch {
+      // Continua para fallback padrão
+    }
+
+    return `Você é o Auditor Deontológico Sênior da ConformIA, especialista na Resolução CFM nº 2.336/2023, ANS, ANVISA e LGPD em Saúde.
+Sua missão é auditar o conteúdo textual e descritivo de materiais médicos e confrontá-los com o catálogo de normas deontológicas vigentes.`;
+  }
+
+  /**
+   * Executa a auditoria deontológica com cascata de resiliência e prompt do agente:
    * 1. Google Gemini (Gemini 2.0 Flash)
    * 2. Fallback: Ollama Local (qwen2.5:7b)
    * 3. Fallback: Heurística Deontológica Determinística por Regras/Regex
    */
-  public static async reconcile(scrape: ScrapeResult): Promise<ReconciliationOutput> {
-    console.log(`[ReconciliationEngine] Iniciando auditoria para ${scrape.url} usando provedor preferencial: ${this.activeProvider}`);
+  public static async reconcile(scrape: ScrapeResult, agentModuleId?: string): Promise<ReconciliationOutput> {
+    const activeModel = await this.getActiveModelConfig();
+    const effectiveProvider = activeModel.provider || this.activeProvider;
+    console.log(`[ReconciliationEngine] Iniciando auditoria para ${scrape.url} usando modelo: ${activeModel.name} (${effectiveProvider})`);
+
+    // Consome o systemPrompt dinâmico a partir do módulo de agente cadastrado no banco
+    const agentSystemPrompt = await this.resolveAgentSystemPrompt(agentModuleId);
 
     // Se configurado explicitamente para heurística
-    if (this.activeProvider === 'heuristic') {
-      return this.reconcileWithHeuristic(scrape, 'Execução direta por heurística determinística');
+    if (effectiveProvider === 'heuristic') {
+      return this.reconcileWithHeuristic(scrape, `Execução direta por heurística determinística (${activeModel.name})`);
     }
 
     // Tentativa 1: Gemini
-    if (this.activeProvider === 'gemini' && env.GEMINI_API_KEY && env.GEMINI_API_KEY !== 'mock-key-for-tests-and-dev') {
+    if (effectiveProvider === 'gemini') {
       try {
-        return await this.reconcileWithGemini(scrape);
+        return await this.reconcileWithGemini(scrape, agentSystemPrompt, activeModel);
       } catch (err: any) {
         console.warn(`[ReconciliationEngine] Falha na chamada ao Google Gemini (${err.message}). Tentando fallback para Ollama...`);
       }
@@ -234,24 +290,36 @@ export class ReconciliationEngine {
 
     // Tentativa 2: Ollama Local
     try {
-      return await this.reconcileWithOllama(scrape);
+      return await this.reconcileWithOllama(scrape, agentSystemPrompt, activeModel);
     } catch (err: any) {
       console.warn(`[ReconciliationEngine] Falha no Ollama Local (${err.message}). Ativando Heurística Deontológica por Regras...`);
     }
 
     // Tentativa 3: Heurística Determinística Garantida
-    return this.reconcileWithHeuristic(scrape, 'Fallback automático ativado: Análise deontológica por regras e catálogo');
+    return this.reconcileWithHeuristic(scrape, `Fallback automático ativado: Análise deontológica por regras e catálogo (${activeModel.name})`);
   }
 
   /**
-   * Chamada com Google Gemini via novo SDK @google/genai com Structured Output
+   * Chamada com Google Gemini via novo SDK @google/genai com Structured Output e Prompt do Agente
    */
-  private static async reconcileWithGemini(scrape: ScrapeResult): Promise<ReconciliationOutput> {
-    const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+  private static async reconcileWithGemini(
+    scrape: ScrapeResult,
+    agentSystemPrompt: string,
+    modelConfig?: any
+  ): Promise<ReconciliationOutput> {
+    const apiKey = modelConfig?.apiKey || env.GEMINI_API_KEY;
+    const modelId = modelConfig?.modelId || 'gemini-2.0-flash';
 
-    const systemPrompt = `
-Você é o Auditor Deontológico Sênior da ConformIA, especialista na Resolução CFM nº, ANS, ANVISA e LGPD em Saúde.
-Sua missão é auditar o conteúdo textual e descritivo de materiais médicos e confrontá-los com o catálogo de normas.
+    if (!apiKey || apiKey === 'mock-key-for-tests-and-dev') {
+      throw new Error('Chave de API do Gemini não configurada em ambiente real.');
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    const completeSystemInstruction = `
+${agentSystemPrompt}
+
+DIRETRIZES ESTRITAS DE AUDITORIA DEONTOLÓGICA:
 Você DEVE responder estritamente no formato JSON estruturado definido pelo schema.
 Critérios de severidade:
 - CRITICA: Ausência total de CRM/RQE ao divulgar especialidade médica, promessa de cura ou resultado 100% garantido, propaganda de remédio sob prescrição ao público leigo, vazamento de dados de saúde.
@@ -286,10 +354,10 @@ Faça a auditoria completa e retorne o JSON com verdict, score, summary e array 
 `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: modelId,
       contents: prompt,
       config: {
-        systemInstruction: systemPrompt,
+        systemInstruction: completeSystemInstruction,
         responseMimeType: 'application/json',
       },
     });
@@ -310,16 +378,26 @@ Faça a auditoria completa e retorne o JSON com verdict, score, summary e array 
       completionTokens,
       totalTokens,
       sourcesUsed,
-      aiModelUsed: 'gemini-2.0-flash',
+      aiModelUsed: `gemini:${modelId}`,
     });
   }
 
   /**
-   * Chamada para Ollama Local (ex: qwen2.5:7b ou llama3)
+   * Chamada para Ollama Local com prompt do agente consumido do banco
    */
-  private static async reconcileWithOllama(scrape: ScrapeResult): Promise<ReconciliationOutput> {
+  private static async reconcileWithOllama(
+    scrape: ScrapeResult,
+    agentSystemPrompt: string,
+    modelConfig?: any
+  ): Promise<ReconciliationOutput> {
+    const ollamaUrl = modelConfig?.baseUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    const model = modelConfig?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b';
+
     const prompt = `
-Você é o Auditor Deontológico da ConformIA. Audite o seguinte material sob a Resolução CFM 2.336/23 e LGPD.
+${agentSystemPrompt}
+
+DIRETRIZES DE AUDITORIA:
+Audite o seguinte material sob as diretrizes deontológicas da Resolução CFM 2.336/23 e LGPD.
 Retorne APENAS um JSON válido no formato:
 {
   "verdict": "CONFORME" | "PARCIALMENTE_CONFORME" | "NAO_CONFORME",
@@ -341,9 +419,9 @@ ${scrape.cleanMarkdown.substring(0, 4000)}
 `;
 
     const response = await axios.post(
-      `${env.OLLAMA_BASE_URL}/api/generate`,
+      `${ollamaUrl}/api/generate`,
       {
-        model: env.OLLAMA_MODEL,
+        model,
         prompt,
         format: 'json',
         stream: false,
@@ -365,7 +443,7 @@ ${scrape.cleanMarkdown.substring(0, 4000)}
       completionTokens,
       totalTokens,
       sourcesUsed,
-      aiModelUsed: `ollama:${env.OLLAMA_MODEL}`,
+      aiModelUsed: `ollama:${model}`,
     });
   }
 

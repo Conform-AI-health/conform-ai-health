@@ -94,7 +94,10 @@ export const AgentsPage: React.FC = () => {
         api.get(`/agents?page=${page}&limit=${limit}`),
         api.get('/clients?limit=100'),
         api.get('/norms/catalog'),
-        api.get('/models?limit=50').catch(() => ({ data: { data: [] } })),
+        api.get('/models?limit=50').catch((err) => {
+          console.warn('⚠️ Falha ao buscar modelos do banco:', err.response?.data || err.message);
+          return { data: { data: [] } };
+        }),
       ]);
 
       if (modulesRes.data?.data && modulesRes.data?.pagination) {
@@ -114,7 +117,14 @@ export const AgentsPage: React.FC = () => {
 
       setClients(clientsRes.data?.data || []);
       setCatalogNorms(normsRes.data?.norms || []);
-      setAiModels(modelsRes.data?.data || []);
+
+      // Tratamento resiliente da lista de modelos de IA persistidos
+      const modelsList = Array.isArray(modelsRes.data?.data)
+        ? modelsRes.data.data
+        : Array.isArray(modelsRes.data)
+        ? modelsRes.data
+        : [];
+      setAiModels(modelsList);
 
       if (modulesRes.data?.data?.[0]?.id && !selectedModuleId) {
         setSelectedModuleId(modulesRes.data.data[0].id);
@@ -196,7 +206,19 @@ export const AgentsPage: React.FC = () => {
     e.preventDefault();
     try {
       setCreatingModel(true);
-      await api.post('/models', newModelData);
+      const payload: any = {
+        name: newModelData.name.trim(),
+        provider: newModelData.provider,
+        modelId: newModelData.modelId.trim(),
+        temperature: Number(newModelData.temperature) || 0.2,
+        maxTokens: Number(newModelData.maxTokens) || 2048,
+        isActive: Boolean(newModelData.isActive),
+      };
+      if (newModelData.baseUrl?.trim()) payload.baseUrl = newModelData.baseUrl.trim();
+      if (newModelData.apiKey?.trim()) payload.apiKey = newModelData.apiKey.trim();
+      if (newModelData.description?.trim()) payload.description = newModelData.description.trim();
+
+      const res = await api.post('/models', payload);
       setShowCreateModelModal(false);
       setNewModelData({
         name: '',
@@ -209,8 +231,17 @@ export const AgentsPage: React.FC = () => {
         description: '',
         isActive: false,
       });
-      await fetchData(currentPage, pageSize);
-      alert('Novo modelo de IA cadastrado com sucesso no banco de dados!');
+
+      // Recarrega lista e atualiza o estado imediatamente
+      const modelsRes = await api.get('/models?limit=50');
+      const list = Array.isArray(modelsRes.data?.data)
+        ? modelsRes.data.data
+        : Array.isArray(modelsRes.data)
+        ? modelsRes.data
+        : [];
+      setAiModels(list);
+
+      alert(`Modelo "${res.data?.name || payload.name}" cadastrado e persistido com sucesso no MongoDB!`);
     } catch (err: any) {
       alert(`Erro ao cadastrar modelo: ${err.response?.data?.error || err.message}`);
     } finally {
@@ -531,108 +562,124 @@ export const AgentsPage: React.FC = () => {
           </div>
 
           {/* Grid de Modelos Cadastrados no Banco */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {aiModels.map((model) => {
-              const isCurrentActive = model.isActive;
+          {aiModels.length === 0 ? (
+            <div className="p-12 text-center bg-[#0b1329] border border-slate-800 rounded-2xl">
+              <Cpu className="h-10 w-10 text-purple-400 mx-auto mb-3 opacity-60" />
+              <h3 className="text-base font-bold text-white mb-1">Nenhum Modelo de IA Encontrado no Banco</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto mb-4">
+                Cadastre um novo modelo de IA para persistir no MongoDB e alternar o motor em tempo de execução.
+              </p>
+              <button
+                onClick={() => setShowCreateModelModal(true)}
+                className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs py-2 px-4 rounded-xl transition shadow-lg shadow-purple-950/40"
+              >
+                Cadastrar Primeiro Modelo
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {aiModels.map((model) => {
+                const isCurrentActive = model.isActive;
 
-              return (
-                <div
-                  key={model.id}
-                  className={`bg-[#0b1329] border rounded-2xl p-5 shadow-lg flex flex-col justify-between transition ${
-                    isCurrentActive
-                      ? 'border-purple-500/80 shadow-purple-950/30'
-                      : 'border-slate-800 hover:border-slate-700'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2.5">
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                          model.provider === 'gemini'
-                            ? 'bg-purple-950/80 text-purple-400 border border-purple-800/60'
-                            : model.provider === 'ollama'
-                            ? 'bg-blue-950/80 text-blue-400 border border-blue-800/60'
-                            : 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60'
-                        }`}
+                return (
+                  <div
+                    key={model.id}
+                    className={`bg-[#0b1329] border rounded-2xl p-5 shadow-lg flex flex-col justify-between transition ${
+                      isCurrentActive
+                        ? 'border-purple-500/80 shadow-purple-950/30'
+                        : 'border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2.5">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                            model.provider === 'gemini'
+                              ? 'bg-purple-950/80 text-purple-400 border border-purple-800/60'
+                              : model.provider === 'ollama'
+                              ? 'bg-blue-950/80 text-blue-400 border border-blue-800/60'
+                              : 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60'
+                          }`}
+                        >
+                          {model.provider}
+                        </span>
+
+                        {isCurrentActive ? (
+                          <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3" />
+                            <span>Ativo em Produção</span>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleDeleteModel(model.id, model.name)}
+                            className="text-slate-600 hover:text-red-400 p-1 rounded transition"
+                            title="Remover modelo"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <h3 className="text-base font-bold text-white mb-1">{model.name}</h3>
+                      <span className="text-xs font-mono text-slate-400 block mb-3">{model.modelId}</span>
+
+                      <p className="text-xs text-slate-400 mb-4 line-clamp-2">
+                        {model.description || 'Configuração customizada de inferência de IA.'}
+                      </p>
+
+                      <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-800 text-[11px] space-y-1.5 font-mono mb-4">
+                        <div className="flex justify-between text-slate-400">
+                          <span>Temperatura:</span>
+                          <span className="text-white font-semibold">{model.temperature}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-400">
+                          <span>Max Tokens:</span>
+                          <span className="text-white font-semibold">{model.maxTokens}</span>
+                        </div>
+                        {model.baseUrl && (
+                          <div className="flex justify-between text-slate-400 truncate">
+                            <span>Endpoint:</span>
+                            <span className="text-slate-300 truncate max-w-[140px]">{model.baseUrl}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleOpenTestModal(model.id)}
+                        className="text-xs text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 transition px-2.5 py-1.5 rounded-lg hover:bg-purple-950/40 border border-purple-900/30"
+                        title="Testar resposta deste modelo"
                       >
-                        {model.provider}
-                      </span>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>Testar</span>
+                      </button>
 
                       {isCurrentActive ? (
-                        <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <CheckCircle2 className="h-3 w-3" />
-                          <span>Ativo em Produção</span>
+                        <span className="text-xs text-emerald-400 font-semibold italic flex items-center gap-1">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          <span>Ativo</span>
                         </span>
                       ) : (
                         <button
-                          onClick={() => handleDeleteModel(model.id, model.name)}
-                          className="text-slate-600 hover:text-red-400 p-1 rounded transition"
-                          title="Remover modelo"
+                          onClick={() => handleActivateModel(model.id)}
+                          disabled={activatingModelId === model.id}
+                          className="bg-slate-800 hover:bg-cyan-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          {activatingModelId === model.id ? (
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Radio className="h-3.5 w-3.5" />
+                          )}
+                          <span>Ativar</span>
                         </button>
                       )}
                     </div>
-
-                    <h3 className="text-base font-bold text-white mb-1">{model.name}</h3>
-                    <span className="text-xs font-mono text-slate-400 block mb-3">{model.modelId}</span>
-
-                    <p className="text-xs text-slate-400 mb-4 line-clamp-2">
-                      {model.description || 'Configuração customizada de inferência de IA.'}
-                    </p>
-
-                    <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-800 text-[11px] space-y-1.5 font-mono mb-4">
-                      <div className="flex justify-between text-slate-400">
-                        <span>Temperatura:</span>
-                        <span className="text-white font-semibold">{model.temperature}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>Max Tokens:</span>
-                        <span className="text-white font-semibold">{model.maxTokens}</span>
-                      </div>
-                      {model.baseUrl && (
-                        <div className="flex justify-between text-slate-400 truncate">
-                          <span>Endpoint:</span>
-                          <span className="text-slate-300 truncate max-w-[140px]">{model.baseUrl}</span>
-                        </div>
-                      )}
-                    </div>
                   </div>
-
-                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => handleOpenTestModal(model.id)}
-                      className="text-xs text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 transition px-2.5 py-1.5 rounded-lg hover:bg-purple-950/40 border border-purple-900/30"
-                      title="Testar resposta deste modelo"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Testar</span>
-                    </button>
-
-                    {isCurrentActive ? (
-                      <span className="text-xs text-emerald-400 font-semibold italic flex items-center gap-1">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>Ativo</span>
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => handleActivateModel(model.id)}
-                        disabled={activatingModelId === model.id}
-                        className="bg-slate-800 hover:bg-cyan-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
-                      >
-                        {activatingModelId === model.id ? (
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Radio className="h-3.5 w-3.5" />
-                        )}
-                        <span>Ativar</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

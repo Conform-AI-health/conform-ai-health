@@ -19,7 +19,7 @@ export function startAuditWorker() {
   const worker = new Worker<AuditJobData>(
     'auditQueue',
     async (job: Job<AuditJobData>) => {
-      const { auditReportId, clientId, targetUrl, extractionMode } = job.data;
+      const { auditReportId, clientId, targetUrl, extractionMode, agentModuleId } = job.data;
       const startTime = Date.now();
 
       console.log(`[Job ${job.id}] Iniciando processamento de auditoria para Report: ${auditReportId} (${targetUrl})`);
@@ -34,8 +34,8 @@ export function startAuditWorker() {
         // 1. Extração da página web
         const scrape = await ScraperService.scrape(targetUrl, extractionMode);
 
-        // 2. Reconciliação Deontológica com IA
-        const reconciliation = await ReconciliationEngine.reconcile(scrape);
+        // 2. Reconciliação Deontológica com IA consumindo prompt do agente
+        const reconciliation = await ReconciliationEngine.reconcile(scrape, agentModuleId);
         const executionTimeMs = Date.now() - startTime;
 
         // 3. Persistência Imutável dos Resultados

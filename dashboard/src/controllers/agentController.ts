@@ -284,7 +284,7 @@ export class AgentController {
 
             const startTime = Date.now();
             const scrape = await ScraperService.scrape(targetUrl, effectiveMode);
-            const recon = await ReconciliationEngine.reconcile(scrape);
+            const recon = await ReconciliationEngine.reconcile(scrape, agentModuleId);
             const executionTimeMs = Date.now() - startTime;
 
             await prisma.$transaction(async (tx) => {
