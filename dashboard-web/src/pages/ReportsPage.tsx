@@ -13,6 +13,7 @@ import {
   Building,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { Pagination } from '../components/Pagination';
 
 export const ReportsPage: React.FC = () => {
   const [reports, setReports] = useState<any[]>([]);
@@ -21,14 +22,27 @@ export const ReportsPage: React.FC = () => {
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
-  const fetchReports = async () => {
+  // Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalReports, setTotalReports] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const fetchReports = async (page = currentPage, limit = pageSize) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (verdictFilter) params.append('verdict', verdictFilter);
+      params.append('page', String(page));
+      params.append('limit', String(limit));
 
       const res = await api.get(`/reports?${params.toString()}`);
       setReports(res.data?.data || []);
+      if (res.data?.pagination) {
+        setTotalReports(res.data.pagination.total);
+        setTotalPages(res.data.pagination.totalPages);
+        setCurrentPage(res.data.pagination.page);
+      }
     } catch (err) {
       console.error('Erro ao carregar laudos:', err);
     } finally {
@@ -37,8 +51,12 @@ export const ReportsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchReports();
+    fetchReports(1, pageSize);
   }, [verdictFilter]);
+
+  useEffect(() => {
+    fetchReports(currentPage, pageSize);
+  }, [currentPage, pageSize]);
 
   const handleOpenDetails = async (id: string) => {
     try {
@@ -191,6 +209,18 @@ export const ReportsPage: React.FC = () => {
             )}
           </tbody>
         </table>
+
+        {/* Paginação de Laudos */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalReports}
+          itemsPerPage={pageSize}
+          onPageChange={(p) => setCurrentPage(p)}
+          onLimitChange={(l) => setPageSize(l)}
+          limitOptions={[5, 10, 20, 50]}
+          itemLabel="laudos de auditoria"
+        />
       </div>
 
       {/* Modal / Drawer de Detalhes do Laudo */}

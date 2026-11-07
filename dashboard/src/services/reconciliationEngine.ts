@@ -41,6 +41,102 @@ export class ReconciliationEngine {
   }
 
   /**
+   * Realiza teste pontual de integridade, latência e conectividade com o modelo ativo
+   */
+  public static async testModelResponse(customPrompt?: string): Promise<{
+    provider: string;
+    model: string;
+    status: 'ONLINE' | 'DEGRADED' | 'OFFLINE';
+    latencyMs: number;
+    response: string;
+    testedAt: string;
+    details?: any;
+  }> {
+    const startTime = Date.now();
+    const provider = this.activeProvider;
+    const prompt = customPrompt || 'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica da Resolução CFM 2.336/2023.';
+
+    if (provider === 'gemini') {
+      try {
+        if (!env.GEMINI_API_KEY || env.GEMINI_API_KEY === 'mock-key-for-tests-and-dev') {
+          return {
+            provider: 'gemini',
+            model: 'gemini-2.0-flash',
+            status: 'DEGRADED',
+            latencyMs: Date.now() - startTime,
+            response: 'Ambiente de teste/desenvolvimento: Chave GEMINI_API_KEY mockada. Operando em modo de simulação local.',
+            testedAt: new Date().toISOString(),
+          };
+        }
+        const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+        const res = await ai.models.generateContent({
+          model: 'gemini-2.0-flash',
+          contents: prompt,
+        });
+        const latencyMs = Date.now() - startTime;
+        return {
+          provider: 'gemini',
+          model: 'gemini-2.0-flash',
+          status: 'ONLINE',
+          latencyMs,
+          response: res.text || 'Modelo Gemini 2.0 Flash respondeu com sucesso ao teste deontológico.',
+          testedAt: new Date().toISOString(),
+        };
+      } catch (err: any) {
+        return {
+          provider: 'gemini',
+          model: 'gemini-2.0-flash',
+          status: 'OFFLINE',
+          latencyMs: Date.now() - startTime,
+          response: `Falha na comunicação com o Gemini: ${err.message}`,
+          testedAt: new Date().toISOString(),
+          details: err.message,
+        };
+      }
+    } else if (provider === 'ollama') {
+      try {
+        const ollamaUrl = env.OLLAMA_BASE_URL || 'http://localhost:11434';
+        const model = env.OLLAMA_MODEL || 'qwen2.5:7b';
+        const res = await axios.post(`${ollamaUrl}/api/generate`, {
+          model,
+          prompt,
+          stream: false,
+        }, { timeout: 8000 });
+        const latencyMs = Date.now() - startTime;
+        return {
+          provider: 'ollama',
+          model,
+          status: 'ONLINE',
+          latencyMs,
+          response: res.data?.response || 'Modelo Ollama respondeu com sucesso.',
+          testedAt: new Date().toISOString(),
+        };
+      } catch (err: any) {
+        return {
+          provider: 'ollama',
+          model: env.OLLAMA_MODEL || 'qwen2.5:7b',
+          status: 'OFFLINE',
+          latencyMs: Date.now() - startTime,
+          response: `Falha na comunicação com o Ollama Local: ${err.message}`,
+          testedAt: new Date().toISOString(),
+          details: err.message,
+        };
+      }
+    } else {
+      // Provedor Heurístico
+      const latencyMs = Date.now() - startTime;
+      return {
+        provider: 'heuristic',
+        model: 'regex-heuristic-v1',
+        status: 'ONLINE',
+        latencyMs,
+        response: 'Motor Heurístico Deontológico Operacional: Catálogo CFM 2.336/2023 e LGPD ativo em memória.',
+        testedAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  /**
    * Executa a auditoria deontológica com cascata de resiliência:
    * 1. Google Gemini (Gemini 2.0 Flash)
    * 2. Fallback: Ollama Local (qwen2.5:7b)

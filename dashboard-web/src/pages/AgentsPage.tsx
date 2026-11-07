@@ -13,8 +13,13 @@ import {
   BookOpen,
   X,
   FileCode,
+  Sparkles,
+  Activity,
+  Clock,
+  AlertCircle,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { Pagination } from '../components/Pagination';
 
 export const AgentsPage: React.FC = () => {
   const [modules, setModules] = useState<any[]>([]);
@@ -23,6 +28,17 @@ export const AgentsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [currentProvider, setCurrentProvider] = useState('gemini');
   const [togglingProvider, setTogglingProvider] = useState(false);
+
+  // Paginação dos Módulos de Agente
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(6);
+  const [totalModules, setTotalModules] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Teste de Conectividade do Modelo de IA
+  const [testingModel, setTestingModel] = useState(false);
+  const [showTestModal, setShowTestModal] = useState(false);
+  const [testResult, setTestResult] = useState<any>(null);
 
   // Modal de Execução de Agente
   const [activeModule, setActiveModule] = useState<any>(null);
@@ -44,23 +60,37 @@ export const AgentsPage: React.FC = () => {
   });
   const [creatingAgent, setCreatingAgent] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = async (page = currentPage, limit = pageSize) => {
     try {
       setLoading(true);
       const [modulesRes, clientsRes, systemRes, normsRes] = await Promise.all([
-        api.get('/agents'),
+        api.get(`/agents?page=${page}&limit=${limit}`),
         api.get('/clients?limit=100'),
         api.get('/system/status'),
         api.get('/norms/catalog'),
       ]);
 
-      setModules(modulesRes.data || []);
+      if (modulesRes.data?.data && modulesRes.data?.pagination) {
+        setModules(modulesRes.data.data);
+        setTotalModules(modulesRes.data.pagination.total);
+        setTotalPages(modulesRes.data.pagination.totalPages);
+        setCurrentPage(modulesRes.data.pagination.page);
+      } else if (Array.isArray(modulesRes.data)) {
+        setModules(modulesRes.data);
+        setTotalModules(modulesRes.data.length);
+        setTotalPages(Math.ceil(modulesRes.data.length / limit) || 1);
+      } else {
+        setModules([]);
+        setTotalModules(0);
+        setTotalPages(1);
+      }
+
       setClients(clientsRes.data?.data || []);
       setCatalogNorms(normsRes.data?.norms || []);
       if (systemRes.data?.aiProvider) {
         setCurrentProvider(systemRes.data.aiProvider);
       }
-      if (clientsRes.data?.data?.[0]?.id) {
+      if (clientsRes.data?.data?.[0]?.id && !selectedClientId) {
         setSelectedClientId(clientsRes.data.data[0].id);
         setTargetUrl(clientsRes.data.data[0].websiteUrl || '');
       }
@@ -72,8 +102,29 @@ export const AgentsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(currentPage, pageSize);
+  }, [currentPage, pageSize]);
+
+  const handleTestModel = async () => {
+    try {
+      setTestingModel(true);
+      const res = await api.post('/system/test-ai');
+      setTestResult(res.data);
+      setShowTestModal(true);
+    } catch (err: any) {
+      setTestResult({
+        provider: currentProvider,
+        model: 'indisponível',
+        status: 'OFFLINE',
+        latencyMs: 0,
+        response: `Falha na requisição ao endpoint de diagnóstico: ${err.response?.data?.error || err.message}`,
+        testedAt: new Date().toISOString(),
+      });
+      setShowTestModal(true);
+    } finally {
+      setTestingModel(false);
+    }
+  };
 
   const handleProviderToggle = async (newProvider: 'gemini' | 'ollama' | 'heuristic') => {
     try {
@@ -212,6 +263,21 @@ export const AgentsPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Botão de Teste de Integridade do Modelo de IA */}
+          <button
+            onClick={handleTestModel}
+            disabled={testingModel}
+            className="bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/40 text-purple-200 font-semibold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-purple-950/40 flex items-center gap-2 transition disabled:opacity-50"
+            title="Testar conectividade e tempo de resposta do modelo ativo"
+          >
+            {testingModel ? (
+              <RefreshCw className="h-4 w-4 animate-spin text-purple-300" />
+            ) : (
+              <Sparkles className="h-4 w-4 text-purple-400" />
+            )}
+            <span>{testingModel ? 'Testando...' : 'Testar Modelo de IA'}</span>
+          </button>
+
           <button
             onClick={() => setShowCreateModal(true)}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-2.5 px-4 rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-2 transition"
@@ -335,6 +401,18 @@ export const AgentsPage: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* Paginação dos Módulos */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={totalModules}
+        itemsPerPage={pageSize}
+        onPageChange={(p) => setCurrentPage(p)}
+        onLimitChange={(l) => setPageSize(l)}
+        limitOptions={[4, 6, 12, 24]}
+        itemLabel="módulos de agente"
+      />
 
       {/* Modal de Cadastro de Novo Agente */}
       {showCreateModal && (
@@ -623,6 +701,114 @@ export const AgentsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Diagnóstico do Modelo de IA */}
+      {showTestModal && testResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0b1329] border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-950/60 border border-purple-800/40">
+                  <Sparkles className="h-5 w-5 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Diagnóstico do Modelo de IA</h3>
+                  <span className="text-xs text-slate-400">Verificação de integridade e resposta em tempo real</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTestModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {/* Badges de Status e Métricas */}
+              <div className="grid grid-cols-3 gap-2.5 text-center">
+                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Status</span>
+                  <span
+                    className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${
+                      testResult.status === 'ONLINE'
+                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
+                        : testResult.status === 'DEGRADED'
+                        ? 'bg-amber-950 text-amber-400 border border-amber-800/60'
+                        : 'bg-red-950 text-red-400 border border-red-800/60'
+                    }`}
+                  >
+                    {testResult.status === 'ONLINE' && <CheckCircle2 className="h-3 w-3" />}
+                    {testResult.status === 'DEGRADED' && <AlertCircle className="h-3 w-3" />}
+                    {testResult.status === 'OFFLINE' && <X className="h-3 w-3" />}
+                    {testResult.status}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Latência</span>
+                  <span className="text-xs font-mono font-bold text-white flex items-center justify-center gap-1">
+                    <Clock className="h-3 w-3 text-purple-400" />
+                    {testResult.latencyMs} ms
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Motor</span>
+                  <span className="text-xs font-mono font-bold text-slate-200 truncate block">
+                    {testResult.provider?.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Detalhes do Modelo */}
+              <div className="p-3.5 bg-slate-900/50 border border-slate-800 rounded-xl text-xs space-y-1.5 font-mono">
+                <div className="flex justify-between text-slate-400">
+                  <span>Modelo Utilizado:</span>
+                  <span className="text-slate-200 font-semibold">{testResult.model}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Data/Hora do Teste:</span>
+                  <span className="text-slate-300">
+                    {testResult.testedAt ? new Date(testResult.testedAt).toLocaleTimeString('pt-BR') : '-'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Resposta do Modelo */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Activity className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Resposta Retornada pelo Modelo:</span>
+                </label>
+                <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-300 max-h-48 overflow-y-auto leading-relaxed">
+                  {testResult.response || 'Sem resposta.'}
+                </div>
+              </div>
+
+              {/* Ações */}
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={handleTestModel}
+                  disabled={testingModel}
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${testingModel ? 'animate-spin' : ''}`} />
+                  <span>Testar Novamente</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowTestModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-xl shadow-lg shadow-purple-950/40 transition"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

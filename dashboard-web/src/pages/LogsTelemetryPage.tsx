@@ -18,6 +18,7 @@ import {
   Info,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { Pagination } from '../components/Pagination';
 
 export const LogsTelemetryPage: React.FC = () => {
   const [telemetry, setTelemetry] = useState<any>(null);
@@ -57,6 +58,12 @@ export const LogsTelemetryPage: React.FC = () => {
   const audits = telemetry?.auditsTelemetry || [];
   const sourcesDistribution = telemetry?.sourcesDistribution || [];
   const logs = telemetry?.systemLogs || [];
+
+  // Paginação dos Registros de Auditoria
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPageSize, setAuditPageSize] = useState(5);
+  const paginatedAudits = audits.slice((auditPage - 1) * auditPageSize, auditPage * auditPageSize);
+  const totalAuditPages = Math.ceil(audits.length / auditPageSize) || 1;
 
   const filteredLogs = logs.filter((log: any) => {
     const matchesLevel = logFilter === 'ALL' || log.level === logFilter;
@@ -258,7 +265,7 @@ export const LogsTelemetryPage: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                audits.map((a: any) => (
+                paginatedAudits.map((a: any) => (
                   <tr key={a.id} className="hover:bg-slate-900/60 transition text-xs">
                     <td className="py-3 px-4">
                       <span className="font-semibold text-white block">{a.clientName}</span>
@@ -309,6 +316,18 @@ export const LogsTelemetryPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Paginação de Auditorias */}
+        <Pagination
+          currentPage={auditPage}
+          totalPages={totalAuditPages}
+          totalItems={audits.length}
+          itemsPerPage={auditPageSize}
+          onPageChange={(p) => setAuditPage(p)}
+          onLimitChange={(l) => setAuditPageSize(l)}
+          limitOptions={[5, 10, 25]}
+          itemLabel="registros de auditoria"
+        />
       </div>
 
       {/* Terminal de Logs Operacionais do Sistema */}

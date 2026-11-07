@@ -11,6 +11,7 @@ import {
   Stethoscope,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { Pagination } from '../components/Pagination';
 
 export const ClientsPage: React.FC = () => {
   const [clients, setClients] = useState<any[]>([]);
@@ -18,6 +19,12 @@ export const ClientsPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalClients, setTotalClients] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   // Formulário de Criação
   const [formData, setFormData] = useState({
@@ -35,15 +42,22 @@ export const ClientsPage: React.FC = () => {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchClients = async () => {
+  const fetchClients = async (page = currentPage, limit = pageSize) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (search) params.append('search', search);
       if (statusFilter) params.append('status', statusFilter);
+      params.append('page', String(page));
+      params.append('limit', String(limit));
 
       const res = await api.get(`/clients?${params.toString()}`);
       setClients(res.data?.data || []);
+      if (res.data?.pagination) {
+        setTotalClients(res.data.pagination.total);
+        setTotalPages(res.data.pagination.totalPages);
+        setCurrentPage(res.data.pagination.page);
+      }
     } catch (err) {
       console.error('Erro ao buscar clientes:', err);
     } finally {
@@ -52,8 +66,12 @@ export const ClientsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchClients();
+    fetchClients(1, pageSize);
   }, [search, statusFilter]);
+
+  useEffect(() => {
+    fetchClients(currentPage, pageSize);
+  }, [currentPage, pageSize]);
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,6 +243,18 @@ export const ClientsPage: React.FC = () => {
             )}
           </tbody>
         </table>
+
+        {/* Paginação de Clínicas */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalClients}
+          itemsPerPage={pageSize}
+          onPageChange={(p) => setCurrentPage(p)}
+          onLimitChange={(l) => setPageSize(l)}
+          limitOptions={[5, 10, 20, 50]}
+          itemLabel="instituições médicas"
+        />
       </div>
 
       {/* Modal de Cadastro */}

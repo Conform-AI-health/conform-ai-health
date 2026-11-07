@@ -9,6 +9,7 @@ router.get('/status', SystemController.status);
 router.get('/telemetry', authenticate, authorize(Role.ADMIN, Role.AUDITOR), TelemetryController.getTelemetry);
 
 router.post('/toggle-provider', authenticate, authorize(Role.ADMIN), SystemController.toggleProvider);
+router.post('/test-ai', authenticate, authorize(Role.ADMIN, Role.AUDITOR), SystemController.testAi);
 router.get('/logs', authenticate, authorize(Role.ADMIN, Role.AUDITOR), SystemController.logs);
 
 export default router;
