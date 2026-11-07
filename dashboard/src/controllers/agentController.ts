@@ -26,7 +26,8 @@ const updateAgentSchema = createAgentSchema.partial();
 const runAuditSchema = z.object({
   clientId: z.string().min(1, 'clientId é obrigatório'),
   targetUrl: z.string().url('targetUrl deve ser uma URL válida'),
-  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL']).optional(),
+  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).optional(),
+  skill: z.string().optional(),
 });
 
 export class AgentController {
