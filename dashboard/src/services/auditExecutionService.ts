@@ -90,12 +90,37 @@ export class AuditExecutionService {
       }).catch(() => {});
 
       // 4. Resolução Dinâmica de Normas no Banco de Dados através das Tags do Módulo
+      const agentContext = await ReconciliationEngine.resolveAgentContext(agentModuleId);
+      const allFilesAndNorms = agentContext.activeNorms.map(
+        (n) => `${n.normCode}${n.article ? ` (${n.article})` : ''}: ${n.title}`
+      );
+      const normsFilesNames = agentContext.resolvedDbNorms?.map((n) => n.normCode || n.title) || [];
+      const combinedNormsList = Array.from(new Set([...allFilesAndNorms, ...normsFilesNames]));
+
+      // Log operacional dedicado das normas e arquivos normativos acionados na telemetria
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'AI_NORMS',
+          correlationId,
+          message: `📚 [AI_NORMS] ${combinedNormsList.length} arquivo(s)/norma(s) regulatória(s) carregados para comunicação com IA: ${combinedNormsList.slice(0, 3).join(' | ')}${combinedNormsList.length > 3 ? ` (+${combinedNormsList.length - 3} normas)` : ''}`,
+          details: JSON.stringify({
+            moduleId: agentModuleId,
+            moduleName,
+            tags: moduleTags,
+            totalNormsCount: combinedNormsList.length,
+            normsAndFilesUsed: combinedNormsList,
+            sources: ['MongoDB (scraped_pages)', 'normas/*.md', 'NORMS_CATALOG'],
+          }),
+        },
+      }).catch(() => {});
+
       await prisma.systemLog.create({
         data: {
           level: 'INFO',
           module: 'AI_ENGINE',
           correlationId,
-          message: `[AI_INTERACTION] Resolução dinâmica de normas no banco para tags: [${moduleTags.join(', ')}] | Módulo: "${moduleName}" | Invocando IA com Skill: "${effectiveSkill}"`,
+          message: `[AI_INTERACTION] Invocando IA com Skill: "${effectiveSkill}" | Contexto com ${combinedNormsList.length} normas ativas para tags: [${moduleTags.join(', ')}]`,
         },
       }).catch(() => {});
 
@@ -121,13 +146,13 @@ export class AuditExecutionService {
       const recon = await ReconciliationEngine.reconcile(scrapeAdapter as any, agentModuleId);
       const executionTimeMs = Date.now() - startTime;
 
-      // Telemetria e log de IA com tokens
+      // Telemetria e log de IA com tokens e fontes/normas utilizadas
       await prisma.systemLog.create({
         data: {
           level: 'INFO',
           module: 'AI_ENGINE',
           correlationId,
-          message: `[AI_INTERACTION] Veredito da IA emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms`,
+          message: `[AI_INTERACTION] Veredito da IA emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms | Normas Aplicadas: ${recon.sourcesUsed.length}`,
           details: JSON.stringify({
             aiModelUsed: recon.aiModelUsed,
             verdict: recon.verdict,
@@ -136,6 +161,7 @@ export class AuditExecutionService {
             completionTokens: recon.completionTokens,
             totalTokens: recon.totalTokens,
             executionTimeMs,
+            sourcesUsed: recon.sourcesUsed,
           }),
         },
       }).catch(() => {});

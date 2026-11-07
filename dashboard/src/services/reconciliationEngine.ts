@@ -746,11 +746,8 @@ Retorne APENAS um JSON válido no formato:
     const completionTokens = estimatedCompletion;
     const totalTokens = promptTokens + completionTokens;
 
-    // Fontes/artigos ativados a partir das normas vinculadas
-    const sourcesUsed = Array.from(new Set(violations.map((v) => `${v.normCode} (${v.normArticle})`)));
-    if (sourcesUsed.length === 0) {
-      activeNorms.slice(0, 3).forEach((n) => sourcesUsed.push(`${n.normCode} (${n.article})`));
-    }
+    // Fontes/normas e arquivos ativados a partir das normas vinculadas para comunicação com a IA
+    const sourcesUsed = activeNorms.map((n) => `${n.normCode} (${n.article}): ${n.title}`);
 
     return {
       verdict,
