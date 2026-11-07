@@ -4,28 +4,44 @@ import { prisma } from '../config/prisma.js';
 import { auditQueue } from '../config/redis.js';
 import { Role, ExtractionMode } from '@prisma/client';
 import { ScraperService } from '../services/scraperService.js';
+import { FirecrawlService } from '../services/firecrawlService.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 
 const createAgentSchema = z.object({
-  name: z.string().min(2, 'Nome do Agente é obrigatório'),
+  name: z.string().min(2, 'Nome do Módulo é obrigatório'),
+  targetUrl: z.string().min(3, 'URL Alvo é obrigatória').optional().nullable(),
+  description: z.string().min(2, 'Descrição e Escopo (Skill da IA) é obrigatório').optional().default('Auditor Deontológico de Saúde'),
+  tags: z.array(z.string()).optional().default(['cfm']),
   code: z.string().optional().nullable().or(z.literal('')),
-  description: z.string().optional().default(''),
-  category: z.string().default('DEONTOLOGIA_MEDICA'),
-  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).default('CHEERIO'),
-  targetNorms: z.array(z.string()).default([]),
+  category: z.string().optional().default('DEONTOLOGIA_MEDICA'),
+  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).optional().default('FIRECRAWL'),
+  targetNorms: z.array(z.string()).optional().default([]),
   systemPrompt: z.string().optional(),
   clientId: z.string().optional().nullable(),
   regulatoryFramework: z.string().optional().default('CFM (Resolução 2.336/2023)'),
   cronSchedule: z.string().optional().default('0 */6 * * *'),
-  targetUrl: z.string().optional().nullable(),
   enabled: z.boolean().optional().default(true),
 });
 
-const updateAgentSchema = createAgentSchema.partial();
+const updateAgentSchema = z.object({
+  name: z.string().min(2).optional(),
+  targetUrl: z.string().optional().nullable(),
+  description: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  code: z.string().optional().nullable(),
+  category: z.string().optional(),
+  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).optional(),
+  targetNorms: z.array(z.string()).optional(),
+  systemPrompt: z.string().optional(),
+  clientId: z.string().optional().nullable(),
+  regulatoryFramework: z.string().optional(),
+  cronSchedule: z.string().optional(),
+  enabled: z.boolean().optional(),
+});
 
 const runAuditSchema = z.object({
-  clientId: z.string().min(1, 'clientId é obrigatório'),
-  targetUrl: z.string().url('targetUrl deve ser uma URL válida'),
+  clientId: z.string().optional(),
+  targetUrl: z.string().optional(),
   extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).optional(),
   skill: z.string().optional(),
 });
@@ -107,20 +123,26 @@ export class AgentController {
         return;
       }
 
+      // Normalização das tags informadas manualmente pelo operador
+      const tagsNormalized = Array.isArray(data.tags)
+        ? data.tags.map((t: string) => t.trim().toLowerCase()).filter(Boolean)
+        : ['cfm'];
+
       const agent = await prisma.agentModule.create({
         data: {
           name: data.name,
           code: resolvedCode,
-          description: data.description,
-          category: data.category,
-          extractionMode: data.extractionMode as any,
-          rulesCount: data.targetNorms.length > 0 ? data.targetNorms.length : 12,
-          targetNorms: data.targetNorms,
+          description: data.description, // Atua como a Skill comportamental e persona da IA
+          targetUrl: data.targetUrl || null,
+          tags: tagsNormalized, // Isolamento: Vínculo com resoluções ocorre exclusivamente via Tags
+          category: data.category || 'DEONTOLOGIA_MEDICA',
+          extractionMode: (data.extractionMode as any) || 'FIRECRAWL',
+          rulesCount: tagsNormalized.length * 4,
+          targetNorms: [], // Nenhuma norma ou arquivo físico .md é vinculado diretamente no cadastro
           systemPrompt: data.systemPrompt || null,
           clientId: data.clientId || null,
-          regulatoryFramework: data.regulatoryFramework,
-          cronSchedule: data.cronSchedule,
-          targetUrl: data.targetUrl || null,
+          regulatoryFramework: data.regulatoryFramework || 'Conformidade Deontológica em Saúde',
+          cronSchedule: data.cronSchedule || '0 */6 * * *',
           enabled: data.enabled ?? true,
         },
       });
@@ -139,17 +161,28 @@ export class AgentController {
       const { id } = req.params;
       const data = updateAgentSchema.parse(req.body);
 
+      const tagsNormalized =
+        data.tags && Array.isArray(data.tags)
+          ? data.tags.map((t: string) => t.trim().toLowerCase()).filter(Boolean)
+          : undefined;
+
       const updated = await prisma.agentModule.update({
         where: { id },
         data: {
-          ...data,
+          ...(data.name && { name: data.name }),
+          ...(data.targetUrl !== undefined && { targetUrl: data.targetUrl }),
+          ...(data.description !== undefined && { description: data.description }),
+          ...(tagsNormalized && { tags: tagsNormalized, rulesCount: tagsNormalized.length * 4 }),
           ...(data.code && { code: data.code.toUpperCase() }),
-          ...(data.targetNorms && { rulesCount: data.targetNorms.length }),
+          ...(data.enabled !== undefined && { enabled: data.enabled }),
+          ...(data.category && { category: data.category }),
+          ...(data.extractionMode && { extractionMode: data.extractionMode as any }),
+          ...(data.clientId !== undefined && { clientId: data.clientId }),
         },
       });
 
       res.status(200).json({
-        message: 'Agente atualizado com sucesso.',
+        message: 'Módulo de agente atualizado com sucesso.',
         agent: updated,
       });
     } catch (error) {
@@ -175,10 +208,44 @@ export class AgentController {
   public static async runAudit(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id: agentModuleId } = req.params;
-      const { clientId, targetUrl, extractionMode, skill } = runAuditSchema.parse(req.body);
+      const parsedBody = runAuditSchema.parse(req.body);
+
+      const mod = await prisma.agentModule.findUnique({
+        where: { id: agentModuleId },
+      });
+
+      if (!mod) {
+        res.status(404).json({ error: 'Módulo de agente não encontrado.' });
+        return;
+      }
+
+      // A URL Alvo vem do cadastro do módulo ou do corpo da requisição
+      const effectiveTargetUrl = parsedBody.targetUrl || mod.targetUrl;
+      if (!effectiveTargetUrl) {
+        res.status(400).json({ error: 'Nenhuma URL Alvo informada no módulo ou no disparo da auditoria.' });
+        return;
+      }
+
+      // Resolução da clínica vinculada ou clínica ativa padrão
+      let effectiveClientId = parsedBody.clientId || mod.clientId;
+      if (!effectiveClientId) {
+        const firstClient = await prisma.client.findFirst({ where: { status: 'ATIVO' } });
+        if (firstClient) {
+          effectiveClientId = firstClient.id;
+        } else {
+          const defaultClient = await prisma.client.create({
+            data: {
+              name: 'Clínica Principal Auditada',
+              websiteUrl: effectiveTargetUrl,
+              status: 'ATIVO',
+            },
+          });
+          effectiveClientId = defaultClient.id;
+        }
+      }
 
       // Isolamento multi-tenant: CLIENT só pode disparar auditoria para si mesmo
-      if (req.user?.role === Role.CLIENT && req.user.clientId !== clientId) {
+      if (req.user?.role === Role.CLIENT && req.user.clientId !== effectiveClientId) {
         res.status(403).json({
           error: 'Acesso negado. Você só pode disparar auditorias para a sua própria clínica.',
           code: 'TENANT_FORBIDDEN',
@@ -187,29 +254,21 @@ export class AgentController {
       }
 
       const client = await prisma.client.findUnique({
-        where: { id: clientId },
+        where: { id: effectiveClientId },
       });
 
-      if (!client) {
-        res.status(404).json({ error: 'Clínica solicitada não foi encontrada.' });
-        return;
-      }
-
-      const mod = await prisma.agentModule.findUnique({
-        where: { id: agentModuleId },
-      });
-
-      const effectiveMode: ExtractionMode = extractionMode || mod?.extractionMode || 'CHEERIO';
-      const effectiveSkill = skill || 'compliance-specialist';
+      const clientName = client?.name || 'Clínica Auditada';
+      const effectiveSkill = parsedBody.skill || mod.description || 'compliance-specialist';
+      const effectiveMode: ExtractionMode = 'FIRECRAWL' as any;
 
       // Criação inicial do laudo em estado QUEUED
       const report = await prisma.auditReport.create({
         data: {
-          clientId,
-          targetUrl,
+          clientId: effectiveClientId,
+          targetUrl: effectiveTargetUrl,
           extractionMode: effectiveMode,
           status: 'QUEUED',
-          summary: `Auditoria disparada no Cockpit com agente ${mod?.code || 'CFM'} e skill ${effectiveSkill}.`,
+          summary: `Auditoria disparada no Cockpit para módulo ${mod.name} (Tags: ${mod.tags.join(', ')}).`,
           score: 0,
         },
       });
@@ -220,15 +279,15 @@ export class AgentController {
           level: 'INFO',
           module: 'COCKPIT',
           correlationId: report.id,
-          message: `[COCKPIT] Disparo de Auditoria iniciado para "${client.name}" | URL: ${targetUrl} | Agente: ${mod?.code || 'CFM'} | Skill: ${effectiveSkill} | Modo: ${effectiveMode}`,
+          message: `[COCKPIT] Disparo de Auditoria iniciado para "${clientName}" | Módulo: "${mod.name}" | URL: ${effectiveTargetUrl} | Tags: [${mod.tags.join(', ')}] | Modo: FIRECRAWL`,
           details: JSON.stringify({
             auditReportId: report.id,
-            clientId,
-            clientName: client.name,
-            targetUrl,
-            agentCode: mod?.code,
+            moduleId: mod.id,
+            moduleName: mod.name,
+            targetUrl: effectiveTargetUrl,
+            tags: mod.tags,
             skill: effectiveSkill,
-            extractionMode: effectiveMode,
+            extractionMode: 'FIRECRAWL',
             timestamp: new Date().toISOString(),
           }),
         },
@@ -241,8 +300,8 @@ export class AgentController {
           'execute-audit',
           {
             auditReportId: report.id,
-            clientId,
-            targetUrl,
+            clientId: effectiveClientId,
+            targetUrl: effectiveTargetUrl,
             extractionMode: effectiveMode,
             agentModuleId,
             skill: effectiveSkill,
@@ -253,10 +312,10 @@ export class AgentController {
         );
         queuedViaRedis = true;
       } catch (queueErr: any) {
-        console.warn(`[AgentController] Redis indisponível ou em fallback (${queueErr.message}). Processando job sincronicamente...`);
+        console.warn(`[AgentController] Redis em fallback (${queueErr.message}). Processando job sincronicamente...`);
       }
 
-      // Se o Redis não estiver ativo, processa diretamente para garantir fluidez
+      // Processamento síncrono/assíncrono direto do Pipeline de Auditoria
       if (!queuedViaRedis) {
         setImmediate(async () => {
           try {
@@ -265,37 +324,75 @@ export class AgentController {
               data: { status: 'RUNNING' },
             });
 
-            await prisma.systemLog.create({
-              data: {
-                level: 'INFO',
-                module: 'SCRAPER',
-                correlationId: report.id,
-                message: `[SCRAPER] Iniciando extração web via ${effectiveMode} para ${targetUrl}...`,
-              },
-            }).catch(() => {});
-
             const startTime = Date.now();
-            const scrape = await ScraperService.scrape(targetUrl, effectiveMode);
+
+            // ========================================================
+            // ETAPA 1 & 2 & 3: Scraping Exclusivo via Firecrawl,
+            // Hash SHA-256 e Persistência no MongoDB (module_scrape_data)
+            // ========================================================
+            await prisma.systemLog.create({
+              data: {
+                level: 'INFO',
+                module: 'SCRAPER',
+                correlationId: report.id,
+                message: `[SCRAPER] [FIRECRAWL] Acionando extração de página via Firecrawl para: ${effectiveTargetUrl}`,
+              },
+            }).catch(() => {});
+
+            const firecrawlResult = await FirecrawlService.scrape(
+              effectiveTargetUrl,
+              agentModuleId,
+              effectiveClientId
+            );
 
             await prisma.systemLog.create({
               data: {
                 level: 'INFO',
                 module: 'SCRAPER',
                 correlationId: report.id,
-                message: `[SCRAPER] Extração concluída (${effectiveMode}): "${scrape.title || targetUrl}" | ${scrape.rawHtmlLength} bytes processados | ${scrape.tokensEstimatedClean} tokens limpos (economia de ${Math.max(0, scrape.tokensEstimatedRaw - scrape.tokensEstimatedClean)} tokens).`,
+                message: `[SCRAPER] [FIRECRAWL] Conteúdo extraído em Markdown limpo (${firecrawlResult.markdown.length} caracteres) | Hash SHA-256: ${firecrawlResult.contentHash} | Persistido em 'module_scrape_data'`,
+                details: JSON.stringify({
+                  moduleId: agentModuleId,
+                  url: effectiveTargetUrl,
+                  contentHash: firecrawlResult.contentHash,
+                  source: firecrawlResult.source,
+                  savedRecordId: firecrawlResult.savedRecordId,
+                }),
               },
             }).catch(() => {});
 
+            // ========================================================
+            // ETAPA 4 & 5: Resolução Dinâmica de Normas no Banco (Tags)
+            // e Invocação da IA (Reconciliação Deontológica)
+            // ========================================================
             await prisma.systemLog.create({
               data: {
                 level: 'INFO',
                 module: 'AI_ENGINE',
                 correlationId: report.id,
-                message: `[AI_INTERACTION] Enviando contexto para o motor de IA | Agente: ${mod?.code || 'CFM'} | Skill: ${effectiveSkill} | Contexto: ${scrape.tokensEstimatedClean} tokens.`,
+                message: `[AI_INTERACTION] Resolução dinâmica de normas no banco de dados para tags: [${mod.tags.join(', ')}] | Invocando IA com Skill: "${effectiveSkill}"`,
               },
             }).catch(() => {});
 
-            const recon = await ReconciliationEngine.reconcile(scrape, agentModuleId);
+            // Adaptador para o formato do ReconciliationEngine
+            const scrapeAdapter = {
+              url: effectiveTargetUrl,
+              title: mod.name,
+              rawHtmlLength: firecrawlResult.markdown.length,
+              cleanMarkdown: firecrawlResult.markdown,
+              tokensEstimatedRaw: Math.ceil(firecrawlResult.markdown.length / 3),
+              tokensEstimatedClean: Math.ceil(firecrawlResult.markdown.length / 4),
+              extractedEntities: {
+                crms: [],
+                rqes: [],
+                states: [],
+                hasBeforeAfterMention: firecrawlResult.markdown.toLowerCase().includes('antes e depois'),
+                hasPromotionalPricing: /promoção|desconto|black friday|cupom|sorteio/i.test(firecrawlResult.markdown),
+                hasGuaranteedResultMention: /100%|garantido|cura definitiva|o melhor/i.test(firecrawlResult.markdown),
+              },
+            };
+
+            const recon = await ReconciliationEngine.reconcile(scrapeAdapter as any, agentModuleId);
             const executionTimeMs = Date.now() - startTime;
 
             await prisma.systemLog.create({
@@ -303,10 +400,11 @@ export class AgentController {
                 level: 'INFO',
                 module: 'AI_ENGINE',
                 correlationId: report.id,
-                message: `[AI_INTERACTION] Resposta recebida do motor ${recon.aiModelUsed || 'gemini'} | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms`,
+                message: `[AI_INTERACTION] Veredito da IA emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms`,
                 details: JSON.stringify({
                   aiModelUsed: recon.aiModelUsed,
-                  skill: effectiveSkill,
+                  verdict: recon.verdict,
+                  score: recon.score,
                   promptTokens: recon.promptTokens,
                   completionTokens: recon.completionTokens,
                   totalTokens: recon.totalTokens,
@@ -315,6 +413,9 @@ export class AgentController {
               },
             }).catch(() => {});
 
+            // ========================================================
+            // Gravação do Laudo de Auditoria e Infrações
+            // ========================================================
             await prisma.$transaction(async (tx) => {
               await tx.auditReport.update({
                 where: { id: report.id },
@@ -323,9 +424,9 @@ export class AgentController {
                   verdict: recon.verdict,
                   score: recon.score,
                   summary: recon.summary,
-                  rawContent: scrape.rawHtmlLength.toString(),
-                  cleanMarkdown: scrape.cleanMarkdown,
-                  tokensSaved: Math.max(0, scrape.tokensEstimatedRaw - scrape.tokensEstimatedClean),
+                  rawContent: firecrawlResult.rawContent,
+                  cleanMarkdown: firecrawlResult.markdown,
+                  tokensSaved: Math.max(0, scrapeAdapter.tokensEstimatedRaw - scrapeAdapter.tokensEstimatedClean),
                   promptTokens: recon.promptTokens,
                   completionTokens: recon.completionTokens,
                   totalTokens: recon.totalTokens,
@@ -355,38 +456,37 @@ export class AgentController {
                 level: 'INFO',
                 module: 'RECONCILIATION',
                 correlationId: report.id,
-                message: `[RECONCILIATION] Reconciliação deontológica concluída | Veredito: ${recon.verdict} | Score: ${recon.score}/100 | ${recon.violations.length} não-conformidade(s) detectada(s) | Laudo ID: ${report.id}`,
+                message: `[RECONCILIATION] Auditoria concluída com sucesso para "${clientName}" | ${recon.violations.length} infrações detectadas | Status: COMPLETED`,
+              },
+            }).catch(() => {});
+          } catch (execErr: any) {
+            console.error(`[AgentController] Erro no pipeline de auditoria do módulo ${agentModuleId}:`, execErr);
+            await prisma.auditReport.update({
+              where: { id: report.id },
+              data: {
+                status: 'FAILED',
+                summary: `Falha na execução da auditoria: ${execErr.message}`,
               },
             }).catch(() => {});
 
-            console.log(`✅ [Direct Worker Fallback] Auditoria ${report.id} concluída com sucesso!`);
-          } catch (execErr: any) {
-            console.error(`❌ [Direct Worker Fallback] Falha na auditoria ${report.id}:`, execErr);
             await prisma.systemLog.create({
               data: {
                 level: 'ERROR',
                 module: 'COCKPIT',
                 correlationId: report.id,
-                message: `[ERROR] Falha técnica durante execução da auditoria: ${execErr.message}`,
+                message: `[COCKPIT] Falha na auditoria do módulo: ${execErr.message}`,
               },
             }).catch(() => {});
-
-            await prisma.auditReport.update({
-              where: { id: report.id },
-              data: {
-                status: 'FAILED',
-                summary: `Falha técnica durante auditoria: ${execErr.message}`,
-              },
-            });
           }
         });
       }
 
       res.status(202).json({
-        message: 'Auditoria agendada com sucesso.',
+        message: 'Auditoria de governança de módulo iniciada com sucesso.',
         reportId: report.id,
-        status: report.status,
-        queuedViaRedis,
+        targetUrl: effectiveTargetUrl,
+        extractionMode: 'FIRECRAWL',
+        tags: mod.tags,
       });
     } catch (error) {
       next(error);

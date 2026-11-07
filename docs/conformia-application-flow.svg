@@ -1,0 +1,325 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1100" width="100%" height="100%" style="background-color: #080D1A; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#0B132B" />
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064E3B" />
+      <stop offset="100%" stop-color="#022C22" />
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0C4A6E" />
+      <stop offset="100%" stop-color="#082F49" />
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B0764" />
+      <stop offset="100%" stop-color="#1E1B4B" />
+    </linearGradient>
+
+    <!-- Markers for Arrows -->
+    <marker id="arrowCyan" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#38BDF8" />
+    </marker>
+    <marker id="arrowGreen" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#10B981" />
+    </marker>
+    <marker id="arrowAmber" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#F59E0B" />
+    </marker>
+    <marker id="arrowPurple" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#C084FC" />
+    </marker>
+    <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#F43F5E" />
+    </marker>
+
+    <!-- Filter for Shadow -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- ==================== HEADER ==================== -->
+  <rect x="250" y="20" width="1100" height="70" rx="16" fill="url(#headerGrad)" stroke="#1E293B" stroke-width="1.5" filter="url(#shadow)" />
+  <text x="800" y="50" text-anchor="middle" fill="#10B981" font-size="20" font-weight="800" letter-spacing="0.5">ConformIA Health — Arquitetura Integrada &amp; Fluxo Operacional</text>
+  <text x="800" y="72" text-anchor="middle" fill="#94A3B8" font-size="12">Deontologia Médica CFM (Res. 2.336/23, 2.314/22), LGPD em Saúde, ANS e Vigilância Sanitária ANVISA</text>
+
+  <!-- ==================== LAYER 1: FRONTEND WEB ==================== -->
+  <rect x="40" y="110" width="1520" height="150" rx="16" fill="#0B1329" stroke="#0284C7" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="40" y="110" width="1520" height="30" rx="16" fill="#0369A1" fill-opacity="0.3"/>
+  <text x="60" y="130" fill="#38BDF8" font-size="12" font-weight="700">1. CAMADA FRONTEND (React 18 + Vite + Tailwind CSS + Toast Notifications)</text>
+
+  <!-- UI Box 1: Gestão de Clínicas -->
+  <rect x="60" y="155" width="220" height="85" rx="12" fill="url(#cardGrad)" stroke="#0284C7" stroke-width="1.2" />
+  <text x="75" y="178" fill="#38BDF8" font-size="13" font-weight="700">Gestão de Clínicas</text>
+  <text x="75" y="196" fill="#94A3B8" font-size="10.5">CRUD Completo de Instituições</text>
+  <rect x="75" y="208" width="140" height="22" rx="6" fill="#0369A1" fill-opacity="0.4" stroke="#0284C7" stroke-width="1"/>
+  <text x="145" y="223" text-anchor="middle" fill="#38BDF8" font-size="10" font-weight="700">🔍 Buscar Informações</text>
+
+  <!-- UI Box 2: Modal de Coleta Digital -->
+  <rect x="310" y="155" width="210" height="85" rx="12" fill="url(#blueGrad)" stroke="#38BDF8" stroke-width="1.2" />
+  <text x="325" y="178" fill="#FFFFFF" font-size="13" font-weight="700">Coleta Digital da Clínica</text>
+  <text x="325" y="196" fill="#BAE6FD" font-size="10.5">Scraping / Datalink / MCP</text>
+  <text x="325" y="214" fill="#7DD3FC" font-size="9.5">Salva em client_scraped_data</text>
+  <text x="325" y="228" fill="#38BDF8" font-size="9" font-style="italic">✨ Isolado de normas oficiais</text>
+
+  <!-- UI Box 3: Governança de Agentes & Modelos -->
+  <rect x="550" y="155" width="220" height="85" rx="12" fill="url(#cardGrad)" stroke="#A855F7" stroke-width="1.2" />
+  <text x="565" y="178" fill="#C084FC" font-size="13" font-weight="700">Agentes &amp; Governança IA</text>
+  <text x="565" y="196" fill="#94A3B8" font-size="10.5">Slugs, Cron e Marcos CFM/LGPD</text>
+  <text x="565" y="214" fill="#94A3B8" font-size="10.5">CRUD Modelos no MongoDB</text>
+
+  <!-- UI Box 4: Cockpit de Disparo Imediato -->
+  <rect x="795" y="150" width="255" height="95" rx="12" fill="url(#greenGrad)" stroke="#10B981" stroke-width="2" filter="url(#shadow)" />
+  <text x="810" y="175" fill="#34D399" font-size="14" font-weight="800">⚡ Cockpit de Disparo</text>
+  <text x="810" y="193" fill="#A7F3D0" font-size="11">Agente + Clínica + URL Alvo</text>
+  <rect x="810" y="202" width="225" height="24" rx="6" fill="#047857" fill-opacity="0.6" stroke="#10B981" stroke-width="1"/>
+  <text x="922" y="218" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="700">🎯 Seletor de Skill / Persona IA</text>
+
+  <!-- UI Box 5: Repositório de Normas -->
+  <rect x="1075" y="155" width="210" height="85" rx="12" fill="url(#cardGrad)" stroke="#F59E0B" stroke-width="1.2" />
+  <text x="1090" y="178" fill="#FBBF24" font-size="13" font-weight="700">Repositório de Normas</text>
+  <text x="1090" y="196" fill="#94A3B8" font-size="10.5">Exclusivo Legislações Oficiais</text>
+  <text x="1090" y="214" fill="#F59E0B" font-size="10">Res. CFM, ANS, ANVISA, LGPD</text>
+
+  <!-- UI Box 6: Terminal Live -->
+  <rect x="1310" y="150" width="230" height="95" rx="12" fill="#022C22" stroke="#4ADE80" stroke-width="2" />
+  <text x="1325" y="173" fill="#4ADE80" font-size="13" font-weight="800">💻 Terminal Operacional</text>
+  <text x="1325" y="191" fill="#86EFAC" font-size="10.5">Console Live (Auto-refresh 3s)</text>
+  <text x="1325" y="207" fill="#86EFAC" font-size="10">Logs [COCKPIT] [SCRAPER] [AI]</text>
+  <text x="1325" y="223" fill="#34D399" font-size="9.5" font-mono">Prompt &amp; Completion Tokens</text>
+
+  <!-- ==================== LAYER 2: BACKEND CONTROLLERS ==================== -->
+  <rect x="40" y="300" width="1520" height="150" rx="16" fill="#0B1329" stroke="#6366F1" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="40" y="300" width="1520" height="30" rx="16" fill="#4338CA" fill-opacity="0.3"/>
+  <text x="60" y="320" fill="#818CF8" font-size="12" font-weight="700">2. CAMADA BACKEND API REST &amp; CONTROLADORES (Express + TypeScript + RBAC + Zod)</text>
+
+  <!-- Backend Box 1: Auth & Multi-tenant -->
+  <rect x="60" y="345" width="220" height="85" rx="12" fill="url(#cardGrad)" stroke="#6366F1" stroke-width="1.2" />
+  <text x="75" y="368" fill="#818CF8" font-size="13" font-weight="700">Auth &amp; RBAC Middleware</text>
+  <text x="75" y="386" fill="#94A3B8" font-size="10.5">JWT Token Verification</text>
+  <text x="75" y="402" fill="#94A3B8" font-size="10.5">Roles: ADMIN, AUDITOR, CLIENT</text>
+  <text x="75" y="418" fill="#818CF8" font-size="9.5">Isolamento Multi-tenant Estrito</text>
+
+  <!-- Backend Box 2: ClientController -->
+  <rect x="310" y="345" width="210" height="85" rx="12" fill="url(#cardGrad)" stroke="#38BDF8" stroke-width="1.2" />
+  <text x="325" y="368" fill="#38BDF8" font-size="13" font-weight="700">ClientController</text>
+  <text x="325" y="386" fill="#94A3B8" font-size="10.5">POST /clients/:id/scrape</text>
+  <text x="325" y="402" fill="#94A3B8" font-size="10.5">GET /clients/:id/scraped-data</text>
+  <text x="325" y="418" fill="#38BDF8" font-size="9.5">Log: [CLIENT_EXTRACTION]</text>
+
+  <!-- Backend Box 3: AgentController -->
+  <rect x="550" y="345" width="230" height="85" rx="12" fill="url(#cardGrad)" stroke="#10B981" stroke-width="1.5" />
+  <text x="565" y="368" fill="#34D399" font-size="13" font-weight="700">AgentController</text>
+  <text x="565" y="386" fill="#94A3B8" font-size="10.5">POST /agents/:id/run</text>
+  <text x="565" y="402" fill="#94A3B8" font-size="10.5">Extração Direta (Sem tocar normas)</text>
+  <text x="565" y="418" fill="#10B981" font-size="9.5">Gera Log Imediato: [COCKPIT]</text>
+
+  <!-- Backend Box 4: Dispatcher -->
+  <polygon points="915,345 1010,387 915,430 820,387" fill="#1E1B4B" stroke="#F59E0B" stroke-width="1.8" />
+  <text x="915" y="382" text-anchor="middle" fill="#FBBF24" font-size="11" font-weight="800">Despachador</text>
+  <text x="915" y="397" text-anchor="middle" fill="#CBD5E1" font-size="9.5">BullMQ ou Síncrono</text>
+
+  <!-- Backend Box 5: ReportController -->
+  <rect x="1055" y="345" width="230" height="85" rx="12" fill="url(#cardGrad)" stroke="#34D399" stroke-width="1.2" />
+  <text x="1070" y="368" fill="#34D399" font-size="13" font-weight="700">ReportController</text>
+  <text x="1070" y="386" fill="#94A3B8" font-size="10.5">GET /reports (Paginação)</text>
+  <text x="1070" y="402" fill="#94A3B8" font-size="10.5">GET /reports/:id/export</text>
+  <text x="1070" y="418" fill="#34D399" font-size="9.5">Tratamento defensivo null-safe</text>
+
+  <!-- Backend Box 6: TelemetryController -->
+  <rect x="1310" y="345" width="230" height="85" rx="12" fill="url(#cardGrad)" stroke="#4ADE80" stroke-width="1.2" />
+  <text x="1325" y="368" fill="#4ADE80" font-size="13" font-weight="700">TelemetryController</text>
+  <text x="1325" y="386" fill="#94A3B8" font-size="10.5">GET /system/telemetry</text>
+  <text x="1325" y="402" fill="#94A3B8" font-size="10.5">Query de system_logs (take: 100)</text>
+  <text x="1325" y="418" fill="#4ADE80" font-size="9.5">Consumo total de tokens IA</text>
+
+  <!-- ==================== LAYER 3: EXTRACTION & QUEUES ==================== -->
+  <rect x="40" y="490" width="1520" height="150" rx="16" fill="#0B1329" stroke="#EC4899" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="40" y="490" width="1520" height="30" rx="16" fill="#BE185D" fill-opacity="0.3"/>
+  <text x="60" y="510" fill="#F472B6" font-size="12" font-weight="700">3. EXTRAÇÃO WEB POLIMÓRFICA &amp; FILAS (ScraperService + BullMQ + Redis)</text>
+
+  <!-- Scraper Cheerio -->
+  <rect x="60" y="535" width="210" height="85" rx="12" fill="url(#cardGrad)" stroke="#EC4899" stroke-width="1.2" />
+  <text x="75" y="558" fill="#F472B6" font-size="13" font-weight="700">Cheerio Parser</text>
+  <text x="75" y="576" fill="#94A3B8" font-size="10.5">Alta Velocidade (HTML/DOM)</text>
+  <text x="75" y="592" fill="#94A3B8" font-size="10.5">Sanitização para Markdown</text>
+  <text x="75" y="608" fill="#EC4899" font-size="9.5">Redução massiva de tokens</text>
+
+  <!-- Scraper Puppeteer -->
+  <rect x="295" y="535" width="210" height="85" rx="12" fill="url(#cardGrad)" stroke="#EC4899" stroke-width="1.2" />
+  <text x="310" y="558" fill="#F472B6" font-size="13" font-weight="700">Puppeteer Headless</text>
+  <text x="310" y="576" fill="#94A3B8" font-size="10.5">Single Page Apps (React/Vue)</text>
+  <text x="310" y="592" fill="#94A3B8" font-size="10.5">Renderização Dinâmica de JS</text>
+
+  <!-- Scraper Datalink & MCP -->
+  <rect x="530" y="535" width="230" height="85" rx="12" fill="url(#cardGrad)" stroke="#EC4899" stroke-width="1.2" />
+  <text x="545" y="558" fill="#F472B6" font-size="13" font-weight="700">Datalink &amp; MCP Server</text>
+  <text x="545" y="576" fill="#94A3B8" font-size="10.5">Consumo de APIs REST / JSON</text>
+  <text x="545" y="592" fill="#94A3B8" font-size="10.5">Model Context Protocol</text>
+
+  <!-- BullMQ Queue -->
+  <rect x="800" y="535" width="240" height="85" rx="12" fill="url(#purpleGrad)" stroke="#FBBF24" stroke-width="1.5" />
+  <text x="815" y="558" fill="#FBBF24" font-size="13" font-weight="800">Fila BullMQ (Redis)</text>
+  <text x="815" y="576" fill="#E2E8F0" font-size="10.5">Job: execute-audit</text>
+  <text x="815" y="592" fill="#CBD5E1" font-size="10">Controle de Concorrência</text>
+  <text x="815" y="608" fill="#FBBF24" font-size="9.5">Fallback: Execução Direta</text>
+
+  <!-- Audit Worker -->
+  <rect x="1080" y="535" width="230" height="85" rx="12" fill="url(#greenGrad)" stroke="#10B981" stroke-width="1.8" />
+  <text x="1095" y="558" fill="#34D399" font-size="13" font-weight="800">Audit Worker</text>
+  <text x="1095" y="576" fill="#A7F3D0" font-size="10.5">Consumo Assíncrono do Job</text>
+  <text x="1095" y="592" fill="#A7F3D0" font-size="10">Registra log: [SCRAPER]</text>
+  <text x="1095" y="608" fill="#34D399" font-size="9.5">Envia Markdown p/ IA</text>
+
+  <!-- Telemetry Worker Logger -->
+  <rect x="1340" y="535" width="200" height="85" rx="12" fill="#022C22" stroke="#4ADE80" stroke-width="1.2" />
+  <text x="1355" y="558" fill="#4ADE80" font-size="12" font-weight="700">Logs Operacionais</text>
+  <text x="1355" y="576" fill="#86EFAC" font-size="10">Gravação em system_logs</text>
+  <text x="1355" y="592" fill="#86EFAC" font-size="10">Bytes extraídos</text>
+  <text x="1355" y="608" fill="#86EFAC" font-size="10">Tokens economizados</text>
+
+  <!-- ==================== LAYER 4: AI RECONCILIATION ==================== -->
+  <rect x="40" y="680" width="1520" height="150" rx="16" fill="#0B1329" stroke="#8B5CF6" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="40" y="680" width="1520" height="30" rx="16" fill="#5B21B6" fill-opacity="0.3"/>
+  <text x="60" y="700" fill="#C084FC" font-size="12" font-weight="700">4. MOTOR DE RECONCILIAÇÃO DEONTOLÓGICA (ReconciliationEngine + Cascata de Resiliência)</text>
+
+  <!-- Context Injection -->
+  <rect x="60" y="725" width="260" height="85" rx="12" fill="url(#cardGrad)" stroke="#8B5CF6" stroke-width="1.2" />
+  <text x="75" y="748" fill="#C084FC" font-size="13" font-weight="700">Injeção de Contexto do Agente</text>
+  <text x="75" y="766" fill="#94A3B8" font-size="10.5">System Prompt Especializado</text>
+  <text x="75" y="782" fill="#94A3B8" font-size="10.5">Catálogo de Normas CFM/LGPD</text>
+  <text x="75" y="798" fill="#C084FC" font-size="9.5">Persona: compliance-specialist</text>
+
+  <!-- Gemini Model -->
+  <rect x="350" y="720" width="260" height="95" rx="12" fill="#082F49" stroke="#38BDF8" stroke-width="2" />
+  <text x="365" y="745" fill="#38BDF8" font-size="14" font-weight="800">1. Google Gemini 2.0 Flash</text>
+  <text x="365" y="763" fill="#BAE6FD" font-size="11">SDK Oficial @google/genai</text>
+  <text x="365" y="779" fill="#7DD3FC" font-size="10.5">Structured Output JSON Schema</text>
+  <text x="365" y="795" fill="#38BDF8" font-size="9.5">Alta precisão deontológica</text>
+
+  <!-- Ollama Fallback -->
+  <rect x="640" y="725" width="240" height="85" rx="12" fill="#451A03" stroke="#F59E0B" stroke-width="1.5" />
+  <text x="655" y="748" fill="#FBBF24" font-size="13" font-weight="700">2. Fallback Ollama Local</text>
+  <text x="655" y="766" fill="#FDE68A" font-size="10.5">Modelos Qwen 2.5 / Llama 3</text>
+  <text x="655" y="782" fill="#FCD34D" font-size="10">Inferência 100% On-Premise</text>
+  <text x="655" y="798" fill="#F59E0B" font-size="9.5">Privacidade Total de Dados</text>
+
+  <!-- Heuristic Fallback -->
+  <rect x="910" y="725" width="250" height="85" rx="12" fill="#064E3B" stroke="#34D399" stroke-width="1.5" />
+  <text x="925" y="748" fill="#34D399" font-size="13" font-weight="700">3. Heurística Garantida</text>
+  <text x="925" y="766" fill="#A7F3D0" font-size="10.5">Varredura de Padrões Regex</text>
+  <text x="925" y="782" fill="#A7F3D0" font-size="10">Resoluções CFM 2.336/23</text>
+  <text x="925" y="798" fill="#34D399" font-size="9.5">Operação contínua sem internet</text>
+
+  <!-- AI Tokens & Report Summary -->
+  <rect x="1190" y="720" width="350" height="95" rx="12" fill="url(#cardGrad)" stroke="#4ADE80" stroke-width="2" />
+  <text x="1205" y="745" fill="#4ADE80" font-size="13" font-weight="800">📊 Apuração de Tokens &amp; Veredito</text>
+  <text x="1205" y="763" fill="#E2E8F0" font-size="11">Prompt Tokens + Completion Tokens + Latência</text>
+  <text x="1205" y="779" fill="#CBD5E1" font-size="10.5">Veredito Semáforo + Score 0-100 + Violações</text>
+  <text x="1205" y="795" fill="#4ADE80" font-size="9.5">Emite logs [AI_INTERACTION] e [RECONCILIATION]</text>
+
+  <!-- ==================== LAYER 5: PERSISTENCE (MONGODB) ==================== -->
+  <rect x="40" y="870" width="1520" height="150" rx="16" fill="#0B1329" stroke="#10B981" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="40" y="870" width="1520" height="30" rx="16" fill="#047857" fill-opacity="0.3"/>
+  <text x="60" y="890" fill="#34D399" font-size="12" font-weight="700">5. CAMADA DE PERSISTÊNCIA (MongoDB Replica Set + Prisma ORM)</text>
+
+  <!-- DB: clients -->
+  <rect x="60" y="915" width="200" height="85" rx="12" fill="url(#cardGrad)" stroke="#38BDF8" stroke-width="1.2" />
+  <text x="75" y="938" fill="#38BDF8" font-size="13" font-weight="700">clients</text>
+  <text x="75" y="956" fill="#94A3B8" font-size="10.5">Razão Social, CNPJ</text>
+  <text x="75" y="972" fill="#94A3B8" font-size="10.5">CRM Responsável / UF / RQE</text>
+  <text x="75" y="988" fill="#38BDF8" font-size="9.5">URL Oficial do Website</text>
+
+  <!-- DB: client_scraped_data -->
+  <rect x="290" y="915" width="240" height="85" rx="12" fill="#0C4A6E" stroke="#38BDF8" stroke-width="2" />
+  <text x="305" y="938" fill="#FFFFFF" font-size="13" font-weight="800">client_scraped_data</text>
+  <text x="305" y="956" fill="#BAE6FD" font-size="10.5">Isolado por clientId</text>
+  <text x="305" y="972" fill="#BAE6FD" font-size="10.5">DOM, Markdown e Entidades</text>
+  <text x="305" y="988" fill="#7DD3FC" font-size="9.5">✨ Sem poluir normas regulatórias</text>
+
+  <!-- DB: scraped_pages -->
+  <rect x="560" y="915" width="210" height="85" rx="12" fill="url(#cardGrad)" stroke="#F59E0B" stroke-width="1.2" />
+  <text x="575" y="938" fill="#FBBF24" font-size="13" font-weight="700">scraped_pages</text>
+  <text x="575" y="956" fill="#94A3B8" font-size="10.5">Exclusivo Normas Oficiais</text>
+  <text x="575" y="972" fill="#94A3B8" font-size="10.5">CFM, ANS, ANVISA, LGPD</text>
+  <text x="575" y="988" fill="#F59E0B" font-size="9.5">Autocura: Clínicas removidas</text>
+
+  <!-- DB: agent_modules & models -->
+  <rect x="800" y="915" width="230" height="85" rx="12" fill="url(#cardGrad)" stroke="#C084FC" stroke-width="1.2" />
+  <text x="815" y="938" fill="#C084FC" font-size="13" font-weight="700">agent_modules &amp; models</text>
+  <text x="815" y="956" fill="#94A3B8" font-size="10.5">Módulos com cron &amp; slugs</text>
+  <text x="815" y="972" fill="#94A3B8" font-size="10.5">ai_model_configs no banco</text>
+  <text x="815" y="988" fill="#C084FC" font-size="9.5">Chaves, endpoints e status ativo</text>
+
+  <!-- DB: audit_reports & violations -->
+  <rect x="1060" y="915" width="240" height="85" rx="12" fill="url(#cardGrad)" stroke="#10B981" stroke-width="1.8" />
+  <text x="1075" y="938" fill="#34D399" font-size="13" font-weight="800">audit_reports &amp; violations</text>
+  <text x="1075" y="956" fill="#94A3B8" font-size="10.5">Laudos Deontológicos Imutáveis</text>
+  <text x="1075" y="972" fill="#94A3B8" font-size="10.5">Score, Veredito e Violações</text>
+  <text x="1075" y="988" fill="#10B981" font-size="9.5">targetUrl e summary null-safe</text>
+
+  <!-- DB: system_logs -->
+  <rect x="1330" y="915" width="210" height="85" rx="12" fill="#022C22" stroke="#4ADE80" stroke-width="2" />
+  <text x="1345" y="938" fill="#4ADE80" font-size="13" font-weight="800">system_logs</text>
+  <text x="1345" y="956" fill="#86EFAC" font-size="10.5">Histórico do Terminal</text>
+  <text x="1345" y="972" fill="#86EFAC" font-size="10">Logs [COCKPIT] [SCRAPER] [AI]</text>
+  <text x="1345" y="988" fill="#4ADE80" font-size="9.5 font-mono">Stream ao vivo para o console</text>
+
+  <!-- ==================== FLOW CONNECTORS & ARROWS ==================== -->
+  <!-- 1. Clinic Scraping flow -->
+  <path d="M 280 197 L 310 197" fill="none" stroke="#38BDF8" stroke-width="2" marker-end="url(#arrowCyan)"/>
+  <path d="M 415 240 L 415 345" fill="none" stroke="#38BDF8" stroke-width="2" marker-end="url(#arrowCyan)"/>
+  <path d="M 370 430 L 370 915" fill="none" stroke="#38BDF8" stroke-width="2" stroke-dasharray="4,4" marker-end="url(#arrowCyan)"/>
+
+  <!-- 2. Cockpit Dispatch flow -->
+  <path d="M 922 245 L 922 345" fill="none" stroke="#10B981" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
+  <path d="M 780 387 L 820 387" fill="none" stroke="#10B981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+  <path d="M 915 430 L 915 535" fill="none" stroke="#F59E0B" stroke-width="2" marker-end="url(#arrowAmber)"/>
+  <path d="M 1040 577 L 1080 577" fill="none" stroke="#10B981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- 3. Worker to Scraper -->
+  <path d="M 1195 620 L 1195 650 L 165 650 L 165 620" fill="none" stroke="#EC4899" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- 4. Scraper to AI Context -->
+  <path d="M 165 620 L 165 725" fill="none" stroke="#8B5CF6" stroke-width="2" marker-end="url(#arrowPurple)"/>
+  <path d="M 320 767 L 350 767" fill="none" stroke="#38BDF8" stroke-width="2" marker-end="url(#arrowCyan)"/>
+  <path d="M 610 767 L 640 767" fill="none" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#arrowAmber)"/>
+  <path d="M 880 767 L 910 767" fill="none" stroke="#34D399" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#arrowGreen)"/>
+  <path d="M 1160 767 L 1190 767" fill="none" stroke="#4ADE80" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- 5. AI to Database -->
+  <path d="M 1250 815 L 1250 915" fill="none" stroke="#10B981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+  <path d="M 1435 815 L 1435 915" fill="none" stroke="#4ADE80" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- 6. Database to Telemetry Stream -->
+  <path d="M 1435 915 L 1435 430" fill="none" stroke="#4ADE80" stroke-width="2" stroke-dasharray="4,4" marker-end="url(#arrowGreen)"/>
+  <path d="M 1435 345 L 1435 245" fill="none" stroke="#4ADE80" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- 7. Reports query -->
+  <path d="M 1180 915 L 1180 430" fill="none" stroke="#34D399" stroke-width="1.5" stroke-dasharray="4,4" marker-end="url(#arrowGreen)"/>
+  <path d="M 1180 345 L 1180 240" fill="none" stroke="#34D399" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- Legend -->
+  <rect x="40" y="1040" width="1520" height="45" rx="10" fill="#0B1329" stroke="#1E293B" stroke-width="1"/>
+  <circle cx="70" cy="1062" r="5" fill="#38BDF8"/>
+  <text x="85" y="1066" fill="#94A3B8" font-size="11">Fluxo de Coleta Digital da Clínica</text>
+
+  <circle cx="320" cy="1062" r="5" fill="#10B981"/>
+  <text x="335" y="1066" fill="#94A3B8" font-size="11">Disparo de Auditoria Deontológica &amp; Laudos</text>
+
+  <circle cx="630" cy="1062" r="5" fill="#8B5CF6"/>
+  <text x="645" y="1066" fill="#94A3B8" font-size="11">Contexto Especializado &amp; Inferência IA</text>
+
+  <circle cx="910" cy="1062" r="5" fill="#F59E0B"/>
+  <text x="925" y="1066" fill="#94A3B8" font-size="11">Resiliência &amp; Fallbacks Automáticos</text>
+
+  <circle cx="1200" cy="1062" r="5" fill="#4ADE80"/>
+  <text x="1215" y="1066" fill="#94A3B8" font-size="11">Stream de Logs Operacionais &amp; Tokens em Tempo Real (3s)</text>
+</svg>

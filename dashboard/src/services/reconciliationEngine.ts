@@ -6,6 +6,7 @@ import { prisma } from '../config/prisma.js';
 import { env } from '../config/env.js';
 import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
 import { ScrapeResult } from './scraperService.js';
+import { NormsResolver, ResolvedNorm } from './normsResolver.js';
 
 export const violationSchema = z.object({
   normArticle: z.string().describe('Artigo e parágrafo específico violado'),
@@ -34,10 +35,13 @@ export interface AgentContext {
   name: string;
   code?: string | null;
   description?: string | null;
+  skill?: string;
   regulatoryFramework?: string | null;
   systemPrompt: string;
   targetNorms: string[];
+  tags?: string[];
   activeNorms: NormChunk[];
+  resolvedDbNorms?: ResolvedNorm[];
 }
 
 export class ReconciliationEngine {
@@ -242,48 +246,50 @@ export class ReconciliationEngine {
           },
         });
         if (agent) {
-          // Filtragem dinâmica de normas vinculadas ao agente
-          let activeNorms: NormChunk[] = [];
-          if (agent.targetNorms && agent.targetNorms.length > 0) {
-            const targetsLower = agent.targetNorms.map((t) => t.toLowerCase());
-            activeNorms = NORMS_CATALOG.filter(
-              (n) =>
-                targetsLower.includes(n.id.toLowerCase()) ||
-                targetsLower.includes(n.source.toLowerCase()) ||
-                targetsLower.some((t) => n.normCode.toLowerCase().includes(t))
-            );
-          }
+          // Resolução dinâmica de normas no banco de dados através das tags do agente
+          const agentTags = agent.tags && agent.tags.length > 0 ? agent.tags : ['CFM'];
+          const dbNorms = await NormsResolver.resolveByTags(agentTags);
 
-          if (activeNorms.length === 0 && agent.regulatoryFramework) {
-            const frameworkLower = agent.regulatoryFramework.toLowerCase();
-            activeNorms = NORMS_CATALOG.filter(
-              (n) =>
-                frameworkLower.includes(n.source.toLowerCase()) ||
-                frameworkLower.includes(n.normCode.toLowerCase())
-            );
-          }
+          let activeNorms: NormChunk[] = dbNorms.map((n) => ({
+            id: n.id,
+            normCode: n.normCode,
+            source: (n.source as any) || 'CFM',
+            title: n.title,
+            article: n.article || 'Dispositivo Geral',
+            severityDefault: (n.severityDefault as any) || 'MEDIA',
+            keywords: n.tags,
+            content: n.content,
+            correctiveGuidance: `Adequar conforme as diretrizes regulatórias vigentes da norma ${n.normCode}.`,
+          }));
 
           if (activeNorms.length === 0) {
             activeNorms = [...NORMS_CATALOG];
           }
 
-          const systemPrompt =
-            agent.systemPrompt && agent.systemPrompt.trim().length > 10
-              ? agent.systemPrompt.trim()
-              : `Você é o agente especialista "${agent.name}" (${agent.code}).
-Finalidade e escopo: ${agent.description}.
-Marco Regulatório auditado: ${agent.regulatoryFramework || 'Conformidade e Deontologia em Saúde'}.
-Normas vinculadas: ${activeNorms.map((n) => n.normCode).join(', ')}.`;
+          // A Descrição e Escopo atua como a Skill comportamental e persona da IA
+          const agentSkill =
+            agent.description && agent.description.trim().length > 0
+              ? agent.description.trim()
+              : `Auditor Deontológico em Saúde especialista em conformidade com as resoluções vigentes de ${agentTags.join(', ')}.`;
+
+          const systemPrompt = `Você é o agente especialista "${agent.name}" (${agent.code || 'MODULO'}).
+Skill Comportamental e Escopo do Agente: ${agentSkill}.
+Tags Regulatórias: ${agentTags.join(', ')}.
+Marco Regulatório Auditado: ${agent.regulatoryFramework || 'Conformidade e Deontologia em Saúde'}.
+Sua missão é realizar auditoria deontológica rigorosa confrontando o conteúdo do website com o rol integral de normas associadas.`;
 
           return {
             id: agent.id,
             name: agent.name,
             code: agent.code || undefined,
             description: agent.description || undefined,
+            skill: agentSkill,
             regulatoryFramework: agent.regulatoryFramework || undefined,
             systemPrompt,
             targetNorms: agent.targetNorms || [],
+            tags: agentTags,
             activeNorms,
+            resolvedDbNorms: dbNorms,
           };
         }
       } catch (err: any) {

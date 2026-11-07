@@ -102,41 +102,27 @@ export const AgentsPage: React.FC = () => {
   const [selectedMode, setSelectedMode] = useState('CHEERIO');
   const [running, setRunning] = useState(false);
 
-  // Modal de Cadastro de Novo Agente
+  // Modal de Cadastro de Novo Módulo de Agente (Estritamente Manual)
   const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
   const [newAgentData, setNewAgentData] = useState({
-    clientId: '',
-    regulatoryFramework: 'CFM (Resolução 2.336/2023)',
     name: '',
-    code: '',
-    description: '',
-    cronSchedule: '0 */6 * * *',
-    enabled: true,
-    extractionMode: 'CHEERIO',
     targetUrl: '',
-    apiEndpoint: '',
-    mcpUri: '',
-    targetNorms: [] as string[],
+    description: '',
+    tags: ['cfm'] as string[],
   });
+  const [newTagInput, setNewTagInput] = useState('');
   const [creatingAgent, setCreatingAgent] = useState(false);
 
-  // Modal de Edição de Agente Existente
+  // Modal de Edição de Módulo de Agente Existente
   const [showEditAgentModal, setShowEditAgentModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState<any>(null);
   const [editAgentData, setEditAgentData] = useState({
-    clientId: '',
-    regulatoryFramework: 'CFM (Resolução 2.336/2023)',
     name: '',
-    code: '',
-    description: '',
-    cronSchedule: '0 */6 * * *',
-    enabled: true,
-    extractionMode: 'CHEERIO',
     targetUrl: '',
-    apiEndpoint: '',
-    mcpUri: '',
-    targetNorms: [] as string[],
+    description: '',
+    tags: [] as string[],
   });
+  const [editTagInput, setEditTagInput] = useState('');
   const [updatingAgent, setUpdatingAgent] = useState(false);
 
   // Modal de Cadastro de Novo Modelo de IA no Banco
@@ -340,37 +326,31 @@ export const AgentsPage: React.FC = () => {
     }
   };
 
-  // Criar Agente
+  // Criar Módulo de Agente (Estritamente Manual)
   const handleCreateAgentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newAgentData.name.trim() || !newAgentData.targetUrl.trim() || !newAgentData.description.trim()) {
+      toast.error('Preencha os campos obrigatórios: Nome do Módulo, URL Alvo e Descrição/Skill.');
+      return;
+    }
+    if (newAgentData.tags.length === 0) {
+      toast.error('Selecione ou adicione ao menos uma Tag regulatória (ex: cfm, lgpd, anvisa).');
+      return;
+    }
     try {
       setCreatingAgent(true);
       await api.post('/agents', {
-        name: newAgentData.name,
-        code: newAgentData.code,
-        description: newAgentData.description,
-        clientId: newAgentData.clientId || null,
-        regulatoryFramework: newAgentData.regulatoryFramework,
-        cronSchedule: newAgentData.cronSchedule,
-        enabled: newAgentData.enabled,
-        extractionMode: newAgentData.extractionMode,
-        targetUrl: newAgentData.targetUrl || null,
-        targetNorms: newAgentData.targetNorms,
+        name: newAgentData.name.trim(),
+        targetUrl: newAgentData.targetUrl.trim(),
+        description: newAgentData.description.trim(),
+        tags: newAgentData.tags,
       });
       setShowCreateAgentModal(false);
       setNewAgentData({
-        clientId: '',
-        regulatoryFramework: 'CFM (Resolução 2.336/2023)',
         name: '',
-        code: '',
-        description: '',
-        cronSchedule: '0 */6 * * *',
-        enabled: true,
-        extractionMode: 'CHEERIO',
         targetUrl: '',
-        apiEndpoint: '',
-        mcpUri: '',
-        targetNorms: [],
+        description: '',
+        tags: ['cfm'],
       });
       fetchData(currentPage, pageSize);
       toast.success('Módulo de agente cadastrado com sucesso!');
@@ -385,19 +365,12 @@ export const AgentsPage: React.FC = () => {
   const handleOpenEditAgent = (mod: any) => {
     setEditingAgent(mod);
     setEditAgentData({
-      clientId: mod.clientId || '',
-      regulatoryFramework: mod.regulatoryFramework || 'CFM (Resolução 2.336/2023)',
       name: mod.name || '',
-      code: mod.code || '',
-      description: mod.description || '',
-      cronSchedule: mod.cronSchedule || '0 */6 * * *',
-      enabled: mod.enabled ?? true,
-      extractionMode: mod.extractionMode || 'CHEERIO',
       targetUrl: mod.targetUrl || '',
-      apiEndpoint: mod.apiEndpoint || '',
-      mcpUri: mod.mcpUri || '',
-      targetNorms: mod.targetNorms || [],
+      description: mod.description || '',
+      tags: mod.tags && mod.tags.length > 0 ? mod.tags : ['cfm'],
     });
+    setEditTagInput('');
     setShowEditAgentModal(true);
   };
 
@@ -405,19 +378,21 @@ export const AgentsPage: React.FC = () => {
   const handleUpdateAgentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingAgent) return;
+    if (!editAgentData.name.trim() || !editAgentData.targetUrl.trim() || !editAgentData.description.trim()) {
+      toast.error('Preencha os campos obrigatórios: Nome do Módulo, URL Alvo e Descrição/Skill.');
+      return;
+    }
+    if (editAgentData.tags.length === 0) {
+      toast.error('Selecione ou adicione ao menos uma Tag regulatória.');
+      return;
+    }
     try {
       setUpdatingAgent(true);
       await api.put(`/agents/${editingAgent.id}`, {
-        name: editAgentData.name,
-        code: editAgentData.code,
-        description: editAgentData.description,
-        clientId: editAgentData.clientId || null,
-        regulatoryFramework: editAgentData.regulatoryFramework,
-        cronSchedule: editAgentData.cronSchedule,
-        enabled: editAgentData.enabled,
-        extractionMode: editAgentData.extractionMode,
-        targetUrl: editAgentData.targetUrl || null,
-        targetNorms: editAgentData.targetNorms,
+        name: editAgentData.name.trim(),
+        targetUrl: editAgentData.targetUrl.trim(),
+        description: editAgentData.description.trim(),
+        tags: editAgentData.tags,
       });
       setShowEditAgentModal(false);
       setEditingAgent(null);
@@ -472,30 +447,6 @@ export const AgentsPage: React.FC = () => {
     } finally {
       setRunning(false);
     }
-  };
-
-  const toggleNormSelection = (normId: string) => {
-    setNewAgentData((prev) => {
-      const exists = prev.targetNorms.includes(normId);
-      return {
-        ...prev,
-        targetNorms: exists
-          ? prev.targetNorms.filter((id) => id !== normId)
-          : [...prev.targetNorms, normId],
-      };
-    });
-  };
-
-  const toggleEditNormSelection = (normId: string) => {
-    setEditAgentData((prev) => {
-      const exists = prev.targetNorms.includes(normId);
-      return {
-        ...prev,
-        targetNorms: exists
-          ? prev.targetNorms.filter((id) => id !== normId)
-          : [...prev.targetNorms, normId],
-      };
-    });
   };
 
   const activeModel = aiModels.find((m) => m.isActive);
@@ -1127,322 +1078,155 @@ export const AgentsPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateAgentSubmit} className="space-y-4 mt-5">
-              {/* Linha 1: Cliente Vinculado & Marco Regulatório */}
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Cliente Vinculado *
-                  </label>
-                  <select
-                    value={newAgentData.clientId}
-                    onChange={(e) => setNewAgentData({ ...newAgentData, clientId: e.target.value })}
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="">Selecione um cliente...</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.tradeName ? `(${c.tradeName})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Marco Regulatório *
-                  </label>
-                  <select
-                    value={newAgentData.regulatoryFramework}
-                    onChange={(e) =>
-                      setNewAgentData({ ...newAgentData, regulatoryFramework: e.target.value })
-                    }
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="CFM (Resolução 2.336/2023)">CFM (Resolução 2.336/2023)</option>
-                    <option value="CFM (Resolução 2.314/2022)">CFM (Resolução 2.314/2022)</option>
-                    <option value="LGPD em Saúde (Lei 13.709/18)">LGPD em Saúde (Lei 13.709/18)</option>
-                    <option value="ANS (Padrão TISS / Diretrizes)">ANS (Padrão TISS / Diretrizes)</option>
-                    <option value="ANVISA (RDC Sanitária)">ANVISA (RDC Sanitária)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Linha 2: Nome do Agente & Código Identificador (Slug) */}
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Nome do Agente *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newAgentData.name}
-                    onChange={(e) => {
-                      const name = e.target.value;
-                      const autoSlug = name
-                        .toLowerCase()
-                        .normalize('NFD')
-                        .replace(/[\u0300-\u036f]/g, '')
-                        .replace(/[^a-z0-9]+/g, '-')
-                        .replace(/^-+|-+$/g, '');
-                      setNewAgentData({
-                        ...newAgentData,
-                        name,
-                        code: newAgentData.code ? newAgentData.code : autoSlug,
-                      });
-                    }}
-                    placeholder="Ex: Auditor Deontológico CFM"
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Código Identificador (Slug) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newAgentData.code}
-                    onChange={(e) =>
-                      setNewAgentData({
-                        ...newAgentData,
-                        code: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-                      })
-                    }
-                    placeholder="cfm-publicidade-prontomed"
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-              </div>
-
-              {/* Linha 3: Descrição e Escopo */}
+              {/* 1. Nome do Módulo */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Descrição e Escopo
+                  Nome do Módulo *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Auditor Deontológico Dermatológico"
+                  value={newAgentData.name}
+                  onChange={(e) => setNewAgentData({ ...newAgentData, name: e.target.value })}
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* 2. URL Alvo */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  URL Alvo Oficial *
+                </label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://exemplo-clinica.com.br"
+                  value={newAgentData.targetUrl}
+                  onChange={(e) => setNewAgentData({ ...newAgentData, targetUrl: e.target.value })}
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  A página será extraída exclusivamente em formato Markdown limpo via motor Firecrawl com verificação criptográfica SHA-256.
+                </p>
+              </div>
+
+              {/* 3. Descrição e Escopo (Atua como a Skill comportamental / persona da IA) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Descrição e Escopo (Skill Comportamental da IA) *
                 </label>
                 <textarea
-                  rows={2}
+                  required
+                  rows={4}
+                  placeholder="Descreva detalhadamente o escopo do agente, persona deontológica e diretrizes comportamentais que guiarão a IA na auditoria deste módulo..."
                   value={newAgentData.description}
                   onChange={(e) => setNewAgentData({ ...newAgentData, description: e.target.value })}
-                  placeholder="Finalidade da varredura, escopo das regras auditadas..."
-                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                ></textarea>
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 resize-none font-mono"
+                />
               </div>
 
-              {/* Linha 4: Frequência Cron & Status do Agente */}
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Frequência de Execução (Cron) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newAgentData.cronSchedule}
-                    onChange={(e) =>
-                      setNewAgentData({ ...newAgentData, cronSchedule: e.target.value })
-                    }
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
-                  />
-                  {/* Sugestões de Cron */}
-                  <div className="flex items-center gap-1.5 mt-2 flex-wrap text-[11px]">
-                    <span className="text-slate-500">Sugestões:</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNewAgentData({ ...newAgentData, cronSchedule: '0 * * * *' })
-                      }
-                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
-                    >
-                      1 hora
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNewAgentData({ ...newAgentData, cronSchedule: '0 */6 * * *' })
-                      }
-                      className="px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/80 text-cyan-300 font-semibold"
-                    >
-                      6 horas (Padrão)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNewAgentData({ ...newAgentData, cronSchedule: '*/10 * * * *' })
-                      }
-                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
-                    >
-                      10 minutos
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNewAgentData({ ...newAgentData, cronSchedule: '*/5 * * * * *' })
-                      }
-                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
-                    >
-                      5 segundos (Teste)
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Status do Agente
-                  </label>
-                  <select
-                    value={newAgentData.enabled ? 'Ativo' : 'Inativo'}
-                    onChange={(e) =>
-                      setNewAgentData({
-                        ...newAgentData,
-                        enabled: e.target.value === 'Ativo',
-                      })
-                    }
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="Ativo">Ativo</option>
-                    <option value="Inativo">Inativo</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Seção MODO DE EXTRAÇÃO POLIMÓRFICO */}
-              <div className="pt-2">
-                <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider block mb-2">
-                  MODO DE EXTRAÇÃO POLIMÓRFICO
-                </span>
-                <div className="grid grid-cols-3 gap-3">
-                  <div
-                    onClick={() => setNewAgentData({ ...newAgentData, extractionMode: 'CHEERIO' })}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
-                      newAgentData.extractionMode === 'CHEERIO' || newAgentData.extractionMode === 'PUPPETEER'
-                        ? 'bg-cyan-950/30 border-cyan-500 text-white'
-                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Globe className={`h-4 w-4 ${newAgentData.extractionMode === 'CHEERIO' ? 'text-cyan-400' : 'text-slate-400'}`} />
-                      <span className="text-xs font-bold text-white">Scraping Web</span>
-                    </div>
-                    <span className="text-[11px] text-slate-400">DOM, Seletores e URLs</span>
-                  </div>
-
-                  <div
-                    onClick={() => setNewAgentData({ ...newAgentData, extractionMode: 'DATALINK' })}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
-                      newAgentData.extractionMode === 'DATALINK'
-                        ? 'bg-cyan-950/30 border-cyan-500 text-white'
-                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Layers className={`h-4 w-4 ${newAgentData.extractionMode === 'DATALINK' ? 'text-cyan-400' : 'text-slate-400'}`} />
-                      <span className="text-xs font-bold text-white">Datalink / API</span>
-                    </div>
-                    <span className="text-[11px] text-slate-400">Bancos ou APIs REST</span>
-                  </div>
-
-                  <div
-                    onClick={() => setNewAgentData({ ...newAgentData, extractionMode: 'MCP' })}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
-                      newAgentData.extractionMode === 'MCP'
-                        ? 'bg-cyan-950/30 border-cyan-500 text-white'
-                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Cpu className={`h-4 w-4 ${newAgentData.extractionMode === 'MCP' ? 'text-cyan-400' : 'text-slate-400'}`} />
-                      <span className="text-xs font-bold text-white">MCP Server</span>
-                    </div>
-                    <span className="text-[11px] text-slate-400">Model Context Protocol</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Sub-bloco condicional baseado no modo de extração */}
-              <div className="bg-[#080d1a] border border-slate-800 rounded-xl p-3.5 space-y-2.5">
-                <span className="text-xs font-semibold text-slate-300 block">
-                  {newAgentData.extractionMode === 'DATALINK'
-                    ? 'Parâmetros de Extração Datalink / API'
-                    : newAgentData.extractionMode === 'MCP'
-                    ? 'Parâmetros de Extração MCP (Model Context Protocol)'
-                    : 'Parâmetros de Extração Web (Scraping)'}
-                </span>
-
-                {newAgentData.extractionMode === 'DATALINK' ? (
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                      Endpoint da API REST / Query *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="https://api.clinica.com.br/v1/auditoria"
-                      value={newAgentData.apiEndpoint}
-                      onChange={(e) =>
-                        setNewAgentData({ ...newAgentData, apiEndpoint: e.target.value })
-                      }
-                      className="w-full bg-[#0b132b] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-                    />
-                  </div>
-                ) : newAgentData.extractionMode === 'MCP' ? (
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                      URI do Servidor MCP *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="mcp://localhost:8080 ou https://mcp.clinica.com.br"
-                      value={newAgentData.mcpUri}
-                      onChange={(e) => setNewAgentData({ ...newAgentData, mcpUri: e.target.value })}
-                      className="w-full bg-[#0b132b] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                      URL Alvo (Target URL) *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="https://clinica.med.br/servicos"
-                      value={newAgentData.targetUrl}
-                      onChange={(e) =>
-                        setNewAgentData({ ...newAgentData, targetUrl: e.target.value })
-                      }
-                      className="w-full bg-[#0b132b] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Normas e Artigos Regulados */}
+              {/* 4. Seletor de Tags Regulatórias (Vínculo Dinâmico no Banco) */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Normas e Artigos Auditados ({newAgentData.targetNorms.length} selecionados)
+                  Tags Regulatórias * (Resolução Dinâmica de Normas no Banco)
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto p-2 bg-[#080d1a] border border-slate-800 rounded-xl">
-                  {catalogNorms.map((norm) => {
-                    const isChecked = newAgentData.targetNorms.includes(norm.id);
+                
+                {/* Badges rápidos de órgãos regulatórios */}
+                <div className="flex flex-wrap gap-2 mb-2.5">
+                  {['cfm', 'lgpd', 'anvisa', 'ans'].map((tag) => {
+                    const isSelected = newAgentData.tags.includes(tag);
                     return (
-                      <label
-                        key={norm.id}
-                        className={`flex items-center gap-2 p-1.5 rounded-lg text-[11px] cursor-pointer border transition ${
-                          isChecked
-                            ? 'bg-cyan-950/40 border-cyan-700/80 text-cyan-200'
-                            : 'bg-slate-900/60 border-slate-800/80 text-slate-400 hover:border-slate-700'
+                      <button
+                        type="button"
+                        key={tag}
+                        onClick={() => {
+                          if (isSelected) {
+                            setNewAgentData({
+                              ...newAgentData,
+                              tags: newAgentData.tags.filter((t) => t !== tag),
+                            });
+                          } else {
+                            setNewAgentData({
+                              ...newAgentData,
+                              tags: [...newAgentData.tags, tag],
+                            });
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleNormSelection(norm.id)}
-                          className="rounded border-slate-700 text-cyan-500 focus:ring-0"
-                        />
-                        <span className="truncate" title={norm.description || norm.article}>
-                          {norm.normCode} - {norm.article}
-                        </span>
-                      </label>
+                        <span>{tag.toUpperCase()}</span>
+                        {isSelected ? '✓' : '+'}
+                      </button>
                     );
                   })}
+                </div>
+
+                {/* Input para Tags Livres Adicionais */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Adicionar outra tag (ex: telemedicina, rdc67)..."
+                    value={newTagInput}
+                    onChange={(e) => setNewTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const tag = newTagInput.trim().toLowerCase();
+                        if (tag && !newAgentData.tags.includes(tag)) {
+                          setNewAgentData({ ...newAgentData, tags: [...newAgentData.tags, tag] });
+                          setNewTagInput('');
+                        }
+                      }
+                    }}
+                    className="flex-1 bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tag = newTagInput.trim().toLowerCase();
+                      if (tag && !newAgentData.tags.includes(tag)) {
+                        setNewAgentData({ ...newAgentData, tags: [...newAgentData.tags, tag] });
+                        setNewTagInput('');
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 font-semibold text-xs rounded-xl border border-slate-700 transition"
+                  >
+                    + Tag
+                  </button>
+                </div>
+
+                {/* Tags Selecionadas */}
+                <div className="flex flex-wrap gap-1.5 mt-2.5">
+                  {newAgentData.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-cyan-950/80 border border-cyan-800 text-cyan-300 rounded-md text-[11px] font-mono"
+                    >
+                      #{tag}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNewAgentData({
+                            ...newAgentData,
+                            tags: newAgentData.tags.filter((t) => t !== tag),
+                          })
+                        }
+                        className="hover:text-red-400 ml-1 font-bold"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                {/* Box de Governança / Isolamento de Normas */}
+                <div className="mt-3 p-3 bg-cyan-950/30 border border-cyan-900/50 rounded-xl text-[11px] text-cyan-300/90 leading-relaxed">
+                  🛡️ <strong>Isolamento & Governança:</strong> Nenhuma norma física é copiada no cadastro. A IA recuperará dinamicamente todos os documentos normativos do banco de dados MongoDB associados às tags configuradas no momento da auditoria.
                 </div>
               </div>
 
@@ -1489,297 +1273,145 @@ export const AgentsPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleUpdateAgentSubmit} className="space-y-4 mt-5">
-              {/* Linha 1: Cliente Vinculado & Marco Regulatório */}
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Cliente Vinculado
-                  </label>
-                  <select
-                    value={editAgentData.clientId}
-                    onChange={(e) => setEditAgentData({ ...editAgentData, clientId: e.target.value })}
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="">Nenhum (Agente Global / Multicliente)</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.tradeName ? `(${c.tradeName})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Marco Regulatório *
-                  </label>
-                  <select
-                    value={editAgentData.regulatoryFramework}
-                    onChange={(e) =>
-                      setEditAgentData({ ...editAgentData, regulatoryFramework: e.target.value })
-                    }
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="CFM (Resolução 2.336/2023)">CFM (Resolução 2.336/2023)</option>
-                    <option value="CFM (Resolução 2.314/2022)">CFM (Resolução 2.314/2022)</option>
-                    <option value="LGPD em Saúde (Lei 13.709/18)">LGPD em Saúde (Lei 13.709/18)</option>
-                    <option value="ANS (Padrão TISS / Diretrizes)">ANS (Padrão TISS / Diretrizes)</option>
-                    <option value="ANVISA (RDC Sanitária)">ANVISA (RDC Sanitária)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Linha 2: Nome do Agente & Código Identificador (Slug) */}
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Nome do Agente *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={editAgentData.name}
-                    onChange={(e) => setEditAgentData({ ...editAgentData, name: e.target.value })}
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Código Identificador (Slug) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={editAgentData.code}
-                    onChange={(e) =>
-                      setEditAgentData({
-                        ...editAgentData,
-                        code: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-                      })
-                    }
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-              </div>
-
-              {/* Linha 3: Descrição e Escopo */}
+              {/* 1. Nome do Módulo */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Descrição e Escopo
+                  Nome do Módulo *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editAgentData.name}
+                  onChange={(e) => setEditAgentData({ ...editAgentData, name: e.target.value })}
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* 2. URL Alvo */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  URL Alvo Oficial *
+                </label>
+                <input
+                  type="url"
+                  required
+                  value={editAgentData.targetUrl}
+                  onChange={(e) => setEditAgentData({ ...editAgentData, targetUrl: e.target.value })}
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* 3. Descrição e Escopo (Skill da IA) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Descrição e Escopo (Skill Comportamental da IA) *
                 </label>
                 <textarea
-                  rows={2}
+                  required
+                  rows={4}
                   value={editAgentData.description}
                   onChange={(e) => setEditAgentData({ ...editAgentData, description: e.target.value })}
-                  placeholder="Finalidade da varredura, escopo das regras auditadas..."
-                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                ></textarea>
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-cyan-500 resize-none font-mono"
+                />
               </div>
 
-              {/* Linha 4: Frequência Cron & Status do Agente */}
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Frequência de Execução (Cron) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={editAgentData.cronSchedule}
-                    onChange={(e) =>
-                      setEditAgentData({ ...editAgentData, cronSchedule: e.target.value })
-                    }
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
-                  />
-                  <div className="flex items-center gap-1.5 mt-2 flex-wrap text-[11px]">
-                    <span className="text-slate-500">Sugestões:</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditAgentData({ ...editAgentData, cronSchedule: '0 * * * *' })
-                      }
-                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
-                    >
-                      1 hora
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditAgentData({ ...editAgentData, cronSchedule: '0 */6 * * *' })
-                      }
-                      className="px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/80 text-cyan-300 font-semibold"
-                    >
-                      6 horas
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditAgentData({ ...editAgentData, cronSchedule: '*/10 * * * *' })
-                      }
-                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
-                    >
-                      10 min
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Status do Agente
-                  </label>
-                  <select
-                    value={editAgentData.enabled ? 'Ativo' : 'Inativo'}
-                    onChange={(e) =>
-                      setEditAgentData({
-                        ...editAgentData,
-                        enabled: e.target.value === 'Ativo',
-                      })
-                    }
-                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="Ativo">Ativo</option>
-                    <option value="Inativo">Inativo</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Seção MODO DE EXTRAÇÃO POLIMÓRFICO */}
-              <div className="pt-2">
-                <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider block mb-2">
-                  MODO DE EXTRAÇÃO POLIMÓRFICO
-                </span>
-                <div className="grid grid-cols-3 gap-3">
-                  <div
-                    onClick={() => setEditAgentData({ ...editAgentData, extractionMode: 'CHEERIO' })}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
-                      editAgentData.extractionMode === 'CHEERIO' || editAgentData.extractionMode === 'PUPPETEER'
-                        ? 'bg-cyan-950/30 border-cyan-500 text-white'
-                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Globe className={`h-4 w-4 ${editAgentData.extractionMode === 'CHEERIO' ? 'text-cyan-400' : 'text-slate-400'}`} />
-                      <span className="text-xs font-bold text-white">Scraping Web</span>
-                    </div>
-                    <span className="text-[11px] text-slate-400">DOM, Seletores e URLs</span>
-                  </div>
-
-                  <div
-                    onClick={() => setEditAgentData({ ...editAgentData, extractionMode: 'DATALINK' })}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
-                      editAgentData.extractionMode === 'DATALINK'
-                        ? 'bg-cyan-950/30 border-cyan-500 text-white'
-                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Layers className={`h-4 w-4 ${editAgentData.extractionMode === 'DATALINK' ? 'text-cyan-400' : 'text-slate-400'}`} />
-                      <span className="text-xs font-bold text-white">Datalink / API</span>
-                    </div>
-                    <span className="text-[11px] text-slate-400">Bancos ou APIs REST</span>
-                  </div>
-
-                  <div
-                    onClick={() => setEditAgentData({ ...editAgentData, extractionMode: 'MCP' })}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
-                      editAgentData.extractionMode === 'MCP'
-                        ? 'bg-cyan-950/30 border-cyan-500 text-white'
-                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Cpu className={`h-4 w-4 ${editAgentData.extractionMode === 'MCP' ? 'text-cyan-400' : 'text-slate-400'}`} />
-                      <span className="text-xs font-bold text-white">MCP Server</span>
-                    </div>
-                    <span className="text-[11px] text-slate-400">Model Context Protocol</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Parâmetros de extração */}
-              <div className="bg-[#080d1a] border border-slate-800 rounded-xl p-3.5 space-y-2.5">
-                <span className="text-xs font-semibold text-slate-300 block">
-                  {editAgentData.extractionMode === 'DATALINK'
-                    ? 'Parâmetros de Extração Datalink / API'
-                    : editAgentData.extractionMode === 'MCP'
-                    ? 'Parâmetros de Extração MCP (Model Context Protocol)'
-                    : 'Parâmetros de Extração Web (Scraping)'}
-                </span>
-
-                {editAgentData.extractionMode === 'DATALINK' ? (
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                      Endpoint da API REST / Query *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="https://api.clinica.com.br/v1/auditoria"
-                      value={editAgentData.apiEndpoint}
-                      onChange={(e) =>
-                        setEditAgentData({ ...editAgentData, apiEndpoint: e.target.value })
-                      }
-                      className="w-full bg-[#0b132b] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                ) : editAgentData.extractionMode === 'MCP' ? (
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                      URI do Servidor MCP *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="mcp://localhost:8080 ou https://mcp.clinica.com.br"
-                      value={editAgentData.mcpUri}
-                      onChange={(e) => setEditAgentData({ ...editAgentData, mcpUri: e.target.value })}
-                      className="w-full bg-[#0b132b] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                      URL Alvo (Target URL) *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="https://clinica.med.br/servicos"
-                      value={editAgentData.targetUrl}
-                      onChange={(e) =>
-                        setEditAgentData({ ...editAgentData, targetUrl: e.target.value })
-                      }
-                      className="w-full bg-[#0b132b] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Normas e Artigos Regulados */}
+              {/* 4. Tags Regulatórias */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Normas e Artigos Auditados ({editAgentData.targetNorms.length} selecionados)
+                  Tags Regulatórias * (Resolução Dinâmica de Normas no Banco)
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto p-2 bg-[#080d1a] border border-slate-800 rounded-xl">
-                  {catalogNorms.map((norm) => {
-                    const isChecked = editAgentData.targetNorms.includes(norm.id);
+                
+                <div className="flex flex-wrap gap-2 mb-2.5">
+                  {['cfm', 'lgpd', 'anvisa', 'ans'].map((tag) => {
+                    const isSelected = editAgentData.tags.includes(tag);
                     return (
-                      <label
-                        key={norm.id}
-                        className={`flex items-center gap-2 p-1.5 rounded-lg text-[11px] cursor-pointer border transition ${
-                          isChecked
-                            ? 'bg-cyan-950/40 border-cyan-700/80 text-cyan-200'
-                            : 'bg-slate-900/60 border-slate-800/80 text-slate-400 hover:border-slate-700'
+                      <button
+                        type="button"
+                        key={tag}
+                        onClick={() => {
+                          if (isSelected) {
+                            setEditAgentData({
+                              ...editAgentData,
+                              tags: editAgentData.tags.filter((t) => t !== tag),
+                            });
+                          } else {
+                            setEditAgentData({
+                              ...editAgentData,
+                              tags: [...editAgentData.tags, tag],
+                            });
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleEditNormSelection(norm.id)}
-                          className="rounded border-slate-700 text-cyan-500 focus:ring-0"
-                        />
-                        <span className="truncate" title={norm.description || norm.article}>
-                          {norm.normCode} - {norm.article}
-                        </span>
-                      </label>
+                        <span>{tag.toUpperCase()}</span>
+                        {isSelected ? '✓' : '+'}
+                      </button>
                     );
                   })}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Adicionar outra tag..."
+                    value={editTagInput}
+                    onChange={(e) => setEditTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const tag = editTagInput.trim().toLowerCase();
+                        if (tag && !editAgentData.tags.includes(tag)) {
+                          setEditAgentData({ ...editAgentData, tags: [...editAgentData.tags, tag] });
+                          setEditTagInput('');
+                        }
+                      }
+                    }}
+                    className="flex-1 bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tag = editTagInput.trim().toLowerCase();
+                      if (tag && !editAgentData.tags.includes(tag)) {
+                        setEditAgentData({ ...editAgentData, tags: [...editAgentData.tags, tag] });
+                        setEditTagInput('');
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 font-semibold text-xs rounded-xl border border-slate-700 transition"
+                  >
+                    + Tag
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 mt-2.5">
+                  {editAgentData.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-cyan-950/80 border border-cyan-800 text-cyan-300 rounded-md text-[11px] font-mono"
+                    >
+                      #{tag}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditAgentData({
+                            ...editAgentData,
+                            tags: editAgentData.tags.filter((t) => t !== tag),
+                          })
+                        }
+                        className="hover:text-red-400 ml-1 font-bold"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="mt-3 p-3 bg-cyan-950/30 border border-cyan-900/50 rounded-xl text-[11px] text-cyan-300/90 leading-relaxed">
+                  🛡️ <strong>Isolamento & Governança:</strong> As normas regulatórias serão recuperadas dinamicamente da collection de normas no MongoDB com base nas tags ativas no momento da auditoria.
                 </div>
               </div>
 
