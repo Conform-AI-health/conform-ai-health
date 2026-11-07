@@ -97,21 +97,21 @@ flowchart TD
 ## 🌿 Estágio 5: Finalização Git, Criação de Branch & Rastreabilidade de Tarefas
 - **Agentes Responsáveis:** `@software-architect` & `@backend-engineer` *(com suporte de `@devops-engineer`)*
 - **Ações Obrigatórias:**
-  1. **Criação da Branch Dedicada:**
-     - Ao finalizar a implementação e testes do ciclo, criar uma branch temática padronizada no Git:
+  1. **Criação da Branch SEMPRE a partir da `main`:**
+     - A branch temática DEVE ser criada obrigatoriamente a partir da branch `main` sincronizada:
        ```bash
-       git checkout -b feature/issue-<NUMERO_DA_ISSUE>-<SLUG_DA_TAREFA>
-       # Exemplo: git checkout -b feature/issue-10-rag-scraped-pages
+       git checkout main
+       git pull origin main
+       git checkout -b feat/issue-<NUMERO_DA_ISSUE>-<SLUG_DA_TAREFA>
+       # Exemplo: git checkout -b feat/issue-10-rag-scraped-pages
        ```
   2. **Atrelar a Branch e Commits às Tarefas:**
-     - Todos os commits devem referenciar explicitamente o número da issue correspondente para vincular o histórico no GitHub:
+     - Todos os commits devem referenciar explicitamente o número/ID da issue correspondente para vincular o histórico no GitHub:
        ```bash
        git commit -m "feat(rag): ingestao de normas e tagging contextual (refs #10, #36)"
        ```
-     - Caso o fechamento seja automático pelo Pull Request, utilizar as palavras-chave padrão do GitHub (`Closes #X`, `Fixes #X`).
-  3. **Vincular Branch na Issue:**
-     - Registrar o nome da branch gerada nos comentários da issue ou via comando `gh issue develop`:
-       ```bash
-       gh issue develop <NUMERO_DA_ISSUE> --branch "feature/issue-<NUMERO_DA_ISSUE>-<SLUG>"
-       ```
-- **Saída:** Branch Git isolada, com commits limpos, rastreabilidade completa e vínculo bidirecional com as issues no GitHub Projects.
+  3. **Vincular Links na Tarefa/Issue do GitHub:**
+     - Registrar obrigatoriamente no corpo ou comentários da tarefa no GitHub:
+       - O **link direto do commit no GitHub**: `https://github.com/Conform-AI-health/conform-ai-health/commit/<hash>`
+       - O **link do Pull Request**: `https://github.com/Conform-AI-health/conform-ai-health/pull/new/<branch>`
+- **Saída:** Branch Git isolada originada da `main`, commits limpos e rastreabilidade total anexada na tarefa do GitHub Projects.

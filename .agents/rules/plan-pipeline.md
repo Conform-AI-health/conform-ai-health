@@ -30,10 +30,15 @@ flowchart TD
 - **Ações:**
   1. Analisar os requisitos do usuário e decompor o escopo em **Épicos** e **Histórias de Usuário** (*Como... quero... para...*).
   2. Mapear aderência regulatória: Resoluções do CFM (2.336/2023, 2.314/2022), ANS, ANVISA e LGPD Art. 11.
-  3. Definir critérios de aceitação funcionais e deontológicos.
-  4. **GitHub Issue:** Criar formalmente a Issue no GitHub (`Conform-AI-health/conform-ai-health`) com labels: `user-story`, `padrão-po`, `compliance`.
-- **Ação no GitHub Projects Board:**
-  - Adicionar o item ao board [Conform.AI - Backlog & Roadmap](https://github.com/orgs/Conform-AI-health/projects/3/views/1) e posicionar na coluna **`Backlog`**.
+  3. Definir critérios de aceitação funcionais e deontológicos no formato **BDD/Gherkin** (*Dado... Quando... Então...*).
+  4. **Documentação Completa da Tarefa:** A issue/card criada **NÃO PODE ficar resumida ou sem detalhes**. Deve conter obrigatoriamente:
+     - História de Usuário detalhada.
+     - Contexto Deontológico & Regulatório aplicável.
+     - Critérios de Aceitação BDD.
+     - Arquitetura Técnica & Entregáveis (Backend, Frontend, Módulos).
+  5. **GitHub Issue & Projects Board:**
+     - Criar formalmente a Issue/Item no board [Conform.AI - Backlog & Roadmap](https://github.com/orgs/Conform-AI-health/projects/3/views/1).
+     - Posicionar o item na coluna **`Backlog`**.
 
 ---
 
@@ -77,7 +82,22 @@ flowchart TD
 
 ## 🌿 Estágio 5: Branch Git & Rastreabilidade (@software-architect + Time)
 - **Ações:**
-  1. Criar branch dedicada no Git referenciando a issue: `git checkout -b feat/issue-<ID>-<slug>` (ou `fix/...`).
-  2. Realizar commits claros com rastreabilidade: `git commit -m "... (refs #<ID>)"`.
-  3. Enviar para o repositório remoto (`git push origin <branch>`).
-  4. Registrar o link da branch / Pull Request na Issue do GitHub.
+  1. **Criação da Branch SEMPRE a partir da `main`:**
+     - A branch de trabalho DEVE ser criada obrigatoriamente a partir da branch `main` sincronizada com o repositório remoto:
+       ```bash
+       git checkout main
+       git pull origin main
+       git checkout -b feat/issue-<ID>-<slug>
+       ```
+     - É estritamente proibido criar branches a partir de branches de feature antigas ou não-mescladas sem alinhamento prévio.
+  2. **Commits Rastreáveis:**
+     - Realizar commits semânticos referenciando o ID da tarefa/issue:
+       ```bash
+       git commit -m "feat(<escopo>): descrição da entrega (refs #<ID>)"
+       ```
+  3. **Publicação Remota:**
+     - Enviar a branch para o repositório remoto (`git push -u origin feat/...`).
+  4. **Vinculação Obrigatória à Tarefa no GitHub:**
+     - O assistente DEVE obrigatoriamente anexar na Issue/Task no GitHub (atualizando o corpo ou publicando comentário):
+       - O **link direto do commit no GitHub** (`https://github.com/Conform-AI-health/conform-ai-health/commit/<hash>`).
+       - O **link do Pull Request criado** (`https://github.com/Conform-AI-health/conform-ai-health/pull/new/<branch>`).
