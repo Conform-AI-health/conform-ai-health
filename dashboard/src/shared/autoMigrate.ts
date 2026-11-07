@@ -232,6 +232,24 @@ export async function runAutoMigrateAndSeed() {
       if (clientsWithoutDates.length > 0) {
         console.log(`🛡️ [AutoMigrate] ${clientsWithoutDates.length} Cliente(s) legados sanitizados com timestamps válidos.`);
       }
+
+      // 5.4 Atualizar Laudos legados com clientId nulo
+      const defaultClient = await prisma.client.findFirst({ orderBy: { createdAt: 'asc' } }).catch(() => null);
+      if (defaultClient) {
+        const reportsWithoutClient = await prisma.auditReport.findMany({
+          where: { clientId: null },
+        }).catch(() => []);
+
+        for (const rep of reportsWithoutClient) {
+          await prisma.auditReport.update({
+            where: { id: rep.id },
+            data: { clientId: defaultClient.id },
+          }).catch(() => {});
+        }
+        if (reportsWithoutClient.length > 0) {
+          console.log(`🛡️ [AutoMigrate] ${reportsWithoutClient.length} Laudo(s) legados vinculados ao cliente padrão.`);
+        }
+      }
     } catch (healErr: any) {
       console.warn('⚠️ [AutoMigrate] Aviso na autocura de registros legados:', healErr.message);
     }

@@ -125,8 +125,8 @@ model AgentDefinition {
 
 model AuditReport {
   id              String         @id @default(auto()) @map("_id") @db.ObjectId
-  clientId        String         @db.ObjectId
-  client          Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId        String?        @db.ObjectId
+  client          Client?        @relation(fields: [clientId], references: [id], onDelete: Cascade)
   targetUrl       String
   extractionMode  ExtractionMode @default(CHEERIO)
   verdict         Verdict        @default(PARCIALMENTE_CONFORME)

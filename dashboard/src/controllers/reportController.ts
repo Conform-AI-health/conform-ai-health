@@ -61,7 +61,17 @@ export class ReportController {
       ]);
 
       res.status(200).json({
-        data: reports,
+        data: reports.map((r) => ({
+          ...r,
+          client: r.client || {
+            id: r.clientId || 'avulso',
+            name: 'Auditoria Direta / Avulsa',
+            tradeName: 'Sem vínculo',
+            crmResponsavel: '-',
+            crmUf: '-',
+          },
+          createdAt: r.createdAt || new Date(),
+        })),
         pagination: {
           total,
           page,
@@ -144,12 +154,17 @@ export class ReportController {
           ? '🟡 PARCIALMENTE CONFORME (ATENÇÃO)'
           : '🔴 NÃO CONFORME (VIOLAÇÃO CRÍTICA)';
 
+      const clientName = report.client?.name || 'Clínica Não Vinculada';
+      const techResp = report.client
+        ? `CRM/${report.client.crmUf || '-'} ${report.client.crmResponsavel || '-'}`
+        : 'Não informado';
+
       let md = `# 🏥 LAUDO TÉCNICO DE CONFORMIDADE DEONTOLÓGICA & REGULATÓRIA\n`;
       md += `**Plataforma ConformIA** — Inteligência & Governança Ética em Saúde\n\n`;
       md += `---\n\n`;
       md += `### 📋 Dados da Instituição Auditada\n`;
-      md += `- **Clínica:** ${report.client.name}\n`;
-      md += `- **Responsável Técnico:** CRM/${report.client.crmUf} ${report.client.crmResponsavel}\n`;
+      md += `- **Clínica:** ${clientName}\n`;
+      md += `- **Responsável Técnico:** ${techResp}\n`;
       md += `- **Canal / URL Auditada:** ${report.targetUrl}\n`;
       md += `- **Data da Auditoria:** ${dateStr}\n`;
       md += `- **Status da Auditoria:** ${report.status}\n\n`;
