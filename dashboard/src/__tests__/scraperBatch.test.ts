@@ -131,5 +131,52 @@ describe('🕷️ ScraperService - Varredura em Lote e Diretórios GitHub', () =
 
     getSpy.mockRestore();
   });
+
+  it('deve reconhecer URLs de arquivos PDF regulatórios oficiais', () => {
+    const senadoPdfUrl = 'https://www2.senado.leg.br/bdsf/bitstream/handle/id/658231/Lei_geral_protecao_dados_pessoais_1ed.pdf';
+    expect(ScraperService.isPdfUrl(senadoPdfUrl)).toBe(true);
+
+    const paramPdfUrl = 'https://portal.cfm.org.br/normas/resolucao2336.pdf?download=true';
+    expect(ScraperService.isPdfUrl(paramPdfUrl)).toBe(true);
+
+    const htmlUrl = 'https://www.in.gov.br/leiturajornal';
+    expect(ScraperService.isPdfUrl(htmlUrl)).toBe(false);
+  });
+
+  it('deve rotear URL de PDF diretamente no scrapeMultiDocOrSingle e estruturar Markdown e Tags', async () => {
+    const pdfUrl = 'https://www2.senado.leg.br/bdsf/bitstream/handle/id/658231/Lei_geral_protecao_dados_pessoais_1ed.pdf';
+
+    const mockScrapeResult = {
+      url: pdfUrl,
+      mode: 'CHEERIO' as const,
+      title: 'Lei Geral Protecao Dados Pessoais 1ed',
+      rawHtmlLength: 204800,
+      cleanMarkdown: '# Lei Geral de Proteção de Dados Pessoais (LGPD)\n\nArt. 1º Esta Lei dispõe sobre o tratamento de dados pessoais, inclusive nos meios digitais...',
+      tokensEstimatedRaw: 51200,
+      tokensEstimatedClean: 25,
+      tokensSavedPercentage: 99,
+      detectedTags: ['LGPD'],
+      extractedEntities: {
+        crms: [],
+        rqes: [],
+        states: [],
+        hasBeforeAfterMention: false,
+        hasPromotionalPricing: false,
+        hasGuaranteedResultMention: false,
+      },
+    };
+
+    const scrapePdfSpy = vi.spyOn(ScraperService, 'scrapePdf').mockResolvedValueOnce(mockScrapeResult);
+
+    const docs = await ScraperService.scrapeMultiDocOrSingle(pdfUrl, ['LGPD']);
+
+    expect(docs).toHaveLength(1);
+    expect(docs[0].title).toBe('Lei Geral Protecao Dados Pessoais 1ed');
+    expect(docs[0].detectedTags).toContain('LGPD');
+    expect(docs[0].cleanMarkdown).toContain('LGPD');
+    expect(scrapePdfSpy).toHaveBeenCalledWith(pdfUrl, ['LGPD']);
+
+    scrapePdfSpy.mockRestore();
+  });
 });
 

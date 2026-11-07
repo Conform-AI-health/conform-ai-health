@@ -118,6 +118,7 @@ export const ScrapingPage: React.FC = () => {
 
   const isGitHubDirectory = url.includes('github.com') && url.includes('/tree/');
   const isDouPortal = url.includes('in.gov.br');
+  const isPdfLink = /\.pdf($|\?|#)/i.test(url);
 
   const handleScrapeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,19 +218,25 @@ export const ScrapingPage: React.FC = () => {
                   <span>Diário Oficial (DOU) / Multi-Atos & Submenus</span>
                 </span>
               )}
+              {isPdfLink && (
+                <span className="text-[10px] font-bold text-rose-400 bg-rose-950/70 border border-rose-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  <span>📑</span>
+                  <span>Documento PDF Regulatório Detectado</span>
+                </span>
+              )}
             </label>
             <input
               type="url"
               required
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="Ex: https://www.in.gov.br/leiturajornal?secao=dou1&data=29-10-2026&org=Ministério%20da%20Saúde&ato=Resolução"
+              placeholder="Ex: https://www2.senado.leg.br/bdsf/bitstream/handle/id/658231/Lei_geral_protecao_dados_pessoais_1ed.pdf"
               className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
             />
             <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
               <span>💡</span>
               <span>
-                Suporta páginas avulsas, repositórios GitHub e <strong>portais oficiais com submenus/paginação</strong> (ex: <code className="text-emerald-400">in.gov.br/leiturajornal</code>). O sistema navega automaticamente por submenus e paginações, salvando cada resolução ou ato como um documento independente no MongoDB.
+                Suporta <strong>documentos PDF oficiais</strong> (ex: Senado Federal, CFM, Diários Oficiais), páginas avulsas, repositórios GitHub e <strong>portais oficiais com submenus/paginação</strong> (ex: <code className="text-emerald-400">in.gov.br/leiturajornal</code>). O sistema extrai e indexa o texto completo de forma estruturada no MongoDB.
               </span>
             </p>
           </div>

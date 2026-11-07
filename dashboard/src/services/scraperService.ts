@@ -55,6 +55,13 @@ export class ScraperService {
   }
 
   /**
+   * Verifica se a URL informada aponta para um arquivo PDF
+   */
+  public static isPdfUrl(url: string): boolean {
+    return /\.pdf($|\?|#)/i.test(url);
+  }
+
+  /**
    * Extração de entidades deontológicas, números de registro e heurísticas de infração
    */
   public static extractEntities(cleanMarkdown: string, rawHtml: string) {
@@ -136,6 +143,153 @@ export class ScraperService {
     });
 
     return parts.join('\n').trim();
+  }
+
+  /**
+   * Baixa e extrai texto de documentos regulatórios em formato PDF (ex: Leis do Senado, Resoluções CFM, ANVISA)
+   */
+  public static async scrapePdf(url: string, customTags?: string[]): Promise<ScrapeResult> {
+    console.log(`📑 [Scraper PDF] Baixando e extraindo documento PDF oficial: ${url}`);
+
+    const headers: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 (ConformIA Regulatory Auditor)',
+      Accept: 'application/pdf,application/octet-stream,*/*',
+    };
+
+    const resp = await axios.get(url, {
+      responseType: 'arraybuffer',
+      headers,
+      timeout: 35000,
+      maxContentLength: 50 * 1024 * 1024, // Limite de 50MB
+    });
+
+    const buffer = Buffer.from(resp.data);
+
+    // Validação da assinatura binária de arquivos PDF (%PDF-)
+    const isRealPdf = buffer.subarray(0, 5).toString('ascii').startsWith('%PDF');
+    if (!isRealPdf) {
+      const textSnippet = buffer.subarray(0, 2500).toString('utf-8');
+      
+      // Detecção de Desafio de Segurança / WAF Anti-Bot (ex: Senado Federal, Cloudflare)
+      if (
+        textSnippet.includes('Verificação de segurança') ||
+        textSnippet.includes('challenge') ||
+        textSnippet.includes('captcha') ||
+        textSnippet.includes('cloudflare') ||
+        textSnippet.includes('cf-browser-verification')
+      ) {
+        let domain = url;
+        try {
+          domain = new URL(url).hostname;
+        } catch (e) {}
+
+        throw new Error(
+          `O portal (${domain}) bloqueou a requisição automatizada com um desafio anti-bot/WAF ('Verificação de segurança'). Por políticas estritas de deontologia e segurança, desafios interativos de verificação humana não podem ser contornados programaticamente. Sugestão: utilize a fonte oficial aberta da norma (ex: Planalto.gov.br para a LGPD) ou efetue o download do arquivo.`
+        );
+      }
+
+      // Se a URL com .pdf na verdade retornou uma página HTML válida (ex: landing page de download)
+      if (textSnippet.includes('<html') || textSnippet.includes('<!DOCTYPE')) {
+        console.info(`[Scraper PDF] URL retornou página HTML em vez de binário PDF puro. Processando via Cheerio...`);
+        return this.processHtml(url, buffer.toString('utf-8'), 'CHEERIO');
+      }
+
+      throw new Error('O arquivo retornado pelo servidor não possui assinatura binária válida de documento PDF.');
+    }
+
+    let extractedText = '';
+    let pdfTitle = '';
+    let totalPages = 1;
+
+    try {
+      const { PDFParse } = await import('pdf-parse');
+      const parser = new PDFParse({ data: buffer });
+      const textResult = await parser.getText();
+      extractedText = textResult.text || '';
+      totalPages = textResult.total || 1;
+
+      try {
+        const infoResult = await parser.getInfo();
+        if (infoResult?.info?.Title && typeof infoResult.info.Title === 'string' && infoResult.info.Title.trim().length > 3) {
+          pdfTitle = infoResult.info.Title.trim();
+        }
+      } catch (e) {}
+
+      await parser.destroy();
+    } catch (err: any) {
+      console.warn(`[Scraper PDF] Falha na extração de texto via PDFParse: ${err.message}`);
+      throw new Error(`Falha ao ler conteúdo textual do PDF: ${err.message}`);
+    }
+
+    // Se o título não veio nos metadados do PDF, extrai a partir do nome do arquivo na URL
+    if (!pdfTitle) {
+      try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname;
+        const filename = pathname.split('/').pop()?.replace(/\.pdf$/i, '') || '';
+        if (filename) {
+          pdfTitle = decodeURIComponent(filename)
+            .replace(/[_-]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          pdfTitle = pdfTitle
+            .split(' ')
+            .map((w) => (w.length > 2 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+            .join(' ');
+        }
+      } catch (e) {}
+    }
+
+    // Se ainda não tiver título, usa a primeira linha textual
+    if (!pdfTitle || pdfTitle.length < 3) {
+      const firstLines = extractedText.split('\n').map((l) => l.trim()).filter((l) => l.length > 5);
+      pdfTitle = firstLines[0] ? firstLines[0].substring(0, 120) : 'Documento Regulatório Oficial (PDF)';
+    }
+
+    // Formatação de parágrafos do texto extraído
+    const cleanLines = extractedText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    const formattedBody = cleanLines.join('\n\n');
+
+    const cleanMarkdown = [
+      `# ${pdfTitle}`,
+      '',
+      `- **Fonte Oficial:** [${url}](${url})`,
+      `- **Formato:** Arquivo PDF Oficial (${totalPages} página${totalPages > 1 ? 's' : ''})`,
+      `- **Tamanho do Arquivo:** ${Math.round(buffer.length / 1024)} KB`,
+      '',
+      '---',
+      '',
+      '## Conteúdo Integral do Documento Regulatório',
+      formattedBody,
+    ].join('\n').trim();
+
+    const detectedTags = this.detectRegulatoryTags(cleanMarkdown, extractedText);
+    const effectiveTags = Array.from(new Set([...(customTags || []), ...detectedTags]));
+    const extractedEntities = this.extractEntities(cleanMarkdown, extractedText);
+
+    const tokensEstimatedRaw = Math.ceil(buffer.length / 4);
+    const tokensEstimatedClean = Math.ceil(cleanMarkdown.length / 4);
+    const tokensSaved = Math.max(0, tokensEstimatedRaw - tokensEstimatedClean);
+    const tokensSavedPercentage =
+      tokensEstimatedRaw > 0 ? Math.round((tokensSaved / tokensEstimatedRaw) * 100) : 0;
+
+    return {
+      url,
+      mode: 'CHEERIO' as ExtractionMode,
+      title: pdfTitle,
+      rawHtmlLength: buffer.length,
+      cleanMarkdown,
+      tokensEstimatedRaw,
+      tokensEstimatedClean,
+      tokensSavedPercentage,
+      detectedTags: effectiveTags,
+      extractedEntities,
+    };
   }
 
   /**
@@ -523,7 +677,7 @@ export class ScraperService {
     const $ = cheerio.load(rawHtml);
 
     // 1. Procurar links para normas, resoluções, portarias, matérias ou atos individuais
-    const docLinkRegex = /\/(normas?|resolucao|resolucoes|portarias?|materia|visualizar|atos?|legislacao|leis?|decretos?)\//i;
+    const docLinkRegex = /(\.pdf($|\?|#)|\/(normas?|resolucao|resolucoes|portarias?|materia|visualizar|atos?|legislacao|leis?|decretos?|bitstream)\/)/i;
     const discoveredLinks: { url: string; title: string }[] = [];
 
     let origin = '';
@@ -593,15 +747,23 @@ export class ScraperService {
 
       for (const item of toFetch) {
         try {
-          const docResp = await axios.get(item.url, { headers, timeout: 10000 });
-          const docRes = this.processHtml(item.url, docResp.data, 'CHEERIO');
-          if (item.title && (!docRes.title || docRes.title === 'Página sem título')) {
-            docRes.title = item.title;
+          if (this.isPdfUrl(item.url)) {
+            const pdfRes = await this.scrapePdf(item.url, customTags);
+            if (item.title && (!pdfRes.title || pdfRes.title.includes('PDF'))) {
+              pdfRes.title = item.title;
+            }
+            results.push(pdfRes);
+          } else {
+            const docResp = await axios.get(item.url, { headers, timeout: 10000 });
+            const docRes = this.processHtml(item.url, docResp.data, 'CHEERIO');
+            if (item.title && (!docRes.title || docRes.title === 'Página sem título')) {
+              docRes.title = item.title;
+            }
+            if (customTags && customTags.length > 0) {
+              docRes.detectedTags = Array.from(new Set([...customTags, ...docRes.detectedTags]));
+            }
+            results.push(docRes);
           }
-          if (customTags && customTags.length > 0) {
-            docRes.detectedTags = Array.from(new Set([...customTags, ...docRes.detectedTags]));
-          }
-          results.push(docRes);
         } catch (err: any) {
           console.warn(`[MultiDoc Scraper] Falha ao extrair documento ${item.url}: ${err.message}`);
         }
@@ -616,25 +778,31 @@ export class ScraperService {
 
   /**
    * Ponto de entrada unificado para varredura inteligente:
-   * Detecta se a URL é uma árvore do GitHub, Diário Oficial (DOU in.gov.br), portal com paginação/submenus ou página avulsa
+   * Detecta se a URL é arquivo PDF, árvore do GitHub, Diário Oficial (DOU in.gov.br), portal com paginação/submenus ou página avulsa
    */
   public static async scrapeMultiDocOrSingle(
     url: string,
     customTags?: string[],
     mode?: ExtractionMode
   ): Promise<ScrapeResult[]> {
-    // 1. Árvore de Diretório do GitHub (arquivos individuais na pasta)
+    // 1. Arquivo PDF direto (ex: Senado, CFM, ANVISA, Diário Oficial em PDF)
+    if (this.isPdfUrl(url)) {
+      const pdfDoc = await this.scrapePdf(url, customTags);
+      return [pdfDoc];
+    }
+
+    // 2. Árvore de Diretório do GitHub (arquivos individuais na pasta)
     const treeCheck = this.isGitHubTreeUrl(url);
     if (treeCheck.isTree) {
       return await this.scrapeGitHubTree(url, customTags);
     }
 
-    // 2. Diário Oficial da União (in.gov.br) com leitura de jornal, submenus e atos múltiplos
+    // 3. Diário Oficial da União (in.gov.br) com leitura de jornal, submenus e atos múltiplos
     if (this.isDouUrl(url)) {
       return await this.scrapeDouLeituraJornal(url, customTags, mode);
     }
 
-    // 3. Portais Regulatórios Gerais (CFM, ANS, ANVISA com paginação e submenus)
+    // 4. Portais Regulatórios Gerais (CFM, ANS, ANVISA com paginação e submenus)
     try {
       const multiResults = await this.scrapeMultiDocListing(url, customTags, mode);
       if (multiResults.length > 0) {
@@ -644,7 +812,7 @@ export class ScraperService {
       console.warn(`[Scraper] Falha na análise multi-documento (${err.message}), fallback para scrape simples.`);
     }
 
-    // 4. Página Única Tradicional
+    // 5. Página Única Tradicional
     const single = await this.scrape(url, mode);
     return [single];
   }
@@ -653,6 +821,11 @@ export class ScraperService {
    * Executa extração polimórfica com base no modo solicitado ou configurado
    */
   public static async scrape(url: string, mode?: ExtractionMode): Promise<ScrapeResult> {
+    // Se for um link de PDF direto
+    if (this.isPdfUrl(url)) {
+      return await this.scrapePdf(url);
+    }
+
     // Se for um arquivo blob único do GitHub, baixa o raw diretamente
     const blobInfo = this.isGitHubBlobUrl(url);
     if (blobInfo.isBlob && blobInfo.owner && blobInfo.repo && blobInfo.branch && blobInfo.path) {
@@ -682,20 +855,26 @@ export class ScraperService {
   }
 
   /**
-   * Extração com Cheerio (Ultra-rápido, páginas estáticas)
+   * Extração com Cheerio (Ultra-rápido, páginas estáticas ou PDFs dinâmicos)
    */
   private static async scrapeWithCheerio(url: string): Promise<ScrapeResult> {
     const response = await axios.get(url, {
-      timeout: 15000,
+      responseType: 'arraybuffer',
+      timeout: 25000,
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 (ConformIA Regulatory Auditor)',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,*/*;q=0.8',
         'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
       },
     });
 
-    const rawHtml = response.data;
+    const contentType = String(response.headers['content-type'] || '').toLowerCase();
+    if (contentType.includes('application/pdf')) {
+      return await this.scrapePdf(url);
+    }
+
+    const rawHtml = Buffer.from(response.data).toString('utf-8');
     return this.processHtml(url, rawHtml, 'CHEERIO');
   }
 
