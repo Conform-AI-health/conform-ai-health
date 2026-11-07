@@ -104,23 +104,44 @@ jobs:
     needs: build-docker-images
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       - name: Checkout Repositório
         uses: actions/checkout@v4
 
+      - name: Sincronizar docker-compose.yml na EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.AWS_EC2_HOST }}
+          username: ${{ secrets.AWS_EC2_USER }}
+          key: ${{ secrets.AWS_EC2_SSH_KEY }}
+          source: "docker-compose.yml"
+          target: "/opt/conformia/"
+          overwrite: true
+
       - name: Executar Deploy Remoto via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
           username: ${{ secrets.AWS_EC2_USER }} 
-          key: ${{ secrets.AWS_EC2_SSH_KEY }}     
+          key: ${{ secrets.AWS_EC2_SSH_KEY }}
+          envs: GHCR_USER,GHCR_TOKEN
           script: |
             cd /opt/conformia
+            echo "🔑 Autenticando no GitHub Container Registry (GHCR)..."
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             echo "📥 Atualizando imagens no servidor de produção..."
             docker compose pull
             echo "🔄 Reiniciando containers da ConformIA..."
-            docker compose up -d --remove-orphans
+            docker compose up -d --remove-orphans --no-build
+            echo "⏳ Aguardando inicialização e estabilização dos serviços..."
+            sleep 10
             echo "🩺 Verificando integridade dos serviços..."
-            curl --fail http://localhost/health || exit 1
+            curl --fail http://localhost/health || curl --fail http://localhost:3000/health || curl --fail http://localhost:3333/health || exit 1
             echo "✅ Deploy concluído com sucesso!"

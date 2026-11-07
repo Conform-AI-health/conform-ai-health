@@ -25,8 +25,35 @@ const runAuditSchema = z.object({
 });
 
 export class AgentController {
-  public static async listModules(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  public static async listModules(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10) || 1) : null;
+      const limit = req.query.limit ? Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 10)) : null;
+
+      if (page || limit || req.query.paginate === 'true') {
+        const effectivePage = page || 1;
+        const effectiveLimit = limit || 10;
+        const [total, modules] = await Promise.all([
+          prisma.agentModule.count(),
+          prisma.agentModule.findMany({
+            skip: (effectivePage - 1) * effectiveLimit,
+            take: effectiveLimit,
+            orderBy: { createdAt: 'asc' },
+          }),
+        ]);
+
+        res.status(200).json({
+          data: modules,
+          pagination: {
+            total,
+            page: effectivePage,
+            limit: effectiveLimit,
+            totalPages: Math.ceil(total / effectiveLimit),
+          },
+        });
+        return;
+      }
+
       const modules = await prisma.agentModule.findMany({
         orderBy: { createdAt: 'asc' },
       });

@@ -83,6 +83,25 @@ export class SystemController {
     }
   }
 
+  public static async testAi(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const prompt = req.body?.prompt ? String(req.body.prompt).slice(0, 1000) : undefined;
+      const result = await ReconciliationEngine.testModelResponse(prompt);
+
+      await prisma.systemLog.create({
+        data: {
+          level: result.status === 'OFFLINE' ? 'WARN' : 'INFO',
+          message: `Teste de conectividade do modelo IA (${result.provider}/${result.model}) concluído: ${result.status} em ${result.latencyMs}ms`,
+          module: 'AI_HEALTHCHECK',
+        },
+      });
+
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public static async logs(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);

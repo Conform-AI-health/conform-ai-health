@@ -141,9 +141,36 @@ export class ScrapedPageController {
   public static async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const tag = req.query.tag as string;
+      const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10) || 1) : null;
+      const limit = req.query.limit ? Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 10)) : null;
 
       const where: any = {};
       if (tag) where.tags = { has: tag };
+
+      if (page || limit || req.query.paginate === 'true') {
+        const effectivePage = page || 1;
+        const effectiveLimit = limit || 10;
+        const [total, pages] = await Promise.all([
+          prisma.scrapedPage.count({ where }),
+          prisma.scrapedPage.findMany({
+            where,
+            skip: (effectivePage - 1) * effectiveLimit,
+            take: effectiveLimit,
+            orderBy: { createdAt: 'desc' },
+          }),
+        ]);
+
+        res.status(200).json({
+          data: pages,
+          pagination: {
+            total,
+            page: effectivePage,
+            limit: effectiveLimit,
+            totalPages: Math.ceil(total / effectiveLimit),
+          },
+        });
+        return;
+      }
 
       const pages = await prisma.scrapedPage.findMany({
         where,

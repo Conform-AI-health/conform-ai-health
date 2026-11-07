@@ -15,6 +15,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { Pagination } from '../components/Pagination';
 
 const REGULATORY_TAG_OPTIONS = [
   {
@@ -65,14 +66,35 @@ export const ScrapingPage: React.FC = () => {
   const [compatibleModalData, setCompatibleModalData] = useState<any>(null);
   const [loadingCompatible, setLoadingCompatible] = useState(false);
 
-  const fetchPages = async () => {
+  // Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPagesCount, setTotalPagesCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const fetchPages = async (page = currentPage, limit = pageSize) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (selectedTagFilter) params.append('tag', selectedTagFilter);
+      params.append('page', String(page));
+      params.append('limit', String(limit));
 
       const res = await api.get(`/scraped-pages?${params.toString()}`);
-      setPages(res.data || []);
+      if (res.data?.data && res.data?.pagination) {
+        setPages(res.data.data);
+        setTotalPagesCount(res.data.pagination.total);
+        setTotalPages(res.data.pagination.totalPages);
+        setCurrentPage(res.data.pagination.page);
+      } else if (Array.isArray(res.data)) {
+        setPages(res.data);
+        setTotalPagesCount(res.data.length);
+        setTotalPages(Math.ceil(res.data.length / limit) || 1);
+      } else {
+        setPages([]);
+        setTotalPagesCount(0);
+        setTotalPages(1);
+      }
     } catch (err) {
       console.error('Erro ao buscar páginas regulatórias:', err);
     } finally {
@@ -81,8 +103,12 @@ export const ScrapingPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchPages();
+    fetchPages(1, pageSize);
   }, [selectedTagFilter]);
+
+  useEffect(() => {
+    fetchPages(currentPage, pageSize);
+  }, [currentPage, pageSize]);
 
   const toggleTag = (tagId: string) => {
     setSelectedTags((prev) =>
@@ -154,7 +180,7 @@ export const ScrapingPage: React.FC = () => {
         </div>
 
         <button
-          onClick={fetchPages}
+          onClick={() => fetchPages()}
           disabled={loading}
           className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition flex items-center gap-2 self-start md:self-auto text-xs font-semibold"
         >
@@ -398,6 +424,18 @@ export const ScrapingPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Paginação de Páginas Regulatórias */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalPagesCount}
+          itemsPerPage={pageSize}
+          onPageChange={(p) => setCurrentPage(p)}
+          onLimitChange={(l) => setPageSize(l)}
+          limitOptions={[5, 10, 20, 50]}
+          itemLabel="normas e páginas"
+        />
       </div>
 
       {/* Modal Preview do Markdown Limpo */}
