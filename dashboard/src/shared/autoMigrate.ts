@@ -134,6 +134,48 @@ export async function runAutoMigrateAndSeed() {
       },
     });
 
+    // 4. Modelos Padrão de Inteligência Artificial no Banco de Dados
+    const existingModelsCount = await prisma.aiModelConfig.count();
+    if (existingModelsCount === 0) {
+      console.log('🤖 [Seed] Criando modelos de IA iniciais no MongoDB...');
+      await prisma.aiModelConfig.createMany({
+        data: [
+          {
+            name: 'Google Gemini 2.0 Flash',
+            provider: 'gemini',
+            modelId: 'gemini-2.0-flash',
+            isActive: true,
+            isDefault: true,
+            temperature: 0.2,
+            maxTokens: 2048,
+            description: 'Modelo multimodal de alta velocidade e precisão para auditoria da Res. CFM 2.336/2023.',
+          },
+          {
+            name: 'Ollama Local (Qwen 2.5)',
+            provider: 'ollama',
+            modelId: 'qwen2.5:7b',
+            baseUrl: 'http://localhost:11434',
+            isActive: false,
+            isDefault: false,
+            temperature: 0.2,
+            maxTokens: 2048,
+            description: 'Modelo open-source executado localmente para soberania e privacidade de dados em saúde.',
+          },
+          {
+            name: 'Motor Heurístico Deontológico',
+            provider: 'heuristic',
+            modelId: 'regex-heuristic-v1',
+            isActive: false,
+            isDefault: false,
+            temperature: 0.0,
+            maxTokens: 1024,
+            description: 'Motor determinístico baseado no catálogo de artigos, regras gramaticais e regex.',
+          },
+        ],
+      });
+      console.log('✅ [Seed] 3 modelos de IA provisionados com sucesso no banco.');
+    }
+
     console.log('✨ [AutoMigrate & Seed] Concluído com sucesso (Zero mocks).');
   } catch (error) {
     console.error('❌ [AutoMigrate & Seed] Erro ao provisionar dados:', error);

@@ -36,12 +36,6 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const fillQuickLogin = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setErrorMessage('');
-  };
-
   return (
     <div className="min-h-screen bg-[#070d1e] flex items-center justify-center p-6 relative overflow-hidden font-sans">
       {/* Background Glows */}
@@ -120,26 +114,6 @@ export const LoginPage: React.FC = () => {
               )}
             </button>
           </form>
-
-          {/* Acesso Rápido Administrador Oficial */}
-          <div className="mt-8 pt-6 border-t border-slate-800">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block text-center mb-3">
-              Credenciais Administrativas Oficiais:
-            </span>
-            <button
-              type="button"
-              onClick={() => fillQuickLogin('admin@conform.ai', 'admin123456')}
-              className="w-full p-2.5 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/80 rounded-xl text-center transition flex items-center justify-between px-4 group"
-            >
-              <div className="text-left">
-                <span className="block text-xs font-bold text-purple-400">admin@conform.ai</span>
-                <span className="block text-[10px] text-slate-500">Administrador Master do Sistema</span>
-              </div>
-              <span className="text-xs font-semibold text-slate-400 group-hover:text-white bg-slate-800 px-2.5 py-1 rounded-lg">
-                Preencher
-              </span>
-            </button>
-          </div>
         </div>
 
         {/* Footer info */}

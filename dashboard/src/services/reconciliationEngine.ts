@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
 import { z } from 'zod';
 import { RuleSeverity, Verdict } from '@prisma/client';
+import { prisma } from '../config/prisma.js';
 import { env } from '../config/env.js';
 import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
 import { ScrapeResult } from './scraperService.js';
@@ -30,6 +31,63 @@ export type ReconciliationOutput = z.infer<typeof reconciliationOutputSchema>;
 
 export class ReconciliationEngine {
   private static activeProvider: 'gemini' | 'ollama' | 'heuristic' = (env.AI_PROVIDER as any) || 'gemini';
+  private static cachedActiveModel: any = null;
+  private static cacheTimestamp: number = 0;
+
+  public static invalidateModelCache(): void {
+    this.cachedActiveModel = null;
+    this.cacheTimestamp = 0;
+  }
+
+  public static async getActiveModelConfig(): Promise<{
+    provider: 'gemini' | 'ollama' | 'heuristic';
+    modelId: string;
+    baseUrl?: string | null;
+    apiKey?: string | null;
+    temperature: number;
+    maxTokens: number;
+  }> {
+    const now = Date.now();
+    if (this.cachedActiveModel && now - this.cacheTimestamp < 30000) {
+      return this.cachedActiveModel;
+    }
+
+    try {
+      const activeFromDb = await prisma.aiModelConfig.findFirst({
+        where: { isActive: true },
+      });
+
+      if (activeFromDb) {
+        this.cachedActiveModel = {
+          provider: activeFromDb.provider as any,
+          modelId: activeFromDb.modelId,
+          baseUrl: activeFromDb.baseUrl || env.OLLAMA_BASE_URL,
+          apiKey: activeFromDb.apiKey || env.GEMINI_API_KEY,
+          temperature: activeFromDb.temperature ?? 0.2,
+          maxTokens: activeFromDb.maxTokens ?? 2048,
+        };
+        this.activeProvider = this.cachedActiveModel.provider;
+        this.cacheTimestamp = now;
+        return this.cachedActiveModel;
+      }
+    } catch {
+      // Fallback em caso de banco inicializando
+    }
+
+    return {
+      provider: this.activeProvider,
+      modelId:
+        this.activeProvider === 'gemini'
+          ? 'gemini-2.0-flash'
+          : this.activeProvider === 'ollama'
+          ? env.OLLAMA_MODEL
+          : 'regex-heuristic-v1',
+      baseUrl: env.OLLAMA_BASE_URL,
+      apiKey: env.GEMINI_API_KEY,
+      temperature: 0.2,
+      maxTokens: 2048,
+    };
+  }
 
   public static getActiveProvider(): string {
     return this.activeProvider;
@@ -37,6 +95,7 @@ export class ReconciliationEngine {
 
   public static setActiveProvider(provider: 'gemini' | 'ollama' | 'heuristic'): void {
     this.activeProvider = provider;
+    this.invalidateModelCache();
     console.log(`[ReconciliationEngine] Provedor de IA alternado para: ${provider}`);
   }
 
@@ -53,39 +112,43 @@ export class ReconciliationEngine {
     details?: any;
   }> {
     const startTime = Date.now();
-    const provider = this.activeProvider;
-    const prompt = customPrompt || 'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica da Resolução CFM 2.336/2023.';
+    const activeModel = await this.getActiveModelConfig();
+    const provider = activeModel.provider;
+    const prompt =
+      customPrompt ||
+      'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica da Resolução CFM 2.336/2023.';
 
     if (provider === 'gemini') {
       try {
-        if (!env.GEMINI_API_KEY || env.GEMINI_API_KEY === 'mock-key-for-tests-and-dev') {
+        const apiKey = activeModel.apiKey || env.GEMINI_API_KEY;
+        if (!apiKey || apiKey === 'mock-key-for-tests-and-dev') {
           return {
             provider: 'gemini',
-            model: 'gemini-2.0-flash',
+            model: activeModel.modelId || 'gemini-2.0-flash',
             status: 'DEGRADED',
             latencyMs: Date.now() - startTime,
             response: 'Ambiente de teste/desenvolvimento: Chave GEMINI_API_KEY mockada. Operando em modo de simulação local.',
             testedAt: new Date().toISOString(),
           };
         }
-        const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+        const ai = new GoogleGenAI({ apiKey });
         const res = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
+          model: activeModel.modelId || 'gemini-2.0-flash',
           contents: prompt,
         });
         const latencyMs = Date.now() - startTime;
         return {
           provider: 'gemini',
-          model: 'gemini-2.0-flash',
+          model: activeModel.modelId || 'gemini-2.0-flash',
           status: 'ONLINE',
           latencyMs,
-          response: res.text || 'Modelo Gemini 2.0 Flash respondeu com sucesso ao teste deontológico.',
+          response: res.text || 'Modelo Gemini respondeu com sucesso ao teste deontológico.',
           testedAt: new Date().toISOString(),
         };
       } catch (err: any) {
         return {
           provider: 'gemini',
-          model: 'gemini-2.0-flash',
+          model: activeModel.modelId || 'gemini-2.0-flash',
           status: 'OFFLINE',
           latencyMs: Date.now() - startTime,
           response: `Falha na comunicação com o Gemini: ${err.message}`,
@@ -95,13 +158,17 @@ export class ReconciliationEngine {
       }
     } else if (provider === 'ollama') {
       try {
-        const ollamaUrl = env.OLLAMA_BASE_URL || 'http://localhost:11434';
-        const model = env.OLLAMA_MODEL || 'qwen2.5:7b';
-        const res = await axios.post(`${ollamaUrl}/api/generate`, {
-          model,
-          prompt,
-          stream: false,
-        }, { timeout: 8000 });
+        const ollamaUrl = activeModel.baseUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434';
+        const model = activeModel.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b';
+        const res = await axios.post(
+          `${ollamaUrl}/api/generate`,
+          {
+            model,
+            prompt,
+            stream: false,
+          },
+          { timeout: 8000 }
+        );
         const latencyMs = Date.now() - startTime;
         return {
           provider: 'ollama',
@@ -114,7 +181,7 @@ export class ReconciliationEngine {
       } catch (err: any) {
         return {
           provider: 'ollama',
-          model: env.OLLAMA_MODEL || 'qwen2.5:7b',
+          model: activeModel.modelId || 'qwen2.5:7b',
           status: 'OFFLINE',
           latencyMs: Date.now() - startTime,
           response: `Falha na comunicação com o Ollama Local: ${err.message}`,
@@ -127,7 +194,7 @@ export class ReconciliationEngine {
       const latencyMs = Date.now() - startTime;
       return {
         provider: 'heuristic',
-        model: 'regex-heuristic-v1',
+        model: activeModel.modelId || 'regex-heuristic-v1',
         status: 'ONLINE',
         latencyMs,
         response: 'Motor Heurístico Deontológico Operacional: Catálogo CFM 2.336/2023 e LGPD ativo em memória.',

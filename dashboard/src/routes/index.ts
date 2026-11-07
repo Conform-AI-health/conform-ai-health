@@ -6,6 +6,7 @@ import reportRoutes from './reportRoutes.js';
 import normRoutes from './normRoutes.js';
 import systemRoutes from './systemRoutes.js';
 import scrapedPageRoutes from './scrapedPageRoutes.js';
+import modelRoutes from './modelRoutes.js';
 
 const router = Router();
 
@@ -16,6 +17,7 @@ router.use('/reports', reportRoutes);
 router.use('/norms', normRoutes);
 router.use('/system', systemRoutes);
 router.use('/scraped-pages', scrapedPageRoutes);
+router.use('/models', modelRoutes);
 
 export default router;
 

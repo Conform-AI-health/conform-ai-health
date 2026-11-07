@@ -9,7 +9,6 @@ import { CustomerDashboardPage } from './pages/CustomerDashboardPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { AgentsPage } from './pages/AgentsPage';
 import { ReportsPage } from './pages/ReportsPage';
-import { NormsPage } from './pages/NormsPage';
 import { LogsTelemetryPage } from './pages/LogsTelemetryPage';
 import { ScrapingPage } from './pages/ScrapingPage';
 
@@ -46,7 +45,7 @@ export const App: React.FC = () => {
 
               {/* Rotas Comuns */}
               <Route path="/reports" element={<ReportsPage />} />
-              <Route path="/norms" element={<NormsPage />} />
+              <Route path="/norms" element={<Navigate to="/cockpit" replace />} />
 
               {/* Redirect Raiz */}
               <Route path="/" element={<RootRedirect />} />
