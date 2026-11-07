@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
+  Upload,
+  FileUp,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
@@ -54,8 +56,11 @@ export const ScrapingPage: React.FC = () => {
   const [scrapingInProgress, setScrapingInProgress] = useState(false);
   const [selectedTagFilter, setSelectedTagFilter] = useState('');
 
-  // Formulário de Varredura (100% autônomo, sem amarração a clínica)
+  // Formulário de Varredura e Ingestão
+  const [ingestMode, setIngestMode] = useState<'url' | 'upload'>('url');
   const [url, setUrl] = useState('');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadingInProgress, setUploadingInProgress] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>(['CFM']);
   const [selectedMode, setSelectedMode] = useState('CHEERIO');
 
@@ -147,6 +152,48 @@ export const ScrapingPage: React.FC = () => {
     }
   };
 
+  const handleUploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFile) {
+      alert('Selecione um arquivo PDF, Markdown (.md) ou Texto (.txt) para ingestão.');
+      return;
+    }
+
+    try {
+      setUploadingInProgress(true);
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const result = reader.result as string;
+          const base64 = result.includes(',') ? result.split(',')[1] : result;
+          const res = await api.post('/scraped-pages/upload', {
+            filename: uploadFile.name,
+            fileBase64: base64,
+            customTags: selectedTags,
+          });
+
+          alert(
+            `🎉 Arquivo indexado com sucesso no MongoDB!\n\nTítulo: ${res.data?.page?.title}\nTags: [${res.data?.page?.tags?.join(', ')}]\nTokens Estimados: ${res.data?.page?.tokensCount}`
+          );
+          setUploadFile(null);
+          fetchPages();
+        } catch (err: any) {
+          alert(`Falha ao indexar arquivo: ${err.response?.data?.error || err.message}`);
+        } finally {
+          setUploadingInProgress(false);
+        }
+      };
+      reader.onerror = () => {
+        alert('Erro ao ler arquivo no navegador.');
+        setUploadingInProgress(false);
+      };
+      reader.readAsDataURL(uploadFile);
+    } catch (err: any) {
+      alert(`Erro: ${err.message}`);
+      setUploadingInProgress(false);
+    }
+  };
+
   const handleDeletePage = async (id: string) => {
     if (!window.confirm('Deseja excluir esta norma/página raspada da base de dados?')) return;
     try {
@@ -202,44 +249,114 @@ export const ScrapingPage: React.FC = () => {
           </h2>
         </div>
 
-        <form onSubmit={handleScrapeSubmit} className="space-y-5">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
-              <span>URL da Norma, Resolução ou Diretório de Normas Oficial *</span>
-              {isGitHubDirectory && (
-                <span className="text-[10px] font-bold text-amber-400 bg-amber-950/70 border border-amber-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                  <span>📂</span>
-                  <span>Diretório GitHub / Lote Detectado</span>
+        {/* Toggle de Modo: URL vs Upload */}
+        <div className="flex items-center gap-2 mb-5 p-1 bg-slate-900 border border-slate-800 rounded-xl w-fit">
+          <button
+            type="button"
+            onClick={() => setIngestMode('url')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+              ingestMode === 'url'
+                ? 'bg-emerald-600 text-white shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Globe className="h-3.5 w-3.5" />
+            <span>Ingestão via URL Web / Portal Oficial</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIngestMode('upload')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+              ingestMode === 'upload'
+                ? 'bg-emerald-600 text-white shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            <span>Upload Direto de Arquivo (PDF / Markdown / TXT)</span>
+          </button>
+        </div>
+
+        <form onSubmit={ingestMode === 'url' ? handleScrapeSubmit : handleUploadSubmit} className="space-y-5">
+          {ingestMode === 'url' ? (
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                <span>URL da Norma, Resolução ou Diretório de Normas Oficial *</span>
+                {isGitHubDirectory && (
+                  <span className="text-[10px] font-bold text-amber-400 bg-amber-950/70 border border-amber-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                    <span>📂</span>
+                    <span>Diretório GitHub / Lote Detectado</span>
+                  </span>
+                )}
+                {isDouPortal && (
+                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/70 border border-emerald-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                    <span>📰</span>
+                    <span>Diário Oficial (DOU) / Multi-Atos & Submenus</span>
+                  </span>
+                )}
+                {isPdfLink && (
+                  <span className="text-[10px] font-bold text-rose-400 bg-rose-950/70 border border-rose-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                    <span>📑</span>
+                    <span>Documento PDF Regulatório Detectado</span>
+                  </span>
+                )}
+              </label>
+              <input
+                type="url"
+                required
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="Ex: https://www2.senado.leg.br/bdsf/bitstream/handle/id/658231/Lei_geral_protecao_dados_pessoais_1ed.pdf"
+                className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+              />
+              <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
+                <span>💡</span>
+                <span>
+                  Suporta <strong>documentos PDF oficiais</strong> (ex: Senado Federal, CFM, Diários Oficiais), páginas avulsas, repositórios GitHub e <strong>portais oficiais com submenus/paginação</strong> (ex: <code className="text-emerald-400">in.gov.br/leiturajornal</code>). O sistema extrai e indexa o texto completo de forma estruturada no MongoDB.
                 </span>
-              )}
-              {isDouPortal && (
-                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/70 border border-emerald-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                  <span>📰</span>
-                  <span>Diário Oficial (DOU) / Multi-Atos & Submenus</span>
-                </span>
-              )}
-              {isPdfLink && (
-                <span className="text-[10px] font-bold text-rose-400 bg-rose-950/70 border border-rose-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                <span>Arquivo Regulatório Local (.pdf, .md, .txt) *</span>
+                <span className="text-[10px] font-bold text-rose-400 bg-rose-950/70 border border-rose-800/50 px-2 py-0.5 rounded-full flex items-center gap-1">
                   <span>📑</span>
-                  <span>Documento PDF Regulatório Detectado</span>
+                  <span>Ingestão Segura Direta</span>
                 </span>
-              )}
-            </label>
-            <input
-              type="url"
-              required
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="Ex: https://www2.senado.leg.br/bdsf/bitstream/handle/id/658231/Lei_geral_protecao_dados_pessoais_1ed.pdf"
-              className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
-            />
-            <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
-              <span>💡</span>
-              <span>
-                Suporta <strong>documentos PDF oficiais</strong> (ex: Senado Federal, CFM, Diários Oficiais), páginas avulsas, repositórios GitHub e <strong>portais oficiais com submenus/paginação</strong> (ex: <code className="text-emerald-400">in.gov.br/leiturajornal</code>). O sistema extrai e indexa o texto completo de forma estruturada no MongoDB.
-              </span>
-            </p>
-          </div>
+              </label>
+              <div className="border-2 border-dashed border-slate-700/80 hover:border-emerald-500 rounded-xl p-6 text-center cursor-pointer transition bg-slate-900/60 relative">
+                <input
+                  type="file"
+                  required
+                  accept=".pdf,.md,.txt"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      setUploadFile(e.target.files[0]);
+                    }
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <div className="flex flex-col items-center justify-center gap-2 text-slate-400">
+                  <FileUp className="h-8 w-8 text-emerald-400 mb-1" />
+                  {uploadFile ? (
+                    <div className="text-white font-semibold text-xs">
+                      📄 {uploadFile.name} ({(uploadFile.size / 1024).toFixed(1)} KB)
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-xs font-semibold text-slate-200">
+                        Clique ou arraste um arquivo PDF, Markdown (.md) ou Texto (.txt) aqui
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        Ideal para normas baixadas do Senado, CFM ou documentos internos da clínica
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Seleção de Tags Regulatórias */}
           <div>
@@ -283,31 +400,42 @@ export const ScrapingPage: React.FC = () => {
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-3 border-t border-slate-800">
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span>Modo Extrator:</span>
-              <select
-                value={selectedMode}
-                onChange={(e) => setSelectedMode(e.target.value)}
-                className="bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1 text-xs text-white font-mono"
-              >
-                <option value="CHEERIO">CHEERIO (Rápido)</option>
-                <option value="PUPPETEER">PUPPETEER (SPA Dinâmica)</option>
-                <option value="FIRECRAWL">FIRECRAWL (API)</option>
-                <option value="MCP">MCP</option>
-              </select>
-            </div>
+            {ingestMode === 'url' ? (
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Modo Extrator:</span>
+                <select
+                  value={selectedMode}
+                  onChange={(e) => setSelectedMode(e.target.value)}
+                  className="bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1 text-xs text-white font-mono"
+                >
+                  <option value="CHEERIO">CHEERIO (Rápido)</option>
+                  <option value="PUPPETEER">PUPPETEER (SPA Dinâmica)</option>
+                  <option value="FIRECRAWL">FIRECRAWL (API)</option>
+                  <option value="MCP">MCP</option>
+                </select>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                <span>📑</span>
+                <span>Processamento nativo de PDFs com extração de Markdown</span>
+              </div>
+            )}
 
             <button
               type="submit"
-              disabled={scrapingInProgress}
+              disabled={scrapingInProgress || uploadingInProgress}
               className="w-full sm:w-auto bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-semibold text-xs py-2.5 px-6 rounded-xl shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-2 transition disabled:opacity-50"
             >
-              {scrapingInProgress ? (
+              {scrapingInProgress || uploadingInProgress ? (
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
               ) : (
                 <>
-                  <Globe className="h-4 w-4" />
-                  <span>Varrer, Taguear & Salvar no MongoDB</span>
+                  {ingestMode === 'url' ? <Globe className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+                  <span>
+                    {ingestMode === 'url'
+                      ? 'Varrer, Taguear & Salvar no MongoDB'
+                      : 'Processar, Taguear & Salvar no MongoDB'}
+                  </span>
                 </>
               )}
             </button>

@@ -210,6 +210,116 @@ export class ScrapedPageController {
   }
 
   /**
+   * Upload direto de documento local (PDF, Markdown ou TXT) para indexação no MongoDB
+   */
+  public static async uploadAndIndex(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const uploadSchema = z.object({
+        filename: z.string().min(1, 'Nome do arquivo é obrigatório'),
+        fileBase64: z.string().min(1, 'Conteúdo do arquivo em base64 é obrigatório'),
+        customTags: z.array(z.enum(['CFM', 'LGPD', 'ANVISA', 'ANS'])).optional(),
+      });
+
+      const { filename, fileBase64, customTags } = uploadSchema.parse(req.body);
+
+      const buffer = Buffer.from(fileBase64, 'base64');
+      const isPdf = filename.toLowerCase().endsWith('.pdf') || buffer.subarray(0, 5).toString('ascii').startsWith('%PDF');
+
+      let cleanMarkdown = '';
+      let title = filename.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+      title = title.charAt(0).toUpperCase() + title.slice(1);
+      let totalPages = 1;
+
+      if (isPdf) {
+        const { PDFParse } = await import('pdf-parse');
+        const parser = new PDFParse({ data: buffer });
+        const textResult = await parser.getText();
+        const extractedText = textResult.text || '';
+        totalPages = textResult.total || 1;
+
+        try {
+          const infoResult = await parser.getInfo();
+          if (infoResult?.info?.Title && typeof infoResult.info.Title === 'string' && infoResult.info.Title.trim().length > 3) {
+            title = infoResult.info.Title.trim();
+          }
+        } catch (e) {}
+
+        await parser.destroy();
+
+        const cleanLines = extractedText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0);
+
+        cleanMarkdown = [
+          `# ${title}`,
+          '',
+          `- **Fonte:** Upload Direto de Documento Regulatório (${filename})`,
+          `- **Formato:** Arquivo PDF Oficial (${totalPages} página${totalPages > 1 ? 's' : ''})`,
+          `- **Tamanho:** ${Math.round(buffer.length / 1024)} KB`,
+          '',
+          '---',
+          '',
+          '## Conteúdo Integral do Documento Regulatório',
+          cleanLines.join('\n\n'),
+        ].join('\n').trim();
+      } else {
+        // Markdown ou TXT
+        cleanMarkdown = buffer.toString('utf-8');
+      }
+
+      const detectedTags = ScraperService.detectRegulatoryTags(cleanMarkdown, cleanMarkdown);
+      const effectiveTags = Array.from(new Set([...(customTags || []), ...detectedTags]));
+      const extractedEntities = ScraperService.extractEntities(cleanMarkdown, cleanMarkdown);
+
+      const tokensEstimatedRaw = Math.ceil(buffer.length / 4);
+      const tokensEstimatedClean = Math.ceil(cleanMarkdown.length / 4);
+
+      const virtualUrl = `upload://${encodeURIComponent(filename.replace(/\s+/g, '_'))}`;
+
+      const savedDoc = await prisma.scrapedPage.upsert({
+        where: { url: virtualUrl },
+        update: {
+          title,
+          cleanMarkdown,
+          rawLength: buffer.length,
+          tokensCount: tokensEstimatedClean,
+          tags: effectiveTags,
+          extractedEntities: JSON.stringify(extractedEntities),
+        },
+        create: {
+          url: virtualUrl,
+          title,
+          cleanMarkdown,
+          rawLength: buffer.length,
+          tokensCount: tokensEstimatedClean,
+          tags: effectiveTags,
+          extractedEntities: JSON.stringify(extractedEntities),
+        },
+      });
+
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          message: `Documento enviado via upload e indexado com sucesso no MongoDB: "${savedDoc.title}" (${filename})`,
+          module: 'SCRAPER_UPLOAD',
+          correlationId: savedDoc.id,
+        },
+      });
+
+      res.status(201).json({
+        message: 'Arquivo enviado e indexado com sucesso no MongoDB!',
+        isBatch: false,
+        totalIndexed: 1,
+        page: savedDoc,
+        pages: [savedDoc],
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Exclusão de documento da base de normas
    */
   public static async delete(req: Request, res: Response, next: NextFunction): Promise<void> {

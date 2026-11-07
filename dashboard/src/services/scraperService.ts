@@ -62,6 +62,43 @@ export class ScraperService {
   }
 
   /**
+   * Resolve espelho oficial aberto para normas quando o portal de origem estiver protegido por WAF/desafios
+   */
+  public static resolveCanonicalMirror(url: string): {
+    hasMirror: boolean;
+    mirrorUrl?: string;
+    canonicalTitle?: string;
+    tags?: string[];
+  } {
+    const lower = url.toLowerCase();
+
+    // LGPD - Lei nº 13.709/2018 (Senado Federal, Câmara ou BDSF)
+    if (
+      (lower.includes('senado.leg.br') || lower.includes('camara.leg.br')) &&
+      (lower.includes('lei_geral_protecao_dados') || lower.includes('lgpd') || lower.includes('658231') || lower.includes('13709'))
+    ) {
+      return {
+        hasMirror: true,
+        mirrorUrl: 'https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm',
+        canonicalTitle: 'Lei Geral de Proteção de Dados Pessoais (LGPD - Lei nº 13.709/2018)',
+        tags: ['LGPD'],
+      };
+    }
+
+    // Código de Ética Médica / CFM Resolução 2.336/2023
+    if (lower.includes('2336') && (lower.includes('cfm') || lower.includes('resolucao'))) {
+      return {
+        hasMirror: true,
+        mirrorUrl: 'https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2023/2336',
+        canonicalTitle: 'Resolução CFM nº 2.336/2023 (Publicidade Médica)',
+        tags: ['CFM'],
+      };
+    }
+
+    return { hasMirror: false };
+  }
+
+  /**
    * Extração de entidades deontológicas, números de registro e heurísticas de infração
    */
   public static extractEntities(cleanMarkdown: string, rawHtml: string) {
@@ -179,13 +216,31 @@ export class ScraperService {
         textSnippet.includes('cloudflare') ||
         textSnippet.includes('cf-browser-verification')
       ) {
+        // Tenta resolução automática via espelho canônico aberto oficial (ex: Planalto para LGPD)
+        const mirror = this.resolveCanonicalMirror(url);
+        if (mirror.hasMirror && mirror.mirrorUrl) {
+          console.info(`🔄 [Scraper PDF] Portal com WAF/desafio. Redirecionando transparentemente para o repositório oficial aberto: ${mirror.mirrorUrl}`);
+          const mirrorRes = await this.scrape(mirror.mirrorUrl, 'CHEERIO');
+          if (mirror.canonicalTitle) {
+            mirrorRes.title = mirror.canonicalTitle;
+          }
+          if (mirror.tags) {
+            mirrorRes.detectedTags = Array.from(new Set([...mirrorRes.detectedTags, ...mirror.tags]));
+          }
+          if (customTags && customTags.length > 0) {
+            mirrorRes.detectedTags = Array.from(new Set([...customTags, ...mirrorRes.detectedTags]));
+          }
+          mirrorRes.url = url; // Mantém a URL de referência do usuário
+          return mirrorRes;
+        }
+
         let domain = url;
         try {
           domain = new URL(url).hostname;
         } catch (e) {}
 
         throw new Error(
-          `O portal (${domain}) bloqueou a requisição automatizada com um desafio anti-bot/WAF ('Verificação de segurança'). Por políticas estritas de deontologia e segurança, desafios interativos de verificação humana não podem ser contornados programaticamente. Sugestão: utilize a fonte oficial aberta da norma (ex: Planalto.gov.br para a LGPD) ou efetue o download do arquivo.`
+          `O portal (${domain}) bloqueou a requisição automatizada com um desafio anti-bot/WAF ('Verificação de segurança'). Por políticas estritas de deontologia e segurança, desafios interativos de verificação humana não podem ser contornados programaticamente. Sugestão: faça o upload direto do arquivo PDF ou utilize o repositório oficial aberto da norma (ex: Planalto.gov.br para a LGPD).`
         );
       }
 
@@ -874,7 +929,20 @@ export class ScraperService {
       return await this.scrapePdf(url);
     }
 
-    const rawHtml = Buffer.from(response.data).toString('utf-8');
+    const buf = Buffer.from(response.data);
+    const peek = buf.subarray(0, 1500).toString('ascii').toLowerCase();
+    let rawHtml = '';
+    if (
+      peek.includes('iso-8859-1') ||
+      peek.includes('windows-1252') ||
+      contentType.includes('iso-8859-1') ||
+      contentType.includes('windows-1252')
+    ) {
+      rawHtml = new TextDecoder('latin1').decode(buf);
+    } else {
+      rawHtml = new TextDecoder('utf-8').decode(buf);
+    }
+
     return this.processHtml(url, rawHtml, 'CHEERIO');
   }
 
