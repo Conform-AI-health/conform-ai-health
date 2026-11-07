@@ -1,6 +1,10 @@
+import dns from 'node:dns';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { runAutoMigrateAndSeed } from './shared/autoMigrate.js';
+
+// Garante resolução IPv4 prioritária em ambientes conteinerizados Docker para evitar falhas de ENETUNREACH
+dns.setDefaultResultOrder('ipv4first');
 
 async function bootstrap() {
   const app = createApp();

@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../config/prisma.js';
+import { NORMS_CATALOG } from '../data/normsCatalog.js';
 
 export async function runAutoMigrateAndSeed() {
   console.log('🌱 [AutoMigrate & Seed] Verificando e provisionando administrador e módulos oficiais...');
@@ -48,75 +49,37 @@ export async function runAutoMigrateAndSeed() {
     }
     console.log(`✅ [Seed] Administrador oficial ativo: ${adminEmail}`);
 
-    // 2. Módulos Oficiais de Auditoria Deontológica & Sanitária
-    const defaultModules = [
-      {
-        code: 'CFM-2336-PUBLICIDADE',
-        name: 'Auditor de Publicidade Médica (CFM nº)',
-        description: 'Verificação contínua de CRM/RQE, proibição de promessa de resultado, antes/depois educativo e mercantilização.',
-        category: 'DEONTOLOGIA_MEDICA',
-        rulesCount: 18,
-        extractionMode: 'CHEERIO' as const,
-        tags: ['CFM'],
-        targetNorms: ['CFM-2336-ART-01', 'CFM-2336-ART-02', 'CFM-2336-ART-03', 'CFM-2336-ART-04', 'CFM-2336-ART-05'],
-      },
-      {
-        code: 'LGPD-SAUDE-ART11',
-        name: 'Guardião de Privacidade em Saúde (LGPD Art. 11)',
-        description: 'Auditoria de formulários de agendamento online, proteção de dados biométricos e consentimento explícito.',
-        category: 'PRIVACIDADE_DADOS',
-        rulesCount: 12,
-        extractionMode: 'CHEERIO' as const,
-        tags: ['LGPD'],
-        targetNorms: ['LGPD-SAUDE-ART-11'],
-      },
-      {
-        code: 'ANS-TRANSPARENCIA-509',
-        name: 'Conformidade Regulatória ANS (RN 509/2022)',
-        description: 'Verificação de clareza em redes credenciadas, carências contratuais e ouvidoria acessível.',
-        category: 'SAUDE_SUPLEMENTAR',
-        rulesCount: 9,
-        extractionMode: 'PUPPETEER' as const,
-        tags: ['ANS'],
-        targetNorms: ['ANS-RN-509-395'],
-      },
-      {
-        code: 'ANVISA-PROPAGANDA-727',
-        name: 'Vigilância Sanitária e Produtos (RDC 727/2022)',
-        description: 'Proibição de propaganda direta de fármacos sob prescrição ao público leigo e alegações terapêuticas enganosas.',
-        category: 'VIGILANCIA_SANITARIA',
-        rulesCount: 14,
-        extractionMode: 'CHEERIO' as const,
-        tags: ['ANVISA'],
-        targetNorms: ['ANVISA-RDC-727'],
-      },
-    ];
+    // 2. Módulos de Agente: Cadastro estritamente manual pelo usuário (seeds automáticos removidos conforme governança)
+    console.log(`ℹ️ [Governança] Módulos de agente operam com cadastro estritamente manual pelo usuário.`);
 
-    for (const mod of defaultModules) {
-      await prisma.agentModule.upsert({
-        where: { code: mod.code },
-        update: {
-          name: mod.name,
-          description: mod.description,
-          category: mod.category,
-          rulesCount: mod.rulesCount,
-          extractionMode: mod.extractionMode,
-          tags: mod.tags,
-          targetNorms: mod.targetNorms,
-        },
-        create: {
-          code: mod.code,
-          name: mod.name,
-          description: mod.description,
-          category: mod.category,
-          rulesCount: mod.rulesCount,
-          extractionMode: mod.extractionMode,
-          tags: mod.tags,
-          targetNorms: mod.targetNorms,
-        },
-      });
+    // 2.1 Repositório de Normas Web & Tagging Regulatória no Banco (scraped_pages)
+    try {
+      const normsInDb = await prisma.scrapedPage.count();
+      if (normsInDb === 0) {
+        console.log('📚 [Seed] Provisionando Repositório de Normas Web e Deontologia no MongoDB (scraped_pages)...');
+        for (const norm of NORMS_CATALOG) {
+          await prisma.scrapedPage.upsert({
+            where: { url: `https://normas.conformia.med.br/${norm.id.toLowerCase()}` },
+            update: {
+              title: `[${norm.source}] ${norm.normCode} - ${norm.title}`,
+              cleanMarkdown: `# ${norm.normCode} - ${norm.article}: ${norm.title}\n\n**Dispositivo Normativo:**\n${norm.content}\n\n**Orientação Deontológica:**\n${norm.correctiveGuidance}`,
+              tags: [norm.source, norm.source.toLowerCase(), ...norm.keywords.map((k) => k.toLowerCase())],
+            },
+            create: {
+              url: `https://normas.conformia.med.br/${norm.id.toLowerCase()}`,
+              title: `[${norm.source}] ${norm.normCode} - ${norm.title}`,
+              cleanMarkdown: `# ${norm.normCode} - ${norm.article}: ${norm.title}\n\n**Dispositivo Normativo:**\n${norm.content}\n\n**Orientação Deontológica:**\n${norm.correctiveGuidance}`,
+              rawLength: norm.content.length,
+              tokensCount: Math.ceil(norm.content.length / 4),
+              tags: [norm.source, norm.source.toLowerCase(), ...norm.keywords.map((k) => k.toLowerCase())],
+            },
+          }).catch(() => {});
+        }
+        console.log(`✅ [Seed] Repositório de normas inicializado com ${NORMS_CATALOG.length} resoluções.`);
+      }
+    } catch (normSeedErr: any) {
+      console.warn('⚠️ [Seed] Falha ao sincronizar normas em scraped_pages:', normSeedErr.message);
     }
-    console.log(`✅ [Seed] ${defaultModules.length} Módulos Regulatórios Oficiais provisionados.`);
 
     // 3. Definição do Agente Deontológico
     await prisma.agentDefinition.upsert({
@@ -141,9 +104,9 @@ export async function runAutoMigrateAndSeed() {
       await prisma.aiModelConfig.createMany({
         data: [
           {
-            name: 'Google Gemini 2.0 Flash',
+            name: 'Google Gemini 3.5 Flash',
             provider: 'gemini',
-            modelId: 'gemini-2.0-flash',
+            modelId: 'gemini-3.5-flash',
             isActive: true,
             isDefault: true,
             temperature: 0.2,
@@ -174,6 +137,18 @@ export async function runAutoMigrateAndSeed() {
         ],
       });
       console.log('✅ [Seed] 3 modelos de IA provisionados com sucesso no banco.');
+    } else {
+      // Atualização resiliente de modelos descontinuados
+      await prisma.aiModelConfig.updateMany({
+        where: {
+          OR: [{ modelId: 'gemini-2.0-flash' }, { modelId: 'gemini-2.5-flash' }],
+        },
+        data: {
+          name: 'Google Gemini 3.5 Flash',
+          modelId: 'gemini-3.5-flash',
+          description: 'Modelo multimodal de alta velocidade e precisão para auditoria da Res. CFM 2.336/2023.',
+        },
+      });
     }
 
     // 5. Autocura e Sanitização de Registros Legados (P2032 Prevention)

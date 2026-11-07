@@ -6,6 +6,7 @@ import { prisma } from '../config/prisma.js';
 import { env } from '../config/env.js';
 import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
 import { ScrapeResult } from './scraperService.js';
+import { NormsResolver, ResolvedNorm } from './normsResolver.js';
 
 export const violationSchema = z.object({
   normArticle: z.string().describe('Artigo e parágrafo específico violado'),
@@ -24,7 +25,7 @@ export const reconciliationOutputSchema = z.object({
   completionTokens: z.number().default(0),
   totalTokens: z.number().default(0),
   sourcesUsed: z.array(z.string()).default([]),
-  aiModelUsed: z.string().default('gemini-2.0-flash'),
+  aiModelUsed: z.string().default('gemini-3.5-flash'),
 });
 
 export type ReconciliationOutput = z.infer<typeof reconciliationOutputSchema>;
@@ -34,10 +35,13 @@ export interface AgentContext {
   name: string;
   code?: string | null;
   description?: string | null;
+  skill?: string;
   regulatoryFramework?: string | null;
   systemPrompt: string;
   targetNorms: string[];
+  tags?: string[];
   activeNorms: NormChunk[];
+  resolvedDbNorms?: ResolvedNorm[];
 }
 
 export class ReconciliationEngine {
@@ -92,14 +96,14 @@ export class ReconciliationEngine {
     return {
       name:
         this.activeProvider === 'gemini'
-          ? 'Google Gemini 2.0 Flash'
+          ? 'Google Gemini 3.5 Flash'
           : this.activeProvider === 'ollama'
           ? 'Ollama Local'
           : 'Motor Heurístico Deontológico',
       provider: this.activeProvider,
       modelId:
         this.activeProvider === 'gemini'
-          ? 'gemini-2.0-flash'
+          ? 'gemini-3.5-flash'
           : this.activeProvider === 'ollama'
           ? env.OLLAMA_MODEL
           : 'regex-heuristic-v1',
@@ -148,10 +152,14 @@ export class ReconciliationEngine {
     if (provider === 'gemini') {
       try {
         const apiKey = activeModel.apiKey || env.GEMINI_API_KEY;
+        let modelId = activeModel.modelId || 'gemini-3.5-flash';
+        if (modelId === 'gemini-2.0-flash' || modelId === 'gemini-2.5-flash') {
+          modelId = 'gemini-3.5-flash';
+        }
         if (!apiKey || apiKey === 'mock-key-for-tests-and-dev') {
           return {
             provider: 'gemini',
-            model: activeModel.modelId || 'gemini-2.0-flash',
+            model: modelId,
             status: 'DEGRADED',
             latencyMs: Date.now() - startTime,
             response: 'Ambiente de teste/desenvolvimento: Chave GEMINI_API_KEY mockada. Operando em modo de simulação local.',
@@ -160,13 +168,13 @@ export class ReconciliationEngine {
         }
         const ai = new GoogleGenAI({ apiKey });
         const res = await ai.models.generateContent({
-          model: activeModel.modelId || 'gemini-2.0-flash',
+          model: modelId,
           contents: prompt,
         });
         const latencyMs = Date.now() - startTime;
         return {
           provider: 'gemini',
-          model: activeModel.modelId || 'gemini-2.0-flash',
+          model: modelId,
           status: 'ONLINE',
           latencyMs,
           response: res.text || 'Modelo Gemini respondeu com sucesso ao teste deontológico.',
@@ -175,7 +183,7 @@ export class ReconciliationEngine {
       } catch (err: any) {
         return {
           provider: 'gemini',
-          model: activeModel.modelId || 'gemini-2.0-flash',
+          model: activeModel.modelId || 'gemini-3.5-flash',
           status: 'OFFLINE',
           latencyMs: Date.now() - startTime,
           response: `Falha na comunicação com o Gemini: ${err.message}`,
@@ -242,48 +250,50 @@ export class ReconciliationEngine {
           },
         });
         if (agent) {
-          // Filtragem dinâmica de normas vinculadas ao agente
-          let activeNorms: NormChunk[] = [];
-          if (agent.targetNorms && agent.targetNorms.length > 0) {
-            const targetsLower = agent.targetNorms.map((t) => t.toLowerCase());
-            activeNorms = NORMS_CATALOG.filter(
-              (n) =>
-                targetsLower.includes(n.id.toLowerCase()) ||
-                targetsLower.includes(n.source.toLowerCase()) ||
-                targetsLower.some((t) => n.normCode.toLowerCase().includes(t))
-            );
-          }
+          // Resolução dinâmica de normas no banco de dados através das tags do agente
+          const agentTags = agent.tags && agent.tags.length > 0 ? agent.tags : ['CFM'];
+          const dbNorms = await NormsResolver.resolveByTags(agentTags);
 
-          if (activeNorms.length === 0 && agent.regulatoryFramework) {
-            const frameworkLower = agent.regulatoryFramework.toLowerCase();
-            activeNorms = NORMS_CATALOG.filter(
-              (n) =>
-                frameworkLower.includes(n.source.toLowerCase()) ||
-                frameworkLower.includes(n.normCode.toLowerCase())
-            );
-          }
+          let activeNorms: NormChunk[] = dbNorms.map((n) => ({
+            id: n.id,
+            normCode: n.normCode,
+            source: (n.source as any) || 'CFM',
+            title: n.title,
+            article: n.article || 'Dispositivo Geral',
+            severityDefault: (n.severityDefault as any) || 'MEDIA',
+            keywords: n.tags,
+            content: n.content,
+            correctiveGuidance: `Adequar conforme as diretrizes regulatórias vigentes da norma ${n.normCode}.`,
+          }));
 
           if (activeNorms.length === 0) {
             activeNorms = [...NORMS_CATALOG];
           }
 
-          const systemPrompt =
-            agent.systemPrompt && agent.systemPrompt.trim().length > 10
-              ? agent.systemPrompt.trim()
-              : `Você é o agente especialista "${agent.name}" (${agent.code}).
-Finalidade e escopo: ${agent.description}.
-Marco Regulatório auditado: ${agent.regulatoryFramework || 'Conformidade e Deontologia em Saúde'}.
-Normas vinculadas: ${activeNorms.map((n) => n.normCode).join(', ')}.`;
+          // A Descrição e Escopo atua como a Skill comportamental e persona da IA
+          const agentSkill =
+            agent.description && agent.description.trim().length > 0
+              ? agent.description.trim()
+              : `Auditor Deontológico em Saúde especialista em conformidade com as resoluções vigentes de ${agentTags.join(', ')}.`;
+
+          const systemPrompt = `Você é o agente especialista "${agent.name}" (${agent.code || 'MODULO'}).
+Skill Comportamental e Escopo do Agente: ${agentSkill}.
+Tags Regulatórias: ${agentTags.join(', ')}.
+Marco Regulatório Auditado: ${agent.regulatoryFramework || 'Conformidade e Deontologia em Saúde'}.
+Sua missão é realizar auditoria deontológica rigorosa confrontando o conteúdo do website com o rol integral de normas associadas.`;
 
           return {
             id: agent.id,
             name: agent.name,
             code: agent.code || undefined,
             description: agent.description || undefined,
+            skill: agentSkill,
             regulatoryFramework: agent.regulatoryFramework || undefined,
             systemPrompt,
             targetNorms: agent.targetNorms || [],
+            tags: agentTags,
             activeNorms,
+            resolvedDbNorms: dbNorms,
           };
         }
       } catch (err: any) {
@@ -388,7 +398,11 @@ Sua missão é auditar o conteúdo de materiais médicos e confrontá-los com as
     modelConfig?: any
   ): Promise<ReconciliationOutput> {
     const apiKey = modelConfig?.apiKey || env.GEMINI_API_KEY;
-    const modelId = modelConfig?.modelId || 'gemini-2.0-flash';
+    let modelId = modelConfig?.modelId || 'gemini-3.5-flash';
+
+    if (modelId === 'gemini-2.0-flash' || modelId === 'gemini-2.5-flash') {
+      modelId = 'gemini-3.5-flash';
+    }
 
     if (!apiKey || apiKey === 'mock-key-for-tests-and-dev') {
       throw new Error('Chave de API do Gemini não configurada em ambiente real.');
@@ -449,7 +463,10 @@ Retorne o resultado estritamente em formato JSON estruturado conforme o seguinte
       },
     });
 
-    const responseText = response.text || '{}';
+    let responseText = response.text || '{}';
+    if (responseText.includes('```')) {
+      responseText = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+    }
     const parsed = JSON.parse(responseText);
 
     const usage: any = (response as any).usageMetadata || {};
@@ -729,11 +746,8 @@ Retorne APENAS um JSON válido no formato:
     const completionTokens = estimatedCompletion;
     const totalTokens = promptTokens + completionTokens;
 
-    // Fontes/artigos ativados a partir das normas vinculadas
-    const sourcesUsed = Array.from(new Set(violations.map((v) => `${v.normCode} (${v.normArticle})`)));
-    if (sourcesUsed.length === 0) {
-      activeNorms.slice(0, 3).forEach((n) => sourcesUsed.push(`${n.normCode} (${n.article})`));
-    }
+    // Fontes/normas e arquivos ativados a partir das normas vinculadas para comunicação com a IA
+    const sourcesUsed = activeNorms.map((n) => `${n.normCode} (${n.article}): ${n.title}`);
 
     return {
       verdict,

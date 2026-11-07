@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fluxo da Aplicação ConformIA Health - Diagrama & Download</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #0f172a;
+      --border: #1e293b;
+      --primary: #38bdf8;
+      --primary-hover: #0284c7;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+      min-height: 100vh;
+    }
+    header {
+      max-width: 1200px;
+      width: 100%;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 26px;
+      color: #38bdf8;
+      margin-bottom: 8px;
+    }
+    p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #1e293b;
+      color: #f1f5f9;
+      border: 1px solid #334155;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+    .btn:hover {
+      background: #334155;
+      border-color: #38bdf8;
+      transform: translateY(-1px);
+    }
+    .btn-primary {
+      background: #0284c7;
+      border-color: #38bdf8;
+    }
+    .btn-primary:hover {
+      background: #0369a1;
+    }
+    .viewer-container {
+      max-width: 1300px;
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      overflow-x: auto;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      text-align: center;
+    }
+    .viewer-container img, .viewer-container svg {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      background: #0d131f;
+    }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #10b981;
+      color: #0f172a;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.3s ease;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Diagrama de Arquitetura & Fluxo: ConformIA Health</h1>
+    <p>Clique nos botões abaixo para fazer o download direto da imagem em alta resolução (PNG ou SVG) ou copiar a estrutura para importar no Draw.io.</p>
+    
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="downloadPNG()">
+        📸 Baixar Imagem (PNG Alta Resolução)
+      </button>
+      <button class="btn" onclick="downloadSVG()">
+        🎨 Baixar Imagem Vetorial (SVG)
+      </button>
+      <button class="btn" onclick="copyDrawioXML()">
+        📋 Copiar XML para Draw.io
+      </button>
+      <a class="btn" href="./conformia-application-flow.drawio" download="conformia-application-flow.drawio">
+        📁 Baixar Arquivo .drawio
+      </a>
+      <a class="btn" href="https://app.diagrams.net/" target="_blank" rel="noopener noreferrer">
+        🌐 Abrir draw.io Web
+      </a>
+    </div>
+  </header>
+
+  <div class="viewer-container" id="svgContainer">
+    <object id="svgObject" type="image/svg+xml" data="./conformia-application-flow.svg" style="width: 100%; min-height: 850px;"></object>
+  </div>
+
+  <div id="toast" class="toast">Ação concluída com sucesso!</div>
+
+  <script>
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    function downloadSVG() {
+      const a = document.createElement('a');
+      a.href = './conformia-application-flow.svg';
+      a.download = 'conformia-application-flow.svg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast('Download do SVG iniciado!');
+    }
+
+    async function downloadPNG() {
+      showToast('Gerando PNG em alta resolução...');
+      try {
+        const response = await fetch('./conformia-application-flow.svg');
+        const svgText = await response.text();
+        
+        const img = new Image();
+        const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        const URL = window.URL || window.webkitURL || window;
+        const blobURL = URL.createObjectURL(svgBlob);
+        
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          // Scale 2x for sharp retina graphics
+          canvas.width = 1250 * 2;
+          canvas.height = 880 * 2;
+          const ctx = canvas.getContext('2d');
+          ctx.scale(2, 2);
+          ctx.drawImage(img, 0, 0);
+          
+          const pngUrl = canvas.toDataURL('image/png');
+          const downloadLink = document.createElement('a');
+          downloadLink.href = pngUrl;
+          downloadLink.download = 'conformia-application-flow.png';
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          document.body.removeChild(downloadLink);
+          URL.revokeObjectURL(blobURL);
+          showToast('Imagem PNG baixada com sucesso!');
+        };
+        img.src = blobURL;
+      } catch (err) {
+        console.error(err);
+        showToast('Erro ao converter SVG para PNG: ' + err.message);
+      }
+    }
+
+    async function copyDrawioXML() {
+      try {
+        const response = await fetch('./conformia-application-flow.drawio');
+        const xml = await response.text();
+        await navigator.clipboard.writeText(xml);
+        showToast('XML copiado! Abra o Draw.io -> Arquivo -> Importar de -> Texto/XML');
+      } catch (err) {
+        showToast('Falha ao copiar. Use o botão de Baixar Arquivo .drawio');
+      }
+    }
+  </script>
+</body>
+</html>

@@ -8,6 +8,9 @@ import { errorHandler } from './middlewares/errorHandler.js';
 export function createApp(): Express {
   const app = express();
 
+  // Configura proxy reverso seguro (Nginx / Docker)
+  app.set('trust proxy', 1);
+
   // 1. Hardening com Helmet & Content Security Policy
   app.use(
     helmet({
@@ -34,9 +37,9 @@ export function createApp(): Express {
     })
   );
 
-  // 3. Parsers com limites para evitar DoS por payload massivo
-  app.use(express.json({ limit: '2mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+  // 3. Parsers com limites adequados para extração de PDFs e normas
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // 4. Healthcheck simples
   app.get('/health', (_req, res) => {

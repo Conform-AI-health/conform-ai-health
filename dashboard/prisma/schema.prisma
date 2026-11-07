@@ -89,26 +89,40 @@ model Client {
 }
 
 model AgentModule {
-  id                  String          @id @default(auto()) @map("_id") @db.ObjectId
+  id                  String              @id @default(auto()) @map("_id") @db.ObjectId
   name                String
-  code                String?         @unique
+  code                String?             @unique
   description         String?
-  version             String          @default("1.0.0")
-  enabled             Boolean         @default(true)
-  category            String          @default("DEONTOLOGIA_MEDICA")
-  rulesCount          Int             @default(0)
-  extractionMode      ExtractionMode  @default(CHEERIO)
-  tags                String[]        @default(["CFM"])
-  targetNorms         String[]        @default([])
+  version             String              @default("1.0.0")
+  enabled             Boolean             @default(true)
+  category            String              @default("DEONTOLOGIA_MEDICA")
+  rulesCount          Int                 @default(0)
+  extractionMode      ExtractionMode      @default(CHEERIO)
+  tags                String[]            @default(["CFM"])
+  targetNorms         String[]            @default([])
   systemPrompt        String?
-  clientId            String?         @db.ObjectId
-  regulatoryFramework String?         @default("CFM (Resolução 2.336/2023)")
-  cronSchedule        String?         @default("0 */6 * * *")
+  clientId            String?             @db.ObjectId
+  regulatoryFramework String?             @default("CFM (Resolução 2.336/2023)")
+  cronSchedule        String?             @default("0 */6 * * *")
   targetUrl           String?
-  createdAt           DateTime?       @default(now())
-  updatedAt           DateTime?       @updatedAt
+  scrapeData          ModuleScrapeData[]
+  createdAt           DateTime?           @default(now())
+  updatedAt           DateTime?           @updatedAt
 
   @@map("agent_modules")
+}
+
+model ModuleScrapeData {
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  moduleId    String       @db.ObjectId
+  module      AgentModule  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  url         String
+  contentHash String
+  rawContent  String
+  createdAt   DateTime?    @default(now())
+
+  @@index([moduleId, createdAt])
+  @@map("module_scrape_data")
 }
 
 model AgentDefinition {
@@ -201,7 +215,10 @@ model ClientScrapedData {
   id                String         @id @default(auto()) @map("_id") @db.ObjectId
   clientId          String         @db.ObjectId
   client            Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  moduleId          String?        @db.ObjectId
   url               String
+  contentHash       String?
+  rawContent        String?
   title             String?
   cleanMarkdown     String
   rawLength         Int            @default(0)
@@ -214,6 +231,7 @@ model ClientScrapedData {
   updatedAt         DateTime?      @updatedAt
 
   @@index([clientId, createdAt])
+  @@index([moduleId, createdAt])
   @@map("client_scraped_data")
 }
 

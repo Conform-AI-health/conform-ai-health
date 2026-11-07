@@ -295,20 +295,20 @@ export const LogsTelemetryPage: React.FC = () => {
                     <td className="py-3 px-4 font-mono text-emerald-400">
                       +{a.tokensSaved.toLocaleString('pt-BR')}
                     </td>
-                    <td className="py-3 px-4 max-w-xs">
+                    <td className="py-3 px-4 max-w-sm">
                       <div className="flex flex-wrap gap-1">
-                        {a.sourcesUsed?.slice(0, 2).map((s: string, idx: number) => (
-                          <span
-                            key={idx}
-                            className="px-1.5 py-0.2 rounded bg-slate-800 text-[10px] text-slate-300 font-mono"
-                          >
-                            {s}
-                          </span>
-                        ))}
-                        {a.sourcesUsed?.length > 2 && (
-                          <span className="text-[10px] text-slate-500 font-semibold">
-                            +{a.sourcesUsed.length - 2} fontes
-                          </span>
+                        {a.sourcesUsed && a.sourcesUsed.length > 0 ? (
+                          a.sourcesUsed.map((s: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 rounded bg-teal-950/70 border border-teal-800/60 text-[10px] text-teal-300 font-mono"
+                              title={s}
+                            >
+                              📄 {s}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[10px] text-slate-500 italic">Nenhuma fonte vinculada</span>
                         )}
                       </div>
                     </td>
@@ -431,10 +431,20 @@ export const LogsTelemetryPage: React.FC = () => {
                 const mod = (l.module || '').toUpperCase();
 
                 const isCockpit = mod.includes('COCKPIT');
+                const isAiNorms = mod.includes('AI_NORMS') || mod.includes('NORMS');
                 const isAi = mod.includes('AI') || mod.includes('INTERACTION');
                 const isScraper = mod.includes('SCRAPER');
                 const isRecon = mod.includes('RECON');
                 const isClient = mod.includes('CLIENT');
+
+                let parsedDetails: any = null;
+                if (l.details) {
+                  try {
+                    parsedDetails = JSON.parse(l.details);
+                  } catch {
+                    // Texto plano
+                  }
+                }
 
                 return (
                   <div
@@ -459,7 +469,9 @@ export const LogsTelemetryPage: React.FC = () => {
 
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono flex-shrink-0 border ${
-                        isCockpit
+                        isAiNorms
+                          ? 'bg-teal-950/80 text-teal-300 border-teal-700/70 shadow-sm'
+                          : isCockpit
                           ? 'bg-cyan-950/70 text-cyan-300 border-cyan-800/60'
                           : isAi
                           ? 'bg-purple-950/70 text-purple-300 border-purple-800/60'
@@ -477,7 +489,47 @@ export const LogsTelemetryPage: React.FC = () => {
 
                     <div className="flex-1 min-w-0">
                       <span className="text-slate-200 break-words">{l.message}</span>
-                      {l.details && (
+                      
+                      {/* Visualizador Estruturado para Normas e Fontes Utilizadas */}
+                      {parsedDetails?.normsAndFilesUsed && Array.isArray(parsedDetails.normsAndFilesUsed) && (
+                        <div className="mt-1.5 p-2 bg-[#080d1a] border border-teal-900/50 rounded-xl space-y-1.5 font-mono text-[11px]">
+                          <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider block">
+                            📚 Arquivos e Normas Deontológicas no Contexto da IA ({parsedDetails.normsAndFilesUsed.length}):
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {parsedDetails.normsAndFilesUsed.map((norm: string, nIdx: number) => (
+                              <span
+                                key={nIdx}
+                                className="px-2 py-0.5 rounded bg-teal-950/60 border border-teal-800/50 text-teal-300 text-[10px]"
+                              >
+                                📄 {norm}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Visualizador Estruturado para Fontes no Log de Veredito da IA */}
+                      {parsedDetails?.sourcesUsed && Array.isArray(parsedDetails.sourcesUsed) && (
+                        <div className="mt-1.5 p-2 bg-[#080d1a] border border-purple-900/50 rounded-xl space-y-1 font-mono text-[11px]">
+                          <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block">
+                            ⚖️ Normas Concretamente Aplicadas no Veredito:
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {parsedDetails.sourcesUsed.map((source: string, sIdx: number) => (
+                              <span
+                                key={sIdx}
+                                className="px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800/50 text-purple-300 text-[10px]"
+                              >
+                                {source}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Detalhes Genéricos */}
+                      {l.details && !parsedDetails?.normsAndFilesUsed && !parsedDetails?.sourcesUsed && (
                         <div className="mt-1 text-[11px] text-slate-400 bg-[#080d1a] border border-slate-800/80 rounded px-2.5 py-1 font-mono inline-block max-w-full overflow-x-auto">
                           {l.details}
                         </div>
