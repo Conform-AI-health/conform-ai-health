@@ -233,22 +233,30 @@ export async function runAutoMigrateAndSeed() {
         console.log(`🛡️ [AutoMigrate] ${clientsWithoutDates.length} Cliente(s) legados sanitizados com timestamps válidos.`);
       }
 
-      // 5.4 Atualizar Laudos legados com clientId nulo
+      // 5.4 Atualizar Laudos legados com clientId, targetUrl ou summary nulos
       const defaultClient = await prisma.client.findFirst({ orderBy: { createdAt: 'asc' } }).catch(() => null);
-      if (defaultClient) {
-        const reportsWithoutClient = await prisma.auditReport.findMany({
-          where: { clientId: null },
-        }).catch(() => []);
+      const reportsNeedingHealing = await prisma.auditReport.findMany({
+        where: {
+          OR: [
+            { clientId: null },
+            { targetUrl: null },
+            { summary: null },
+          ],
+        },
+      }).catch(() => []);
 
-        for (const rep of reportsWithoutClient) {
-          await prisma.auditReport.update({
-            where: { id: rep.id },
-            data: { clientId: defaultClient.id },
-          }).catch(() => {});
-        }
-        if (reportsWithoutClient.length > 0) {
-          console.log(`🛡️ [AutoMigrate] ${reportsWithoutClient.length} Laudo(s) legados vinculados ao cliente padrão.`);
-        }
+      for (const rep of reportsNeedingHealing) {
+        await prisma.auditReport.update({
+          where: { id: rep.id },
+          data: {
+            ...(defaultClient && !rep.clientId ? { clientId: defaultClient.id } : {}),
+            ...(!rep.targetUrl ? { targetUrl: 'https://conform-ia.med.br' } : {}),
+            ...(!rep.summary ? { summary: 'Laudo de conformidade deontológica emitido pela plataforma ConformIA.' } : {}),
+          },
+        }).catch(() => {});
+      }
+      if (reportsNeedingHealing.length > 0) {
+        console.log(`🛡️ [AutoMigrate] ${reportsNeedingHealing.length} Laudo(s) legados sanitizados (targetUrl, summary, clientId).`);
       }
     } catch (healErr: any) {
       console.warn('⚠️ [AutoMigrate] Aviso na autocura de registros legados:', healErr.message);
