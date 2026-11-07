@@ -7,9 +7,13 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),
   API_PREFIX: z.string().default('/api/v1'),
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  DATABASE_URL: process.env.NODE_ENV === 'test'
+    ? z.string().default('mongodb://localhost:27017/conformia_test')
+    : z.string().min(1, 'DATABASE_URL is required'),
   REDIS_URL: z.string().default('redis://localhost:6379'),
-  JWT_SECRET: z.string().min(16, 'JWT_SECRET must have at least 16 characters'),
+  JWT_SECRET: process.env.NODE_ENV === 'test'
+    ? z.string().default('conformia-super-secret-jwt-key-2026')
+    : z.string().min(16, 'JWT_SECRET must have at least 16 characters'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   AI_PROVIDER: z.enum(['gemini', 'ollama', 'heuristic']).default('gemini'),
   GEMINI_API_KEY: z.string().optional().default(''),

@@ -32,9 +32,17 @@ jobs:
 
       - name: Verificação Estrita de Tipos TypeScript (Typecheck)
         run: npm run typecheck
+        env:
+          NODE_ENV: test
+          DATABASE_URL: mongodb://localhost:27017/conformia_test
+          JWT_SECRET: conformia-super-secret-jwt-key-for-ci-tests-2026
 
       - name: Execução dos Testes Automatizados (Vitest)
         run: npm test
+        env:
+          NODE_ENV: test
+          DATABASE_URL: mongodb://localhost:27017/conformia_test
+          JWT_SECRET: conformia-super-secret-jwt-key-for-ci-tests-2026
 
       - name: Compilação dos Bundles de Produção (Build)
         run: npm run build
