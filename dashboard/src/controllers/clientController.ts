@@ -15,7 +15,7 @@ const createClientSchema = z.object({
   instagramHandle: z.string().optional().nullable(),
   status: z.enum(['ATIVO', 'INATIVO', 'PENDENTE', 'SUSPENSO']).default('ATIVO'),
   phone: z.string().optional().nullable(),
-  email: z.string().email('E-mail de Notificação / Compliance inválido'),
+  email: z.string().email('E-mail de Notificação / Compliance inválido').optional().nullable().or(z.literal('')),
 });
 
 const updateClientSchema = createClientSchema.partial();
@@ -60,7 +60,7 @@ export class ClientController {
       ]);
 
       res.status(200).json({
-        data: clients,
+        data: clients.map((c) => ({ ...c, email: c.email || 'contato@clinica.com' })),
         pagination: {
           total,
           page,

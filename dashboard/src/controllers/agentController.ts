@@ -8,7 +8,7 @@ import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 
 const createAgentSchema = z.object({
   name: z.string().min(2, 'Nome do Agente é obrigatório'),
-  code: z.string().min(2, 'Código Identificador (Slug) é obrigatório'),
+  code: z.string().optional().nullable().or(z.literal('')),
   description: z.string().optional().default(''),
   category: z.string().default('DEONTOLOGIA_MEDICA'),
   extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).default('CHEERIO'),
@@ -48,7 +48,7 @@ export class AgentController {
         ]);
 
         res.status(200).json({
-          data: modules,
+          data: modules.map((m) => ({ ...m, code: m.code || `agent-${m.id.slice(-6)}` })),
           pagination: {
             total,
             page: effectivePage,
@@ -62,7 +62,7 @@ export class AgentController {
       const modules = await prisma.agentModule.findMany({
         orderBy: { createdAt: 'asc' },
       });
-      res.status(200).json(modules);
+      res.status(200).json(modules.map((m) => ({ ...m, code: m.code || `agent-${m.id.slice(-6)}` })));
     } catch (error) {
       next(error);
     }
@@ -90,12 +90,17 @@ export class AgentController {
     try {
       const data = createAgentSchema.parse(req.body);
 
+      const resolvedCode =
+        data.code && data.code.trim().length > 0
+          ? data.code.trim()
+          : `${data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${Date.now().toString(36)}`;
+
       const existing = await prisma.agentModule.findUnique({
-        where: { code: data.code },
+        where: { code: resolvedCode },
       });
       if (existing) {
         res.status(409).json({
-          error: `Já existe um agente cadastrado com o código ${data.code}.`,
+          error: `Já existe um agente cadastrado com o código ${resolvedCode}.`,
           code: 'AGENT_CODE_EXISTS',
         });
         return;
@@ -104,7 +109,7 @@ export class AgentController {
       const agent = await prisma.agentModule.create({
         data: {
           name: data.name,
-          code: data.code.trim(),
+          code: resolvedCode,
           description: data.description,
           category: data.category,
           extractionMode: data.extractionMode as any,

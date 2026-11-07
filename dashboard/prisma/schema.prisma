@@ -78,7 +78,7 @@ model Client {
   instagramHandle   String?
   status            ClientStatus  @default(ATIVO)
   phone             String?
-  email             String
+  email             String?
   users             User[]
   auditReports      AuditReport[]
   createdAt         DateTime      @default(now())
@@ -90,8 +90,8 @@ model Client {
 model AgentModule {
   id                  String          @id @default(auto()) @map("_id") @db.ObjectId
   name                String
-  code                String          @unique
-  description         String
+  code                String?         @unique
+  description         String?
   version             String          @default("1.0.0")
   enabled             Boolean         @default(true)
   category            String          @default("DEONTOLOGIA_MEDICA")

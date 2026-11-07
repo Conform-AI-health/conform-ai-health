@@ -176,6 +176,45 @@ export async function runAutoMigrateAndSeed() {
       console.log('✅ [Seed] 3 modelos de IA provisionados com sucesso no banco.');
     }
 
+    // 5. Autocura e Sanitização de Registros Legados (P2032 Prevention)
+    try {
+      // 5.1 Atualizar AgentModules com code nulo ou vazio
+      const agentsWithoutCode = await prisma.agentModule.findMany({
+        where: { code: null },
+      }).catch(() => []);
+
+      for (const ag of agentsWithoutCode) {
+        const slug = ag.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '') || `agent-${ag.id.slice(-6)}`;
+        await prisma.agentModule.update({
+          where: { id: ag.id },
+          data: { code: `${slug}-${ag.id.slice(-4)}` },
+        }).catch(() => {});
+      }
+      if (agentsWithoutCode.length > 0) {
+        console.log(`🛡️ [AutoMigrate] ${agentsWithoutCode.length} Módulo(s) de Agente legados sanitizados com slugs válidos.`);
+      }
+
+      // 5.2 Atualizar Clientes com email nulo ou vazio
+      const clientsWithoutEmail = await prisma.client.findMany({
+        where: { email: null },
+      }).catch(() => []);
+
+      for (const cl of clientsWithoutEmail) {
+        await prisma.client.update({
+          where: { id: cl.id },
+          data: { email: 'contato@clinica.com' },
+        }).catch(() => {});
+      }
+      if (clientsWithoutEmail.length > 0) {
+        console.log(`🛡️ [AutoMigrate] ${clientsWithoutEmail.length} Cliente(s) legados sanitizados com e-mail de contato.`);
+      }
+    } catch (healErr: any) {
+      console.warn('⚠️ [AutoMigrate] Aviso na autocura de registros legados:', healErr.message);
+    }
+
     console.log('✨ [AutoMigrate & Seed] Concluído com sucesso (Zero mocks).');
   } catch (error) {
     console.error('❌ [AutoMigrate & Seed] Erro ao provisionar dados:', error);

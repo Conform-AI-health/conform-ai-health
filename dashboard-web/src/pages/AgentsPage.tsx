@@ -90,51 +90,65 @@ export const AgentsPage: React.FC = () => {
   const fetchData = async (page = currentPage, limit = pageSize) => {
     try {
       setLoading(true);
-      const [modulesRes, clientsRes, normsRes, modelsRes] = await Promise.all([
+      const [modulesResult, clientsResult, normsResult, modelsResult] = await Promise.allSettled([
         api.get(`/agents?page=${page}&limit=${limit}`),
         api.get('/clients?limit=100'),
         api.get('/norms/catalog'),
-        api.get('/models?limit=50').catch((err) => {
-          console.warn('⚠️ Falha ao buscar modelos do banco:', err.response?.data || err.message);
-          return { data: { data: [] } };
-        }),
+        api.get('/models?limit=50'),
       ]);
 
-      if (modulesRes.data?.data && modulesRes.data?.pagination) {
-        setModules(modulesRes.data.data);
-        setTotalModules(modulesRes.data.pagination.total);
-        setTotalPages(modulesRes.data.pagination.totalPages);
-        setCurrentPage(modulesRes.data.pagination.page);
-      } else if (Array.isArray(modulesRes.data)) {
-        setModules(modulesRes.data);
-        setTotalModules(modulesRes.data.length);
-        setTotalPages(Math.ceil(modulesRes.data.length / limit) || 1);
+      if (modulesResult.status === 'fulfilled') {
+        const modulesRes = modulesResult.value;
+        if (modulesRes.data?.data && modulesRes.data?.pagination) {
+          setModules(modulesRes.data.data);
+          setTotalModules(modulesRes.data.pagination.total);
+          setTotalPages(modulesRes.data.pagination.totalPages);
+          setCurrentPage(modulesRes.data.pagination.page);
+        } else if (Array.isArray(modulesRes.data)) {
+          setModules(modulesRes.data);
+          setTotalModules(modulesRes.data.length);
+          setTotalPages(Math.ceil(modulesRes.data.length / limit) || 1);
+        } else {
+          setModules([]);
+          setTotalModules(0);
+          setTotalPages(1);
+        }
+
+        if (modulesRes.data?.data?.[0]?.id && !selectedModuleId) {
+          setSelectedModuleId(modulesRes.data.data[0].id);
+        } else if (Array.isArray(modulesRes.data) && modulesRes.data[0]?.id && !selectedModuleId) {
+          setSelectedModuleId(modulesRes.data[0].id);
+        }
       } else {
-        setModules([]);
-        setTotalModules(0);
-        setTotalPages(1);
+        console.warn('⚠️ [AgentsPage] Não foi possível carregar módulos de agente:', modulesResult.reason);
       }
 
-      setClients(clientsRes.data?.data || []);
-      setCatalogNorms(normsRes.data?.norms || []);
-
-      // Tratamento resiliente da lista de modelos de IA persistidos
-      const modelsList = Array.isArray(modelsRes.data?.data)
-        ? modelsRes.data.data
-        : Array.isArray(modelsRes.data)
-        ? modelsRes.data
-        : [];
-      setAiModels(modelsList);
-
-      if (modulesRes.data?.data?.[0]?.id && !selectedModuleId) {
-        setSelectedModuleId(modulesRes.data.data[0].id);
-      } else if (Array.isArray(modulesRes.data) && modulesRes.data[0]?.id && !selectedModuleId) {
-        setSelectedModuleId(modulesRes.data[0].id);
+      if (clientsResult.status === 'fulfilled') {
+        const clientsRes = clientsResult.value;
+        const list = clientsRes.data?.data || (Array.isArray(clientsRes.data) ? clientsRes.data : []);
+        setClients(list);
+        if (list[0]?.id && !selectedClientId) {
+          setSelectedClientId(list[0].id);
+          setTargetUrl(list[0].websiteUrl || '');
+        }
+      } else {
+        console.warn('⚠️ [AgentsPage] Não foi possível carregar clientes:', clientsResult.reason);
       }
 
-      if (clientsRes.data?.data?.[0]?.id && !selectedClientId) {
-        setSelectedClientId(clientsRes.data.data[0].id);
-        setTargetUrl(clientsRes.data.data[0].websiteUrl || '');
+      if (normsResult.status === 'fulfilled') {
+        setCatalogNorms(normsResult.value.data?.norms || []);
+      }
+
+      if (modelsResult.status === 'fulfilled') {
+        const modelsRes = modelsResult.value;
+        const modelsList = Array.isArray(modelsRes.data?.data)
+          ? modelsRes.data.data
+          : Array.isArray(modelsRes.data)
+          ? modelsRes.data
+          : [];
+        setAiModels(modelsList);
+      } else {
+        console.warn('⚠️ [AgentsPage] Não foi possível carregar modelos do banco:', modelsResult.reason);
       }
     } catch (err) {
       console.error('Erro ao buscar dados:', err);
@@ -181,8 +195,16 @@ export const AgentsPage: React.FC = () => {
   const handleActivateModel = async (modelId: string) => {
     try {
       setActivatingModelId(modelId);
-      await api.post(`/models/${modelId}/activate`);
+      const res = await api.post(`/models/${modelId}/activate`);
+      // Atualiza o estado da lista localmente IMEDIATAMENTE (reatividade instantânea)
+      setAiModels((prev) =>
+        prev.map((m) => ({
+          ...m,
+          isActive: m.id === modelId,
+        }))
+      );
       await fetchData(currentPage, pageSize);
+      alert(res.data?.message || 'Modelo ativado com sucesso como motor ativo de auditoria!');
     } catch (err: any) {
       alert(`Erro ao ativar modelo: ${err.response?.data?.error || err.message}`);
     } finally {

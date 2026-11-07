@@ -161,7 +161,8 @@ export class ModelController {
       });
 
       if (model.isActive) {
-        ReconciliationEngine.invalidateModelCache();
+        ReconciliationEngine.setActiveProvider(model.provider as any);
+      ReconciliationEngine.invalidateModelCache();
       }
 
       await prisma.systemLog.create({
@@ -210,6 +211,9 @@ export class ModelController {
         data: updateData,
       });
 
+      if (updated.isActive) {
+        ReconciliationEngine.setActiveProvider(updated.provider as any);
+      }
       ReconciliationEngine.invalidateModelCache();
 
       res.status(200).json(updated);
@@ -281,6 +285,7 @@ export class ModelController {
         }),
       ]);
 
+      ReconciliationEngine.setActiveProvider(model.provider as any);
       ReconciliationEngine.invalidateModelCache();
 
       await prisma.systemLog.create({
