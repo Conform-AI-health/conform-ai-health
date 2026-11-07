@@ -63,6 +63,9 @@ jobs:
       - name: Checkout Repositório
         uses: actions/checkout@v4
 
+      - name: Normalizar nome do repositório para minúsculas
+        run: echo "REPO_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -80,8 +83,8 @@ jobs:
           file: ./dashboard/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/dashboard-api:latest
-            ghcr.io/${{ github.repository }}/dashboard-api:${{ github.sha }}
+            ghcr.io/${{ env.REPO_LC }}/dashboard-api:latest
+            ghcr.io/${{ env.REPO_LC }}/dashboard-api:${{ github.sha }}
 
       - name: Build & Push Imagem Frontend Web
         uses: docker/build-push-action@v5
@@ -90,8 +93,8 @@ jobs:
           file: ./dashboard-web/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/dashboard-web:latest
-            ghcr.io/${{ github.repository }}/dashboard-web:${{ github.sha }}
+            ghcr.io/${{ env.REPO_LC }}/dashboard-web:latest
+            ghcr.io/${{ env.REPO_LC }}/dashboard-web:${{ github.sha }}
 
   # -------------------------------------------------------------
   # Job 3: Deploy Automatizado Seguro na AWS EC2

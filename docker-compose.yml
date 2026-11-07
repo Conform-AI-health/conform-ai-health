@@ -23,6 +23,7 @@ services:
   # Backend REST API (Node.js 20 + Express + Prisma)
   # -------------------------------------------------------------
   dashboard-api:
+    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:latest
     build:
       context: ./dashboard
       dockerfile: Dockerfile
@@ -55,6 +56,7 @@ services:
   # Worker Assíncrono de Auditoria Deontológica (BullMQ)
   # -------------------------------------------------------------
   audit-worker:
+    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:latest
     build:
       context: ./dashboard
       dockerfile: Dockerfile
@@ -85,6 +87,7 @@ services:
   # Frontend SPA (Vite + React + Nginx Proxy)
   # -------------------------------------------------------------
   dashboard-web:
+    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-web:latest
     build:
       context: ./dashboard-web
       dockerfile: Dockerfile
