@@ -4,7 +4,6 @@ import {
   Plus,
   Search,
   ExternalLink,
-  Play,
   Filter,
   CheckCircle2,
   Trash2,
@@ -12,6 +11,13 @@ import {
   Stethoscope,
   X,
   AlertTriangle,
+  Globe,
+  Layers,
+  Cpu,
+  FileText,
+  Sparkles,
+  Eye,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
@@ -30,6 +36,19 @@ export const ClientsPage: React.FC = () => {
   const [editingClient, setEditingClient] = useState<any>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<any>(null);
+
+  // Estados para "Buscar Informações" (Extração Digital)
+  const [showExtractModal, setShowExtractModal] = useState(false);
+  const [clientToExtract, setClientToExtract] = useState<any>(null);
+  const [extractUrl, setExtractUrl] = useState('');
+  const [extractMode, setExtractMode] = useState('CHEERIO');
+  const [extracting, setExtracting] = useState(false);
+
+  // Estados para Visualização de Documentos Coletados
+  const [showExtractedDocsModal, setShowExtractedDocsModal] = useState(false);
+  const [extractedDocs, setExtractedDocs] = useState<any[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [selectedDocPreview, setSelectedDocPreview] = useState<any>(null);
 
   // Paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -219,23 +238,53 @@ export const ClientsPage: React.FC = () => {
     }
   };
 
-  const handleQuickAudit = async (client: any) => {
-    try {
-      const modulesRes = await api.get('/agents');
-      const firstModule = modulesRes.data?.data?.[0] || modulesRes.data?.[0];
-      if (!firstModule) {
-        toast.warning('Nenhum módulo de agente ativo disponível para disparo imediato.');
-        return;
-      }
+  // Abrir Modal de Busca de Informações
+  const handleOpenExtract = (client: any) => {
+    setClientToExtract(client);
+    setExtractUrl(client.websiteUrl || '');
+    setExtractMode('CHEERIO');
+    setShowExtractModal(true);
+  };
 
-      await api.post(`/agents/${firstModule.id}/run`, {
-        clientId: client.id,
-        targetUrl: client.websiteUrl || 'https://prontomed.med.br',
-        extractionMode: 'CHEERIO',
+  // Executar Extração e Salvar Documento Atrelado ao Cliente
+  const handleExtractSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientToExtract?.id) return;
+    if (!extractUrl?.trim()) {
+      toast.warning('Informe a URL oficial para realização da coleta de dados.');
+      return;
+    }
+    try {
+      setExtracting(true);
+      const res = await api.post(`/clients/${clientToExtract.id}/scrape`, {
+        targetUrl: extractUrl.trim(),
+        extractionMode: extractMode,
       });
-      toast.success(`Auditoria deontológica disparada com sucesso para ${client.name}!`, 'Varredura em Fila');
+      toast.success(
+        `Informações da clínica coletadas com sucesso! Salvas no repositório de dados do cliente.`
+      );
+      setShowExtractModal(false);
+      handleViewExtractedDocs(clientToExtract);
     } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message, 'Falha ao disparar auditoria');
+      toast.error(err.response?.data?.error || err.message, 'Falha na coleta de informações');
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  // Abrir Modal de Documentos Coletados da Clínica
+  const handleViewExtractedDocs = async (client: any) => {
+    try {
+      setClientToExtract(client);
+      setLoadingDocs(true);
+      setSelectedDocPreview(null);
+      setShowExtractedDocsModal(true);
+      const res = await api.get(`/clients/${client.id}/scraped-data`);
+      setExtractedDocs(res.data?.data || []);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message, 'Erro ao carregar dados coletados');
+    } finally {
+      setLoadingDocs(false);
     }
   };
 
@@ -370,12 +419,19 @@ export const ClientsPage: React.FC = () => {
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => handleQuickAudit(c)}
-                          className="bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition"
-                          title="Auditar agora"
+                          onClick={() => handleOpenExtract(c)}
+                          className="bg-cyan-950/70 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-800/60 px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition shadow-sm"
+                          title="Buscar informações da clínica (Scraping, Datalink, MCP)"
                         >
-                          <Play className="h-3 w-3 fill-current" />
-                          <span>Auditar</span>
+                          <Globe className="h-3.5 w-3.5" />
+                          <span>Buscar Informações</span>
+                        </button>
+                        <button
+                          onClick={() => handleViewExtractedDocs(c)}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-1.5 rounded-lg text-xs transition border border-slate-700/60"
+                          title="Ver informações e documentos coletados desta clínica"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => handleOpenEdit(c)}
@@ -842,6 +898,311 @@ export const ClientsPage: React.FC = () => {
                 <Trash2 className="h-3.5 w-3.5" />
                 <span>{deleting ? 'Removendo...' : 'Sim, Excluir'}</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 4: BUSCAR INFORMAÇÕES DA CLÍNICA (SCRAPING / DATALINK / MCP) */}
+      {/* ============================================================== */}
+      {showExtractModal && clientToExtract && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#0b132b] border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative text-left">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-950/60 border border-cyan-800/40">
+                  <Globe className="h-5 w-5 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Buscar Informações da Clínica</h3>
+                  <p className="text-xs text-slate-400">
+                    {clientToExtract.name} {clientToExtract.tradeName ? `(${clientToExtract.tradeName})` : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExtractModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition hover:bg-slate-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleExtractSubmit} className="space-y-4 mt-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  URL Oficial / Canal Digital da Clínica *
+                </label>
+                <input
+                  type="url"
+                  required
+                  value={extractUrl}
+                  onChange={(e) => setExtractUrl(e.target.value)}
+                  placeholder="https://suaclinica.med.br"
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  As informações extraídas serão salvas exclusivamente no repositório de dados desta clínica.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-2">
+                  Método de Coleta / Modo de Extração
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div
+                    onClick={() => setExtractMode('CHEERIO')}
+                    className={`p-3 rounded-xl border cursor-pointer transition text-left ${
+                      extractMode === 'CHEERIO'
+                        ? 'bg-cyan-950/40 border-cyan-500 text-white'
+                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs mb-1">
+                      <Globe className="h-4 w-4 text-cyan-400" />
+                      <span>Scraping Web (HTML)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      Cheerio sanitizado para markdown de alta densidade.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setExtractMode('PUPPETEER')}
+                    className={`p-3 rounded-xl border cursor-pointer transition text-left ${
+                      extractMode === 'PUPPETEER'
+                        ? 'bg-cyan-950/40 border-cyan-500 text-white'
+                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs mb-1">
+                      <Sparkles className="h-4 w-4 text-cyan-400" />
+                      <span>Puppeteer (SPA)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      Renderização dinâmica de aplicações React/Vue.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setExtractMode('DATALINK')}
+                    className={`p-3 rounded-xl border cursor-pointer transition text-left ${
+                      extractMode === 'DATALINK'
+                        ? 'bg-cyan-950/40 border-cyan-500 text-white'
+                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs mb-1">
+                      <Layers className="h-4 w-4 text-cyan-400" />
+                      <span>Datalink / API</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      Integração via endpoint REST / payload JSON.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setExtractMode('MCP')}
+                    className={`p-3 rounded-xl border cursor-pointer transition text-left ${
+                      extractMode === 'MCP'
+                        ? 'bg-cyan-950/40 border-cyan-500 text-white'
+                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs mb-1">
+                      <Cpu className="h-4 w-4 text-cyan-400" />
+                      <span>MCP Server</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      Protocolo Model Context para sistemas hospitalares.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setShowExtractModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={extracting}
+                  className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs py-2.5 px-6 rounded-xl transition shadow-lg shadow-cyan-500/20 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {extracting ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>Coletando Informações...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="h-4 w-4" />
+                      <span>Buscar Informações</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 5: DOCUMENTOS E INFORMAÇÕES COLETADAS DA CLÍNICA */}
+      {/* ============================================================== */}
+      {showExtractedDocsModal && clientToExtract && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#0b132b] border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-6 shadow-2xl relative text-left">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-950/60 border border-cyan-800/40">
+                  <FileText className="h-5 w-5 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Informações Coletadas da Clínica</h3>
+                  <p className="text-xs text-slate-400">
+                    {clientToExtract.name} — Repositório de Documentos Clínicos
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExtractedDocsModal(false);
+                  setSelectedDocPreview(null);
+                }}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition hover:bg-slate-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {loadingDocs ? (
+                <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="h-6 w-6 animate-spin text-cyan-400" />
+                  <span>Carregando informações coletadas...</span>
+                </div>
+              ) : extractedDocs.length === 0 ? (
+                <div className="py-12 text-center bg-[#080d1a] border border-slate-800 rounded-xl p-6">
+                  <Globe className="h-8 w-8 text-cyan-400 mx-auto mb-2 opacity-50" />
+                  <h4 className="text-sm font-bold text-white mb-1">Nenhum Documento Coletado</h4>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto mb-4">
+                    Nenhuma extração foi realizada para esta clínica ainda. Clique abaixo para buscar informações agora.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowExtractedDocsModal(false);
+                      handleOpenExtract(clientToExtract);
+                    }}
+                    className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs py-2 px-4 rounded-xl transition"
+                  >
+                    Buscar Informações Agora
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">
+                      Documentos Extraídos ({extractedDocs.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowExtractedDocsModal(false);
+                        handleOpenExtract(clientToExtract);
+                      }}
+                      className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Nova Coleta</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    {extractedDocs.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="bg-[#080d1a] border border-slate-800 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition"
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/60 text-cyan-300">
+                                {doc.extractionMode}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                {doc.createdAt ? new Date(doc.createdAt).toLocaleString('pt-BR') : '-'}
+                              </span>
+                            </div>
+                            <h5 className="text-sm font-bold text-white">{doc.title || doc.url}</h5>
+                            <span className="text-xs font-mono text-slate-400 truncate block mt-0.5 max-w-lg">
+                              {doc.url}
+                            </span>
+                          </div>
+
+                          <div className="text-right">
+                            <span className="text-xs font-bold text-cyan-400 block font-mono">
+                              {doc.tokensCount} tokens
+                            </span>
+                            <span className="text-[10px] text-slate-500 block">
+                              {doc.rawLength} bytes
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                          <span className="text-[11px] text-slate-400">
+                            Tags detectadas: {doc.detectedTags?.join(', ') || 'CFM'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedDocPreview(selectedDocPreview?.id === doc.id ? null : doc)
+                            }
+                            className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition flex items-center gap-1"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>{selectedDocPreview?.id === doc.id ? 'Ocultar Conteúdo' : 'Ver Conteúdo'}</span>
+                          </button>
+                        </div>
+
+                        {selectedDocPreview?.id === doc.id && (
+                          <div className="mt-3 pt-3 border-t border-slate-800 text-xs">
+                            <span className="font-semibold text-slate-300 block mb-1">
+                              Conteúdo Markdown Sanitizado:
+                            </span>
+                            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-300 max-h-60 overflow-y-auto leading-relaxed whitespace-pre-wrap">
+                              {doc.cleanMarkdown}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end pt-3 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowExtractedDocsModal(false);
+                    setSelectedDocPreview(null);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
           </div>
         </div>

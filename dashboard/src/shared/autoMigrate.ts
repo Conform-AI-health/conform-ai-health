@@ -258,6 +258,23 @@ export async function runAutoMigrateAndSeed() {
       if (reportsNeedingHealing.length > 0) {
         console.log(`🛡️ [AutoMigrate] ${reportsNeedingHealing.length} Laudo(s) legados sanitizados (targetUrl, summary, clientId).`);
       }
+
+      // 5.5 Limpar registros de clínicas do repositório de normas (scraped_pages deve conter exclusivamente normas regulatórias)
+      const allClients = await prisma.client.findMany({ select: { websiteUrl: true } }).catch(() => []);
+      const clinicUrls = allClients.map((c) => c.websiteUrl).filter(Boolean) as string[];
+
+      const deletedClinicPages = await prisma.scrapedPage.deleteMany({
+        where: {
+          OR: [
+            ...(clinicUrls.length > 0 ? [{ url: { in: clinicUrls } }] : []),
+            { url: { contains: 'dermotologista' } },
+          ],
+        },
+      }).catch(() => ({ count: 0 }));
+
+      if (deletedClinicPages && deletedClinicPages.count > 0) {
+        console.log(`🛡️ [AutoMigrate] ${deletedClinicPages.count} página(s) de clínica removidas do repositório de normas.`);
+      }
     } catch (healErr: any) {
       console.warn('⚠️ [AutoMigrate] Aviso na autocura de registros legados:', healErr.message);
     }

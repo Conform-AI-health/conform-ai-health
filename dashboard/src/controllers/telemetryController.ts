@@ -45,10 +45,10 @@ export class TelemetryController {
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
 
-      // Logs recentes do sistema
+      // Logs recentes do sistema (com alta granularidade para o terminal operacional)
       const recentLogs = await prisma.systemLog.findMany({
         orderBy: { createdAt: 'desc' },
-        take: 30,
+        take: 100,
       });
 
       res.status(200).json({

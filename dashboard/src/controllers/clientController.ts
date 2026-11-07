@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
-import { ClientStatus, Role } from '@prisma/client';
+import { ClientStatus, Role, ExtractionMode } from '@prisma/client';
+import { ScraperService } from '../services/scraperService.js';
 
 const createClientSchema = z.object({
   name: z.string().min(2, 'Razão Social é obrigatória'),
@@ -266,6 +267,99 @@ export class ClientController {
 
       res.status(200).json({
         message: 'Clínica e seus laudos associados foram removidos com sucesso.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Buscar Informações da Clínica (Scraping, Datalink ou MCP) e salvar atrelado ao cliente
+   */
+  public static async extractInfo(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { extractionMode = 'CHEERIO', targetUrl } = req.body;
+
+      const client = await prisma.client.findUnique({
+        where: { id },
+      });
+
+      if (!client) {
+        res.status(404).json({ error: 'Clínica não encontrada.' });
+        return;
+      }
+
+      const effectiveUrl = (targetUrl || client.websiteUrl || '').trim();
+      if (!effectiveUrl) {
+        res.status(400).json({ error: 'A clínica não possui URL de website cadastrada e nenhuma URL foi informada.' });
+        return;
+      }
+
+      // 1. Extração dos dados do canal digital da clínica
+      const scrape = await ScraperService.scrape(effectiveUrl, extractionMode as ExtractionMode);
+
+      // 2. Persistência em documento específico atrelado ao cliente (sem poluir o repositório de normas)
+      const scrapedDoc = await prisma.clientScrapedData.create({
+        data: {
+          clientId: id,
+          url: effectiveUrl,
+          title: scrape.title || client.tradeName || client.name,
+          cleanMarkdown: scrape.cleanMarkdown,
+          rawLength: scrape.rawHtmlLength,
+          tokensCount: scrape.tokensEstimatedClean,
+          extractionMode: extractionMode as ExtractionMode,
+          detectedTags: scrape.detectedTags,
+          extractedEntities: JSON.stringify(scrape.extractedEntities),
+          status: 'COMPLETED',
+        },
+      });
+
+      // 3. Log Operacional no Terminal
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'CLIENT_EXTRACTION',
+          correlationId: scrapedDoc.id,
+          message: `[CLIENT_EXTRACTION] Informações coletadas para "${client.name}" (${effectiveUrl}) via ${extractionMode} | ${scrape.rawHtmlLength} bytes | ${scrape.tokensEstimatedClean} tokens | Documento ID: ${scrapedDoc.id}`,
+          details: JSON.stringify({
+            clientId: id,
+            clientName: client.name,
+            url: effectiveUrl,
+            extractionMode,
+            tokensCount: scrape.tokensEstimatedClean,
+            entitiesCount: {
+              crms: scrape.extractedEntities.crms.length,
+              rqes: scrape.extractedEntities.rqes.length,
+            },
+          }),
+        },
+      }).catch(() => {});
+
+      res.status(201).json({
+        message: 'Informações da clínica coletadas e persistidas com sucesso.',
+        data: scrapedDoc,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Listar histórico de documentos extraídos da clínica
+   */
+  public static async listScrapedData(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      const items = await prisma.clientScrapedData.findMany({
+        where: { clientId: id },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      res.status(200).json({
+        data: items,
+        total: items.length,
       });
     } catch (error) {
       next(error);

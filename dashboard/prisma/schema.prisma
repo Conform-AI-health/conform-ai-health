@@ -81,6 +81,7 @@ model Client {
   email             String?
   users             User[]
   auditReports      AuditReport[]
+  scrapedData       ClientScrapedData[]
   createdAt         DateTime?     @default(now())
   updatedAt         DateTime?     @updatedAt
 
@@ -194,6 +195,26 @@ model ScrapedPage {
   @@index([tags])
   @@index([tags, createdAt])
   @@map("scraped_pages")
+}
+
+model ClientScrapedData {
+  id                String         @id @default(auto()) @map("_id") @db.ObjectId
+  clientId          String         @db.ObjectId
+  client            Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  url               String
+  title             String?
+  cleanMarkdown     String
+  rawLength         Int            @default(0)
+  tokensCount       Int            @default(0)
+  extractionMode    ExtractionMode @default(CHEERIO)
+  detectedTags      String[]       @default([])
+  extractedEntities String?
+  status            String         @default("COMPLETED")
+  createdAt         DateTime?      @default(now())
+  updatedAt         DateTime?      @updatedAt
+
+  @@index([clientId, createdAt])
+  @@map("client_scraped_data")
 }
 
 model AiModelConfig {

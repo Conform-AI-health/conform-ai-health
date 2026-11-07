@@ -32,11 +32,54 @@ export function startAuditWorker() {
         });
 
         // 1. Extração da página web
+        await prisma.systemLog.create({
+          data: {
+            level: 'INFO',
+            module: 'SCRAPER',
+            correlationId: String(job.id),
+            message: `[SCRAPER] Worker iniciando extração (${extractionMode}) para ${targetUrl}...`,
+          },
+        }).catch(() => {});
+
         const scrape = await ScraperService.scrape(targetUrl, extractionMode);
 
+        await prisma.systemLog.create({
+          data: {
+            level: 'INFO',
+            module: 'SCRAPER',
+            correlationId: String(job.id),
+            message: `[SCRAPER] Extração concluída (${extractionMode}): "${scrape.title || targetUrl}" | ${scrape.rawHtmlLength} bytes | ${scrape.tokensEstimatedClean} tokens limpos (economia de ${Math.max(0, scrape.tokensEstimatedRaw - scrape.tokensEstimatedClean)} tokens).`,
+          },
+        }).catch(() => {});
+
         // 2. Reconciliação Deontológica com IA consumindo prompt do agente
+        await prisma.systemLog.create({
+          data: {
+            level: 'INFO',
+            module: 'AI_ENGINE',
+            correlationId: String(job.id),
+            message: `[AI_INTERACTION] Worker enviando payload para o motor de IA...`,
+          },
+        }).catch(() => {});
+
         const reconciliation = await ReconciliationEngine.reconcile(scrape, agentModuleId);
         const executionTimeMs = Date.now() - startTime;
+
+        await prisma.systemLog.create({
+          data: {
+            level: 'INFO',
+            module: 'AI_ENGINE',
+            correlationId: String(job.id),
+            message: `[AI_INTERACTION] Resposta do motor ${reconciliation.aiModelUsed || 'gemini'} | Prompt Tokens: ${reconciliation.promptTokens} | Completion Tokens: ${reconciliation.completionTokens} | Total Tokens: ${reconciliation.totalTokens} | Latência: ${executionTimeMs}ms`,
+            details: JSON.stringify({
+              promptTokens: reconciliation.promptTokens,
+              completionTokens: reconciliation.completionTokens,
+              totalTokens: reconciliation.totalTokens,
+              aiModelUsed: reconciliation.aiModelUsed,
+              executionTimeMs,
+            }),
+          },
+        }).catch(() => {});
 
         // 3. Persistência Imutável dos Resultados
         await prisma.$transaction(async (tx) => {

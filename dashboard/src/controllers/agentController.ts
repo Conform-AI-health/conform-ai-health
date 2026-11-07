@@ -175,7 +175,7 @@ export class AgentController {
   public static async runAudit(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id: agentModuleId } = req.params;
-      const { clientId, targetUrl, extractionMode } = runAuditSchema.parse(req.body);
+      const { clientId, targetUrl, extractionMode, skill } = runAuditSchema.parse(req.body);
 
       // Isolamento multi-tenant: CLIENT só pode disparar auditoria para si mesmo
       if (req.user?.role === Role.CLIENT && req.user.clientId !== clientId) {
@@ -199,52 +199,8 @@ export class AgentController {
         where: { id: agentModuleId },
       });
 
-      // Validação de contexto de tags antes de iniciar
-      let scrapedPage = await prisma.scrapedPage.findUnique({
-        where: { url: targetUrl },
-      });
-
-      if (!scrapedPage) {
-        // Se ainda não foi indexada no repositório, raspa e tagueia a página
-        const initialScrape = await ScraperService.scrape(targetUrl, extractionMode || mod?.extractionMode || 'CHEERIO');
-        scrapedPage = await prisma.scrapedPage.upsert({
-          where: { url: targetUrl },
-          update: {
-            title: initialScrape.title,
-            cleanMarkdown: initialScrape.cleanMarkdown,
-            rawLength: initialScrape.rawHtmlLength,
-            tokensCount: initialScrape.tokensEstimatedClean,
-            tags: initialScrape.detectedTags,
-            extractedEntities: JSON.stringify(initialScrape.extractedEntities),
-          },
-          create: {
-            url: targetUrl,
-            title: initialScrape.title,
-            cleanMarkdown: initialScrape.cleanMarkdown,
-            rawLength: initialScrape.rawHtmlLength,
-            tokensCount: initialScrape.tokensEstimatedClean,
-            tags: initialScrape.detectedTags,
-            extractedEntities: JSON.stringify(initialScrape.extractedEntities),
-          },
-        });
-      }
-
-      // Verificação se a tag da página faz parte do contexto do agente
-      const agentTags = mod?.tags || ['CFM'];
-      const pageTags = scrapedPage.tags || ['CFM'];
-      const isContextCompatible = agentTags.some((tag) => pageTags.includes(tag));
-
-      if (!isContextCompatible) {
-        res.status(422).json({
-          error: `Incompatibilidade de contexto. As tags da página ([${pageTags.join(', ')}]) não fazem parte do contexto deste agente ([${agentTags.join(', ')}]).`,
-          code: 'AGENT_CONTEXT_MISMATCH',
-          pageTags,
-          agentTags,
-        });
-        return;
-      }
-
       const effectiveMode: ExtractionMode = extractionMode || mod?.extractionMode || 'CHEERIO';
+      const effectiveSkill = skill || 'compliance-specialist';
 
       // Criação inicial do laudo em estado QUEUED
       const report = await prisma.auditReport.create({
@@ -253,10 +209,30 @@ export class AgentController {
           targetUrl,
           extractionMode: effectiveMode,
           status: 'QUEUED',
-          summary: 'Auditoria enfileirada para processamento assíncrono.',
+          summary: `Auditoria disparada no Cockpit com agente ${mod?.code || 'CFM'} e skill ${effectiveSkill}.`,
           score: 0,
         },
       });
+
+      // Registro do momento de disparo no Terminal de Logs Operacionais
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'COCKPIT',
+          correlationId: report.id,
+          message: `[COCKPIT] Disparo de Auditoria iniciado para "${client.name}" | URL: ${targetUrl} | Agente: ${mod?.code || 'CFM'} | Skill: ${effectiveSkill} | Modo: ${effectiveMode}`,
+          details: JSON.stringify({
+            auditReportId: report.id,
+            clientId,
+            clientName: client.name,
+            targetUrl,
+            agentCode: mod?.code,
+            skill: effectiveSkill,
+            extractionMode: effectiveMode,
+            timestamp: new Date().toISOString(),
+          }),
+        },
+      }).catch(() => {});
 
       // Tenta enfileirar no BullMQ
       let queuedViaRedis = false;
@@ -269,6 +245,7 @@ export class AgentController {
             targetUrl,
             extractionMode: effectiveMode,
             agentModuleId,
+            skill: effectiveSkill,
           },
           {
             jobId: `audit-${report.id}`,
@@ -288,10 +265,55 @@ export class AgentController {
               data: { status: 'RUNNING' },
             });
 
+            await prisma.systemLog.create({
+              data: {
+                level: 'INFO',
+                module: 'SCRAPER',
+                correlationId: report.id,
+                message: `[SCRAPER] Iniciando extração web via ${effectiveMode} para ${targetUrl}...`,
+              },
+            }).catch(() => {});
+
             const startTime = Date.now();
             const scrape = await ScraperService.scrape(targetUrl, effectiveMode);
+
+            await prisma.systemLog.create({
+              data: {
+                level: 'INFO',
+                module: 'SCRAPER',
+                correlationId: report.id,
+                message: `[SCRAPER] Extração concluída (${effectiveMode}): "${scrape.title || targetUrl}" | ${scrape.rawHtmlLength} bytes processados | ${scrape.tokensEstimatedClean} tokens limpos (economia de ${Math.max(0, scrape.tokensEstimatedRaw - scrape.tokensEstimatedClean)} tokens).`,
+              },
+            }).catch(() => {});
+
+            await prisma.systemLog.create({
+              data: {
+                level: 'INFO',
+                module: 'AI_ENGINE',
+                correlationId: report.id,
+                message: `[AI_INTERACTION] Enviando contexto para o motor de IA | Agente: ${mod?.code || 'CFM'} | Skill: ${effectiveSkill} | Contexto: ${scrape.tokensEstimatedClean} tokens.`,
+              },
+            }).catch(() => {});
+
             const recon = await ReconciliationEngine.reconcile(scrape, agentModuleId);
             const executionTimeMs = Date.now() - startTime;
+
+            await prisma.systemLog.create({
+              data: {
+                level: 'INFO',
+                module: 'AI_ENGINE',
+                correlationId: report.id,
+                message: `[AI_INTERACTION] Resposta recebida do motor ${recon.aiModelUsed || 'gemini'} | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms`,
+                details: JSON.stringify({
+                  aiModelUsed: recon.aiModelUsed,
+                  skill: effectiveSkill,
+                  promptTokens: recon.promptTokens,
+                  completionTokens: recon.completionTokens,
+                  totalTokens: recon.totalTokens,
+                  executionTimeMs,
+                }),
+              },
+            }).catch(() => {});
 
             await prisma.$transaction(async (tx) => {
               await tx.auditReport.update({
@@ -328,9 +350,27 @@ export class AgentController {
               }
             });
 
+            await prisma.systemLog.create({
+              data: {
+                level: 'INFO',
+                module: 'RECONCILIATION',
+                correlationId: report.id,
+                message: `[RECONCILIATION] Reconciliação deontológica concluída | Veredito: ${recon.verdict} | Score: ${recon.score}/100 | ${recon.violations.length} não-conformidade(s) detectada(s) | Laudo ID: ${report.id}`,
+              },
+            }).catch(() => {});
+
             console.log(`✅ [Direct Worker Fallback] Auditoria ${report.id} concluída com sucesso!`);
           } catch (execErr: any) {
             console.error(`❌ [Direct Worker Fallback] Falha na auditoria ${report.id}:`, execErr);
+            await prisma.systemLog.create({
+              data: {
+                level: 'ERROR',
+                module: 'COCKPIT',
+                correlationId: report.id,
+                message: `[ERROR] Falha técnica durante execução da auditoria: ${execErr.message}`,
+              },
+            }).catch(() => {});
+
             await prisma.auditReport.update({
               where: { id: report.id },
               data: {

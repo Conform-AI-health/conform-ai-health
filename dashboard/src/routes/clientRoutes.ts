@@ -16,6 +16,8 @@ router.post('/', authorize(Role.ADMIN, Role.AUDITOR), ClientController.create);
 router.get('/:id', authorize(Role.ADMIN, Role.AUDITOR, Role.CLIENT), ClientController.getById);
 router.put('/:id', authorize(Role.ADMIN, Role.AUDITOR, Role.CLIENT), ClientController.update);
 router.delete('/:id', authorize(Role.ADMIN), ClientController.delete);
+router.post('/:id/scrape', authorize(Role.ADMIN, Role.AUDITOR), ClientController.extractInfo);
+router.get('/:id/scraped-data', authorize(Role.ADMIN, Role.AUDITOR, Role.CLIENT), ClientController.listScrapedData);
 
 export default router;
 
