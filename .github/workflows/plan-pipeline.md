@@ -44,7 +44,7 @@ flowchart TD
 - **Agentes Responsáveis:**
   - `@software-architect` *(Coordenação Técnica e Arquitetura Global)*
   - `@backend-engineer` *(Backend Node.js, Express, Prisma, BullMQ, Redis, MongoDB)*
-  - `@frontend-engineer` *(Frontend React 18, Vite, Tailwind CSS, RBAC UI)*
+  - `@frontend-engineer` *(Frontend React 18, Vite, Tailwind CSS, Componentes de Paginação, Teste de IA e RBAC UI)*
   - `@ai-software-engineer` *(Pipelines RAG, Google Gemini, Ollama, MCP, Structured Outputs)*
 - **Ações Obrigatórias:**
   1. **Arquitetura (@software-architect):**
