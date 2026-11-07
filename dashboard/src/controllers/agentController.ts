@@ -7,13 +7,18 @@ import { ScraperService } from '../services/scraperService.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 
 const createAgentSchema = z.object({
-  name: z.string().min(2, 'Nome é obrigatório'),
-  code: z.string().min(2, 'Código identificador é obrigatório'),
-  description: z.string().min(5, 'Descrição é obrigatória'),
+  name: z.string().min(2, 'Nome do Agente é obrigatório'),
+  code: z.string().optional().nullable().or(z.literal('')),
+  description: z.string().optional().default(''),
   category: z.string().default('DEONTOLOGIA_MEDICA'),
-  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL']).default('CHEERIO'),
+  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).default('CHEERIO'),
   targetNorms: z.array(z.string()).default([]),
   systemPrompt: z.string().optional(),
+  clientId: z.string().optional().nullable(),
+  regulatoryFramework: z.string().optional().default('CFM (Resolução 2.336/2023)'),
+  cronSchedule: z.string().optional().default('0 */6 * * *'),
+  targetUrl: z.string().optional().nullable(),
+  enabled: z.boolean().optional().default(true),
 });
 
 const updateAgentSchema = createAgentSchema.partial();
@@ -21,7 +26,8 @@ const updateAgentSchema = createAgentSchema.partial();
 const runAuditSchema = z.object({
   clientId: z.string().min(1, 'clientId é obrigatório'),
   targetUrl: z.string().url('targetUrl deve ser uma URL válida'),
-  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL']).optional(),
+  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).optional(),
+  skill: z.string().optional(),
 });
 
 export class AgentController {
@@ -43,7 +49,7 @@ export class AgentController {
         ]);
 
         res.status(200).json({
-          data: modules,
+          data: modules.map((m) => ({ ...m, code: m.code || `agent-${m.id.slice(-6)}` })),
           pagination: {
             total,
             page: effectivePage,
@@ -57,7 +63,7 @@ export class AgentController {
       const modules = await prisma.agentModule.findMany({
         orderBy: { createdAt: 'asc' },
       });
-      res.status(200).json(modules);
+      res.status(200).json(modules.map((m) => ({ ...m, code: m.code || `agent-${m.id.slice(-6)}` })));
     } catch (error) {
       next(error);
     }
@@ -85,12 +91,17 @@ export class AgentController {
     try {
       const data = createAgentSchema.parse(req.body);
 
+      const resolvedCode =
+        data.code && data.code.trim().length > 0
+          ? data.code.trim()
+          : `${data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${Date.now().toString(36)}`;
+
       const existing = await prisma.agentModule.findUnique({
-        where: { code: data.code },
+        where: { code: resolvedCode },
       });
       if (existing) {
         res.status(409).json({
-          error: `Já existe um agente cadastrado com o código ${data.code}.`,
+          error: `Já existe um agente cadastrado com o código ${resolvedCode}.`,
           code: 'AGENT_CODE_EXISTS',
         });
         return;
@@ -99,13 +110,18 @@ export class AgentController {
       const agent = await prisma.agentModule.create({
         data: {
           name: data.name,
-          code: data.code.toUpperCase(),
+          code: resolvedCode,
           description: data.description,
           category: data.category,
-          extractionMode: data.extractionMode,
+          extractionMode: data.extractionMode as any,
           rulesCount: data.targetNorms.length > 0 ? data.targetNorms.length : 12,
           targetNorms: data.targetNorms,
           systemPrompt: data.systemPrompt || null,
+          clientId: data.clientId || null,
+          regulatoryFramework: data.regulatoryFramework,
+          cronSchedule: data.cronSchedule,
+          targetUrl: data.targetUrl || null,
+          enabled: data.enabled ?? true,
         },
       });
 
@@ -274,7 +290,7 @@ export class AgentController {
 
             const startTime = Date.now();
             const scrape = await ScraperService.scrape(targetUrl, effectiveMode);
-            const recon = await ReconciliationEngine.reconcile(scrape);
+            const recon = await ReconciliationEngine.reconcile(scrape, agentModuleId);
             const executionTimeMs = Date.now() - startTime;
 
             await prisma.$transaction(async (tx) => {

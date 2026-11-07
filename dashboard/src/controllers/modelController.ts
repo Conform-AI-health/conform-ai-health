@@ -10,13 +10,13 @@ const createModelSchema = z.object({
     errorMap: () => ({ message: 'Provedor deve ser gemini, ollama ou heuristic' }),
   }),
   modelId: z.string().min(2, 'Identificador técnico do modelo é obrigatório (ex: gemini-2.0-flash, qwen2.5:7b)'),
-  baseUrl: z.string().url('URL base inválida').optional().or(z.literal('')),
-  apiKey: z.string().optional().or(z.literal('')),
-  temperature: z.number().min(0).max(2).default(0.2),
-  maxTokens: z.number().min(128).max(32768).default(2048),
-  description: z.string().optional(),
-  isActive: z.boolean().default(false),
-  isDefault: z.boolean().default(false),
+  baseUrl: z.string().optional().nullable().or(z.literal('')),
+  apiKey: z.string().optional().nullable().or(z.literal('')),
+  temperature: z.coerce.number().min(0).max(2).default(0.2),
+  maxTokens: z.coerce.number().min(128).max(32768).default(2048),
+  description: z.string().optional().nullable().or(z.literal('')),
+  isActive: z.boolean().optional().default(false),
+  isDefault: z.boolean().optional().default(false),
 });
 
 const updateModelSchema = createModelSchema.partial();
@@ -40,7 +40,7 @@ export class ModelController {
         ];
       }
 
-      const [total, models] = await Promise.all([
+      let [total, models] = await Promise.all([
         prisma.aiModelConfig.count({ where }),
         prisma.aiModelConfig.findMany({
           where,
@@ -49,6 +49,52 @@ export class ModelController {
           orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
         }),
       ]);
+
+      // Se a base de dados estiver vazia (primeira execução ou limpeza), provisiona os modelos oficiais automaticamente
+      if (total === 0 && !search && !provider) {
+        console.log('🤖 [ModelController] Nenhum modelo no banco. Provisionando modelos padrão oficiais...');
+        await prisma.aiModelConfig.createMany({
+          data: [
+            {
+              name: 'Google Gemini 2.0 Flash',
+              provider: 'gemini',
+              modelId: 'gemini-2.0-flash',
+              isActive: true,
+              isDefault: true,
+              temperature: 0.2,
+              maxTokens: 2048,
+              description: 'Modelo multimodal de alta velocidade e precisão para auditoria da Res. CFM 2.336/2023.',
+            },
+            {
+              name: 'Ollama Local (Qwen 2.5)',
+              provider: 'ollama',
+              modelId: 'qwen2.5:7b',
+              baseUrl: 'http://localhost:11434',
+              isActive: false,
+              isDefault: false,
+              temperature: 0.2,
+              maxTokens: 2048,
+              description: 'Modelo open-source executado localmente para soberania e privacidade de dados em saúde.',
+            },
+            {
+              name: 'Motor Heurístico Deontológico',
+              provider: 'heuristic',
+              modelId: 'regex-heuristic-v1',
+              isActive: false,
+              isDefault: false,
+              temperature: 0.0,
+              maxTokens: 1024,
+              description: 'Motor determinístico baseado no catálogo de artigos, regras gramaticais e regex.',
+            },
+          ],
+        });
+        total = await prisma.aiModelConfig.count();
+        models = await prisma.aiModelConfig.findMany({
+          skip,
+          take: limit,
+          orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
+        });
+      }
 
       // Mascaramento de chave de API para segurança (OWASP)
       const sanitizedModels = models.map((m) => ({
@@ -115,7 +161,8 @@ export class ModelController {
       });
 
       if (model.isActive) {
-        ReconciliationEngine.invalidateModelCache();
+        ReconciliationEngine.setActiveProvider(model.provider as any);
+      ReconciliationEngine.invalidateModelCache();
       }
 
       await prisma.systemLog.create({
@@ -164,6 +211,9 @@ export class ModelController {
         data: updateData,
       });
 
+      if (updated.isActive) {
+        ReconciliationEngine.setActiveProvider(updated.provider as any);
+      }
       ReconciliationEngine.invalidateModelCache();
 
       res.status(200).json(updated);
@@ -224,7 +274,7 @@ export class ModelController {
       }
 
       // Desativa todos e ativa o selecionado
-      await prisma.$transaction([
+      const [_, updatedModel] = await prisma.$transaction([
         prisma.aiModelConfig.updateMany({
           where: { isActive: true },
           data: { isActive: false },
@@ -235,6 +285,7 @@ export class ModelController {
         }),
       ]);
 
+      ReconciliationEngine.setActiveProvider(model.provider as any);
       ReconciliationEngine.invalidateModelCache();
 
       await prisma.systemLog.create({
@@ -247,8 +298,22 @@ export class ModelController {
 
       res.status(200).json({
         message: `Modelo ${model.name} ativado com sucesso como motor ativo de auditoria.`,
-        activeModel: model,
+        activeModel: updatedModel || { ...model, isActive: true },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Teste pontual de modelo por ID
+   */
+  public static async test(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const prompt = req.body?.prompt ? String(req.body.prompt).slice(0, 1000) : undefined;
+      const result = await ReconciliationEngine.testModelResponse(prompt, id);
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

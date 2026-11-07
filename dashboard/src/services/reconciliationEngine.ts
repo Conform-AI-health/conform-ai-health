@@ -29,6 +29,17 @@ export const reconciliationOutputSchema = z.object({
 
 export type ReconciliationOutput = z.infer<typeof reconciliationOutputSchema>;
 
+export interface AgentContext {
+  id?: string;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  regulatoryFramework?: string | null;
+  systemPrompt: string;
+  targetNorms: string[];
+  activeNorms: NormChunk[];
+}
+
 export class ReconciliationEngine {
   private static activeProvider: 'gemini' | 'ollama' | 'heuristic' = (env.AI_PROVIDER as any) || 'gemini';
   private static cachedActiveModel: any = null;
@@ -40,6 +51,8 @@ export class ReconciliationEngine {
   }
 
   public static async getActiveModelConfig(): Promise<{
+    id?: string;
+    name: string;
     provider: 'gemini' | 'ollama' | 'heuristic';
     modelId: string;
     baseUrl?: string | null;
@@ -59,6 +72,8 @@ export class ReconciliationEngine {
 
       if (activeFromDb) {
         this.cachedActiveModel = {
+          id: activeFromDb.id,
+          name: activeFromDb.name,
           provider: activeFromDb.provider as any,
           modelId: activeFromDb.modelId,
           baseUrl: activeFromDb.baseUrl || env.OLLAMA_BASE_URL,
@@ -75,6 +90,12 @@ export class ReconciliationEngine {
     }
 
     return {
+      name:
+        this.activeProvider === 'gemini'
+          ? 'Google Gemini 2.0 Flash'
+          : this.activeProvider === 'ollama'
+          ? 'Ollama Local'
+          : 'Motor Heurístico Deontológico',
       provider: this.activeProvider,
       modelId:
         this.activeProvider === 'gemini'
@@ -100,9 +121,9 @@ export class ReconciliationEngine {
   }
 
   /**
-   * Realiza teste pontual de integridade, latência e conectividade com o modelo ativo
+   * Realiza teste pontual de integridade, latência e conectividade com o modelo ativo ou um modelo específico
    */
-  public static async testModelResponse(customPrompt?: string): Promise<{
+  public static async testModelResponse(customPrompt?: string, targetModelId?: string): Promise<{
     provider: string;
     model: string;
     status: 'ONLINE' | 'DEGRADED' | 'OFFLINE';
@@ -112,7 +133,13 @@ export class ReconciliationEngine {
     details?: any;
   }> {
     const startTime = Date.now();
-    const activeModel = await this.getActiveModelConfig();
+    let activeModel: any = null;
+    if (targetModelId) {
+      activeModel = await prisma.aiModelConfig.findUnique({ where: { id: targetModelId } }).catch(() => null);
+    }
+    if (!activeModel) {
+      activeModel = await this.getActiveModelConfig();
+    }
     const provider = activeModel.provider;
     const prompt =
       customPrompt ||
@@ -204,23 +231,134 @@ export class ReconciliationEngine {
   }
 
   /**
-   * Executa a auditoria deontológica com cascata de resiliência:
+   * Resolve o contexto completo e soberano do agente a partir do banco de dados (MongoDB)
+   */
+  public static async resolveAgentContext(agentModuleId?: string): Promise<AgentContext> {
+    if (agentModuleId) {
+      try {
+        const agent = await prisma.agentModule.findFirst({
+          where: {
+            OR: [{ id: agentModuleId }, { code: agentModuleId }],
+          },
+        });
+        if (agent) {
+          // Filtragem dinâmica de normas vinculadas ao agente
+          let activeNorms: NormChunk[] = [];
+          if (agent.targetNorms && agent.targetNorms.length > 0) {
+            const targetsLower = agent.targetNorms.map((t) => t.toLowerCase());
+            activeNorms = NORMS_CATALOG.filter(
+              (n) =>
+                targetsLower.includes(n.id.toLowerCase()) ||
+                targetsLower.includes(n.source.toLowerCase()) ||
+                targetsLower.some((t) => n.normCode.toLowerCase().includes(t))
+            );
+          }
+
+          if (activeNorms.length === 0 && agent.regulatoryFramework) {
+            const frameworkLower = agent.regulatoryFramework.toLowerCase();
+            activeNorms = NORMS_CATALOG.filter(
+              (n) =>
+                frameworkLower.includes(n.source.toLowerCase()) ||
+                frameworkLower.includes(n.normCode.toLowerCase())
+            );
+          }
+
+          if (activeNorms.length === 0) {
+            activeNorms = [...NORMS_CATALOG];
+          }
+
+          const systemPrompt =
+            agent.systemPrompt && agent.systemPrompt.trim().length > 10
+              ? agent.systemPrompt.trim()
+              : `Você é o agente especialista "${agent.name}" (${agent.code}).
+Finalidade e escopo: ${agent.description}.
+Marco Regulatório auditado: ${agent.regulatoryFramework || 'Conformidade e Deontologia em Saúde'}.
+Normas vinculadas: ${activeNorms.map((n) => n.normCode).join(', ')}.`;
+
+          return {
+            id: agent.id,
+            name: agent.name,
+            code: agent.code || undefined,
+            description: agent.description || undefined,
+            regulatoryFramework: agent.regulatoryFramework || undefined,
+            systemPrompt,
+            targetNorms: agent.targetNorms || [],
+            activeNorms,
+          };
+        }
+      } catch (err: any) {
+        console.warn(`[ReconciliationEngine] Não foi possível carregar o agente ${agentModuleId}: ${err.message}`);
+      }
+    }
+
+    // Busca na definição padrão de agente
+    try {
+      const defaultAgentDef = await prisma.agentDefinition.findFirst({
+        orderBy: { createdAt: 'desc' },
+      });
+      if (defaultAgentDef) {
+        const targetNormLower = defaultAgentDef.targetNorm ? defaultAgentDef.targetNorm.toLowerCase() : '';
+        const activeNorms = targetNormLower
+          ? NORMS_CATALOG.filter(
+              (n) =>
+                n.source.toLowerCase().includes(targetNormLower) ||
+                n.normCode.toLowerCase().includes(targetNormLower) ||
+                n.id.toLowerCase().includes(targetNormLower)
+            )
+          : [...NORMS_CATALOG];
+
+        return {
+          name: defaultAgentDef.name,
+          systemPrompt: defaultAgentDef.systemPrompt.trim(),
+          targetNorms: defaultAgentDef.targetNorm ? [defaultAgentDef.targetNorm] : [],
+          activeNorms: activeNorms.length > 0 ? activeNorms : [...NORMS_CATALOG],
+        };
+      }
+    } catch {
+      // Fallback seguro
+    }
+
+    return {
+      name: 'Auditor Deontológico ConformIA',
+      systemPrompt: `Você é o Auditor Deontológico em Saúde da ConformIA.
+Sua missão é auditar o conteúdo de materiais médicos e confrontá-los com as normas regulatórias e deontológicas vigentes.`,
+      targetNorms: ['CFM', 'LGPD', 'ANS', 'ANVISA'],
+      activeNorms: [...NORMS_CATALOG],
+    };
+  }
+
+  public static async resolveAgentSystemPrompt(agentModuleId?: string): Promise<string> {
+    const context = await this.resolveAgentContext(agentModuleId);
+    return context.systemPrompt;
+  }
+
+  /**
+   * Executa a auditoria deontológica com cascata de resiliência e contexto dinâmico do agente:
    * 1. Google Gemini (Gemini 2.0 Flash)
    * 2. Fallback: Ollama Local (qwen2.5:7b)
-   * 3. Fallback: Heurística Deontológica Determinística por Regras/Regex
+   * 3. Fallback: Heurística Dinâmica orientada às normas e contexto do agente
    */
-  public static async reconcile(scrape: ScrapeResult): Promise<ReconciliationOutput> {
-    console.log(`[ReconciliationEngine] Iniciando auditoria para ${scrape.url} usando provedor preferencial: ${this.activeProvider}`);
+  public static async reconcile(scrape: ScrapeResult, agentModuleId?: string): Promise<ReconciliationOutput> {
+    const activeModel = await this.getActiveModelConfig();
+    const effectiveProvider = activeModel.provider || this.activeProvider;
+    console.log(`[ReconciliationEngine] Iniciando auditoria para ${scrape.url} usando modelo: ${activeModel.name} (${effectiveProvider})`);
+
+    // Consome o contexto do agente dinamicamente a partir do banco de dados
+    const agentContext = await this.resolveAgentContext(agentModuleId);
 
     // Se configurado explicitamente para heurística
-    if (this.activeProvider === 'heuristic') {
-      return this.reconcileWithHeuristic(scrape, 'Execução direta por heurística determinística');
+    if (effectiveProvider === 'heuristic') {
+      return this.reconcileWithHeuristic(
+        scrape,
+        `Execução direta por heurística orientada ao agente (${activeModel.name})`,
+        agentContext
+      );
     }
 
     // Tentativa 1: Gemini
-    if (this.activeProvider === 'gemini' && env.GEMINI_API_KEY && env.GEMINI_API_KEY !== 'mock-key-for-tests-and-dev') {
+    if (effectiveProvider === 'gemini') {
       try {
-        return await this.reconcileWithGemini(scrape);
+        return await this.reconcileWithGemini(scrape, agentContext, activeModel);
       } catch (err: any) {
         console.warn(`[ReconciliationEngine] Falha na chamada ao Google Gemini (${err.message}). Tentando fallback para Ollama...`);
       }
@@ -228,35 +366,42 @@ export class ReconciliationEngine {
 
     // Tentativa 2: Ollama Local
     try {
-      return await this.reconcileWithOllama(scrape);
+      return await this.reconcileWithOllama(scrape, agentContext, activeModel);
     } catch (err: any) {
-      console.warn(`[ReconciliationEngine] Falha no Ollama Local (${err.message}). Ativando Heurística Deontológica por Regras...`);
+      console.warn(`[ReconciliationEngine] Falha no Ollama Local (${err.message}). Ativando Heurística orientada ao Agente...`);
     }
 
-    // Tentativa 3: Heurística Determinística Garantida
-    return this.reconcileWithHeuristic(scrape, 'Fallback automático ativado: Análise deontológica por regras e catálogo');
+    // Tentativa 3: Heurística Dinâmica Garantida com as normas e regras do agente
+    return this.reconcileWithHeuristic(
+      scrape,
+      `Fallback automático ativado: Análise orientada ao agente (${activeModel.name})`,
+      agentContext
+    );
   }
 
   /**
-   * Chamada com Google Gemini via novo SDK @google/genai com Structured Output
+   * Chamada com Google Gemini via novo SDK @google/genai com Structured Output e Contexto do Agente
    */
-  private static async reconcileWithGemini(scrape: ScrapeResult): Promise<ReconciliationOutput> {
-    const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+  private static async reconcileWithGemini(
+    scrape: ScrapeResult,
+    agentContext: AgentContext,
+    modelConfig?: any
+  ): Promise<ReconciliationOutput> {
+    const apiKey = modelConfig?.apiKey || env.GEMINI_API_KEY;
+    const modelId = modelConfig?.modelId || 'gemini-2.0-flash';
 
-    const systemPrompt = `
-Você é o Auditor Deontológico Sênior da ConformIA, especialista na Resolução CFM nº, ANS, ANVISA e LGPD em Saúde.
-Sua missão é auditar o conteúdo textual e descritivo de materiais médicos e confrontá-los com o catálogo de normas.
-Você DEVE responder estritamente no formato JSON estruturado definido pelo schema.
-Critérios de severidade:
-- CRITICA: Ausência total de CRM/RQE ao divulgar especialidade médica, promessa de cura ou resultado 100% garantido, propaganda de remédio sob prescrição ao público leigo, vazamento de dados de saúde.
-- GRAVE: Fotos de "Antes e Depois" com nítido caráter autopromocional/comercial, anúncios de descontos, cupom promocional, "black friday", sorteios.
-- MEDIA: Ausência de clareza sobre credenciamento de convênios ANS ou adjetivação exagerada sobre aparelhos sem comprovação.
-- LEVE: CRM informado sem UF correspondente ou pequenos erros de digitação de especialidade.
-`;
+    if (!apiKey || apiKey === 'mock-key-for-tests-and-dev') {
+      throw new Error('Chave de API do Gemini não configurada em ambiente real.');
+    }
 
-    const relevantNorms = NORMS_CATALOG.map(
-      (n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`
-    ).join('\n');
+    const ai = new GoogleGenAI({ apiKey });
+
+    // O agente fornece todo o seu contexto e diretrizes deontológicas
+    const systemInstruction = agentContext.systemPrompt;
+
+    const relevantNorms = agentContext.activeNorms
+      .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
+      .join('\n');
 
     const prompt = `
 CONTEÚDO AUDITADO:
@@ -265,25 +410,41 @@ URL: ${scrape.url}
 Markdown da Página:
 ${scrape.cleanMarkdown.substring(0, 10000)}
 
-NORMAS VIGENTES:
+NORMAS VINCULADAS AO AGENTE:
 ${relevantNorms}
 
-ENTIDADES DETECTADAS NO SCRAPING:
+ENTIDADES DETECTADAS NO PROCESSAMENTO DA PÁGINA:
 - CRMs: ${scrape.extractedEntities.crms.join(', ') || 'Nenhum detectado'}
 - RQEs: ${scrape.extractedEntities.rqes.join(', ') || 'Nenhum detectado'}
-- Estados: ${scrape.extractedEntities.states.join(', ') || 'Nenhum detectado'}
+- Estados (UF): ${scrape.extractedEntities.states.join(', ') || 'Nenhum detectado'}
 - Menção a Antes/Depois: ${scrape.extractedEntities.hasBeforeAfterMention}
 - Menção a Promoção/Descontos: ${scrape.extractedEntities.hasPromotionalPricing}
 - Menção a Promessa/Garantia de Resultado: ${scrape.extractedEntities.hasGuaranteedResultMention}
 
-Faça a auditoria completa e retorne o JSON com verdict, score, summary e array de violations.
+INSTRUÇÃO DE RESPOSTA:
+Realize a auditoria com base estritamente no escopo e diretrizes do agente e nas normas vinculadas.
+Retorne o resultado estritamente em formato JSON estruturado conforme o seguinte contrato:
+{
+  "verdict": "CONFORME" | "PARCIALMENTE_CONFORME" | "NAO_CONFORME",
+  "score": número de 0 a 100,
+  "summary": "Síntese diagnóstica da auditoria",
+  "violations": [
+    {
+      "normArticle": "Artigo específico infringido",
+      "normCode": "Código da norma infringida",
+      "severity": "LEVE" | "MEDIA" | "GRAVE" | "CRITICA",
+      "detectedText": "Trecho ou evidência identificada",
+      "correctiveAdvice": "Recomendação de correção"
+    }
+  ]
+}
 `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: modelId,
       contents: prompt,
       config: {
-        systemInstruction: systemPrompt,
+        systemInstruction,
         responseMimeType: 'application/json',
       },
     });
@@ -296,7 +457,7 @@ Faça a auditoria completa e retorne o JSON com verdict, score, summary e array 
     const completionTokens = usage.candidatesTokenCount || Math.ceil(responseText.length / 4);
     const totalTokens = usage.totalTokenCount || (promptTokens + completionTokens);
 
-    const sourcesUsed = NORMS_CATALOG.map((n) => `${n.normCode} (${n.article}): ${n.title}`);
+    const sourcesUsed = agentContext.activeNorms.map((n) => `${n.normCode} (${n.article}): ${n.title}`);
 
     return reconciliationOutputSchema.parse({
       ...parsed,
@@ -304,16 +465,34 @@ Faça a auditoria completa e retorne o JSON com verdict, score, summary e array 
       completionTokens,
       totalTokens,
       sourcesUsed,
-      aiModelUsed: 'gemini-2.0-flash',
+      aiModelUsed: `gemini:${modelId}`,
     });
   }
 
   /**
-   * Chamada para Ollama Local (ex: qwen2.5:7b ou llama3)
+   * Chamada para Ollama Local com prompt e normas do agente consumidos do banco
    */
-  private static async reconcileWithOllama(scrape: ScrapeResult): Promise<ReconciliationOutput> {
+  private static async reconcileWithOllama(
+    scrape: ScrapeResult,
+    agentContext: AgentContext,
+    modelConfig?: any
+  ): Promise<ReconciliationOutput> {
+    const ollamaUrl = modelConfig?.baseUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    const model = modelConfig?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b';
+
+    const relevantNorms = agentContext.activeNorms
+      .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
+      .join('\n');
+
     const prompt = `
-Você é o Auditor Deontológico da ConformIA. Audite o seguinte material sob a Resolução CFM 2.336/23 e LGPD.
+${agentContext.systemPrompt}
+
+NORMAS VINCULADAS AO AGENTE:
+${relevantNorms}
+
+TEXTO A AUDITAR:
+${scrape.cleanMarkdown.substring(0, 4000)}
+
 Retorne APENAS um JSON válido no formato:
 {
   "verdict": "CONFORME" | "PARCIALMENTE_CONFORME" | "NAO_CONFORME",
@@ -329,15 +508,12 @@ Retorne APENAS um JSON válido no formato:
     }
   ]
 }
-
-TEXTO A AUDITAR:
-${scrape.cleanMarkdown.substring(0, 4000)}
 `;
 
     const response = await axios.post(
-      `${env.OLLAMA_BASE_URL}/api/generate`,
+      `${ollamaUrl}/api/generate`,
       {
-        model: env.OLLAMA_MODEL,
+        model,
         prompt,
         format: 'json',
         stream: false,
@@ -351,7 +527,7 @@ ${scrape.cleanMarkdown.substring(0, 4000)}
     const promptTokens = response.data?.prompt_eval_count || Math.ceil(prompt.length / 4);
     const completionTokens = response.data?.eval_count || Math.ceil(jsonText.length / 4);
     const totalTokens = promptTokens + completionTokens;
-    const sourcesUsed = NORMS_CATALOG.map((n) => `${n.normCode} (${n.article}): ${n.title}`);
+    const sourcesUsed = agentContext.activeNorms.map((n) => `${n.normCode} (${n.article}): ${n.title}`);
 
     return reconciliationOutputSchema.parse({
       ...parsed,
@@ -359,44 +535,29 @@ ${scrape.cleanMarkdown.substring(0, 4000)}
       completionTokens,
       totalTokens,
       sourcesUsed,
-      aiModelUsed: `ollama:${env.OLLAMA_MODEL}`,
+      aiModelUsed: `ollama:${model}`,
     });
   }
 
   /**
-   * Mecanismo determinístico de regras baseado no catálogo deontológico e regex
+   * Mecanismo determinístico de regras baseado estritamente no catálogo de normas vinculado ao agente
+   * Nenhum artigo, código ou orientação corretiva é fixado no código: todos os dados fluem da entidade da norma.
    */
   public static reconcileWithHeuristic(
     scrape: ScrapeResult,
-    customSummaryHeader?: string
+    customSummaryHeader?: string,
+    agentContext?: AgentContext
   ): ReconciliationOutput {
     const violations: z.infer<typeof violationSchema>[] = [];
     const textLower = scrape.cleanMarkdown.toLowerCase();
 
-    // 1. Verificação de CRM
-    if (scrape.extractedEntities.crms.length === 0) {
-      violations.push({
-        normCode: 'Res. CFM 2.336/23',
-        normArticle: 'Artigo 1º, § 1º',
-        severity: 'CRITICA',
-        detectedText: 'Nenhum número de CRM visível identificado no material auditado.',
-        correctiveAdvice:
-          'Insira o nome completo do médico responsável e o respectivo número de CRM com UF (Ex: CRM/SP 123456) em destaque no cabeçalho e rodapé.',
-      });
-    } else {
-      // Verificar se há UF associada
-      if (scrape.extractedEntities.states.length === 0) {
-        violations.push({
-          normCode: 'Res. CFM 2.336/23',
-          normArticle: 'Artigo 1º, § 1º',
-          severity: 'LEVE',
-          detectedText: `CRM detectado (${scrape.extractedEntities.crms.join(', ')}), porém sem indicação expressa da sigla do Estado federativo.`,
-          correctiveAdvice: 'Adicione a sigla do estado ao lado do número do CRM (exemplo: CRM-SP ou CRM/SP).',
-        });
-      }
-    }
+    // Normas ativas fornecidas pelo contexto do agente ou catálogo
+    const activeNorms =
+      agentContext?.activeNorms && agentContext.activeNorms.length > 0
+        ? agentContext.activeNorms
+        : NORMS_CATALOG;
 
-    // 2. Verificação de Especialidade vs RQE
+    // Relação de especialidades para confronto dinâmico
     const medicalSpecialties = [
       'dermatologia',
       'dermatologista',
@@ -409,72 +570,132 @@ ${scrape.cleanMarkdown.substring(0, 4000)}
       'psiquiatria',
     ];
 
-    const hasSpecialtyMention = medicalSpecialties.some((spec) => textLower.includes(spec));
-    if (hasSpecialtyMention && scrape.extractedEntities.rqes.length === 0) {
-      violations.push({
-        normCode: 'Res. CFM 2.336/23',
-        normArticle: 'Artigo 1º, § 2º e Artigo 2º',
-        severity: 'CRITICA',
-        detectedText:
-          'Menção a especialidade médica sem a concomitante divulgação do Registro de Qualificação de Especialista (RQE).',
-        correctiveAdvice:
-          'Ao divulgar qualquer especialidade médica, é obrigatório publicar o número do RQE correspondente registrado no CRM local.',
-      });
-    }
+    for (const norm of activeNorms) {
+      const keywords = norm.keywords.map((k) => k.toLowerCase());
 
-    // 3. Verificação de Promessa de Resultado
-    if (scrape.extractedEntities.hasGuaranteedResultMention) {
-      const detectedFragment =
-        textLower.match(/(100% garantido|resultado garantido|cura definitiva|o melhor médico|a melhor clínica|infalível)/i)?.[0] ||
-        'Expressão de promessa de resultado';
+      // 1. Norma de identificação profissional (CRM / Registro)
+      if (keywords.includes('crm') || keywords.includes('registro')) {
+        if (scrape.extractedEntities.crms.length === 0) {
+          violations.push({
+            normCode: norm.normCode,
+            normArticle: norm.article,
+            severity: norm.severityDefault,
+            detectedText: 'Nenhum número de identificação profissional (CRM) identificado no material auditado.',
+            correctiveAdvice: norm.correctiveGuidance,
+          });
+        } else if (scrape.extractedEntities.states.length === 0) {
+          violations.push({
+            normCode: norm.normCode,
+            normArticle: norm.article,
+            severity: 'LEVE',
+            detectedText: `Identificação profissional detectada (${scrape.extractedEntities.crms.join(', ')}), porém sem indicação expressa da Unidade Federativa (UF).`,
+            correctiveAdvice: norm.correctiveGuidance,
+          });
+        }
+        continue;
+      }
 
-      violations.push({
-        normCode: 'Res. CFM 2.336/23',
-        normArticle: 'Artigo 11, Inciso II e Artigo 14',
-        severity: 'CRITICA',
-        detectedText: `Uso de alegação sensacionalista ou garantia de resultado: "${detectedFragment}".`,
-        correctiveAdvice:
-          'Remova adjetivos que garantam cura ou resultados exatos. A medicina é atividade de meio, não de fim.',
-      });
-    }
+      // 2. Norma de qualificação de especialidade (RQE / Especialista)
+      if (keywords.includes('rqe') || keywords.includes('especialista') || keywords.includes('especialidade')) {
+        const specialtyKeywordMatch =
+          keywords.find((k) => k !== 'rqe' && k !== 'especialista' && k !== 'especialidade' && textLower.includes(k)) ||
+          medicalSpecialties.find((spec) => textLower.includes(spec));
 
-    // 4. Verificação de Antes e Depois
-    if (scrape.extractedEntities.hasBeforeAfterMention) {
-      violations.push({
-        normCode: 'Res. CFM 2.336/23',
-        normArticle: 'Artigo 14, § 1º ao § 4º',
-        severity: 'GRAVE',
-        detectedText: 'Identificada veiculação de comparação de imagens de "Antes e Depois".',
-        correctiveAdvice:
-          'Imagens de evolução de tratamento só são permitidas com caráter estritamente educativo, com termo de consentimento específico e sem promessa de resultado idêntico.',
-      });
-    }
+        if (specialtyKeywordMatch && scrape.extractedEntities.rqes.length === 0) {
+          violations.push({
+            normCode: norm.normCode,
+            normArticle: norm.article,
+            severity: norm.severityDefault,
+            detectedText: `Menção a especialidade médica ("${specialtyKeywordMatch}") sem a concomitante divulgação do respectivo registro de qualificação.`,
+            correctiveAdvice: norm.correctiveGuidance,
+          });
+        }
+        continue;
+      }
 
-    // 5. Verificação de Mercantilização / Promoções
-    if (scrape.extractedEntities.hasPromotionalPricing) {
-      const detectedPromo =
-        textLower.match(/(promoção|desconto|black friday|sorteio|consórcio|cupom)/i)?.[0] || 'Termo promocional';
+      // 3. Norma de vedação a promessas de resultado, cura ou sensacionalismo
+      if (
+        keywords.some((k) => ['garantido', '100%', 'cura definitiva', 'promessa', 'resultado', 'infalível'].includes(k))
+      ) {
+        const matchedPromise = keywords.find((k) => textLower.includes(k));
+        if (scrape.extractedEntities.hasGuaranteedResultMention || matchedPromise) {
+          violations.push({
+            normCode: norm.normCode,
+            normArticle: norm.article,
+            severity: norm.severityDefault,
+            detectedText: `Uso de alegação sensacionalista ou garantia de resultado identificada: "${matchedPromise || 'Expressão de garantia de resultado'}".`,
+            correctiveAdvice: norm.correctiveGuidance,
+          });
+        }
+        continue;
+      }
 
-      violations.push({
-        normCode: 'Res. CFM 2.336/23',
-        normArticle: 'Artigo 9º, Incisos I a V',
-        severity: 'GRAVE',
-        detectedText: `Publicidade com caráter mercantil e promocional identificada: "${detectedPromo}".`,
-        correctiveAdvice:
-          'Elimine divulgações de desconto, cupons ou sorteios de consultas/procedimentos médicos.',
-      });
-    }
+      // 4. Norma de imagens comparativas ("Antes e Depois")
+      if (keywords.some((k) => ['antes e depois', 'fotos comparativas', 'transformação'].includes(k))) {
+        const matchedBeforeAfter = keywords.find((k) => textLower.includes(k));
+        if (scrape.extractedEntities.hasBeforeAfterMention || matchedBeforeAfter) {
+          violations.push({
+            normCode: norm.normCode,
+            normArticle: norm.article,
+            severity: norm.severityDefault,
+            detectedText: `Identificada veiculação de comparação de imagens de "Antes e Depois" ou evolução de procedimento: "${matchedBeforeAfter || 'Antes e depois'}".`,
+            correctiveAdvice: norm.correctiveGuidance,
+          });
+        }
+        continue;
+      }
 
-    // 6. Verificação de LGPD em formulários
-    if (textLower.includes('agendar') || textLower.includes('contato') || textLower.includes('telefone')) {
-      if (!textLower.includes('privacidade') && !textLower.includes('lgpd') && !textLower.includes('termos')) {
+      // 5. Norma de proibição de mercantilização, promoções, cupons e sorteios
+      if (
+        keywords.some((k) => ['promoção', 'desconto', 'black friday', 'sorteio', 'consórcio', 'cupom', 'combo'].includes(k))
+      ) {
+        const matchedPromo = keywords.find((k) => textLower.includes(k));
+        if (scrape.extractedEntities.hasPromotionalPricing || matchedPromo) {
+          violations.push({
+            normCode: norm.normCode,
+            normArticle: norm.article,
+            severity: norm.severityDefault,
+            detectedText: `Publicidade com caráter mercantil e promocional identificada: "${matchedPromo || 'Termo promocional'}".`,
+            correctiveAdvice: norm.correctiveGuidance,
+          });
+        }
+        continue;
+      }
+
+      // 6. Norma de proteção de dados e privacidade (LGPD em Saúde)
+      if (keywords.some((k) => ['privacidade', 'dados de saúde', 'consentimento', 'lgpd'].includes(k))) {
+        const hasCaptureChannel =
+          textLower.includes('agendar') ||
+          textLower.includes('contato') ||
+          textLower.includes('telefone') ||
+          textLower.includes('formulario') ||
+          textLower.includes('formulário');
+
+        const hasPrivacyNotice =
+          textLower.includes('privacidade') || textLower.includes('lgpd') || textLower.includes('termos');
+
+        if (hasCaptureChannel && !hasPrivacyNotice) {
+          violations.push({
+            normCode: norm.normCode,
+            normArticle: norm.article,
+            severity: norm.severityDefault,
+            detectedText:
+              'Página possui canal de captação de pacientes ou agendamento sem link visível para Política de Privacidade e Termos de Consentimento.',
+            correctiveAdvice: norm.correctiveGuidance,
+          });
+        }
+        continue;
+      }
+
+      // 7. Demais normas (ANS, ANVISA, etc.) confrontadas diretamente pelas palavras-chave do catálogo
+      const genericMatch = keywords.find((k) => textLower.includes(k));
+      if (genericMatch && norm.source === 'ANVISA') {
         violations.push({
-          normCode: 'LGPD Art. 11',
-          normArticle: 'Artigo 11 e Artigo 14',
-          severity: 'MEDIA',
-          detectedText: 'Página possui formulário ou canal de captação de pacientes sem link visível para Política de Privacidade.',
-          correctiveAdvice:
-            'Insira link para a Política de Privacidade e Termos de Consentimento para tratamento de dados pessoais sensíveis de saúde.',
+          normCode: norm.normCode,
+          normArticle: norm.article,
+          severity: norm.severityDefault,
+          detectedText: `Menção a medicamento ou substância sob controle identificada: "${genericMatch}".`,
+          correctiveAdvice: norm.correctiveGuidance,
         });
       }
     }
@@ -499,7 +720,7 @@ ${scrape.cleanMarkdown.substring(0, 4000)}
     }
 
     const header = customSummaryHeader ? `${customSummaryHeader}. ` : '';
-    const summary = `${header}Auditoria concluída com ${violations.length} não-conformidade(s) deontológica(s) encontrada(s). Veredito Semáforo: ${verdict} (Score de Conformidade: ${score}/100).`;
+    const summary = `${header}Auditoria concluída com ${violations.length} não-conformidade(s) identificada(s) sob as normas vinculadas ao agente. Veredito Semáforo: ${verdict} (Score: ${score}/100).`;
 
     // Telemetria determinística para modo heurístico
     const estimatedPrompt = Math.ceil(scrape.cleanMarkdown.length / 4);
@@ -508,11 +729,10 @@ ${scrape.cleanMarkdown.substring(0, 4000)}
     const completionTokens = estimatedCompletion;
     const totalTokens = promptTokens + completionTokens;
 
-    // Fontes/artigos do catálogo que foram especificamente acionados
+    // Fontes/artigos ativados a partir das normas vinculadas
     const sourcesUsed = Array.from(new Set(violations.map((v) => `${v.normCode} (${v.normArticle})`)));
     if (sourcesUsed.length === 0) {
-      sourcesUsed.push('Res. CFM 2.336/23 (Art. 1º ao 14)');
-      sourcesUsed.push('LGPD em Saúde (Art. 11)');
+      activeNorms.slice(0, 3).forEach((n) => sourcesUsed.push(`${n.normCode} (${n.article})`));
     }
 
     return {

@@ -155,7 +155,7 @@ export const ReportsPage: React.FC = () => {
                         {r.client?.tradeName || r.client?.name || 'Clínica Médica'}
                       </span>
                       <span className="text-xs text-slate-400">
-                        CRM/{r.client?.crmUf} {r.client?.crmResponsavel}
+                        CRM/{r.client?.crmUf || '-'} {r.client?.crmResponsavel || '-'}
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-xs font-mono text-slate-400 max-w-[200px] truncate">
@@ -184,7 +184,7 @@ export const ReportsPage: React.FC = () => {
                       +{r.tokensSaved} tokens
                     </td>
                     <td className="py-3.5 px-4 text-xs text-slate-400">
-                      {new Date(r.createdAt).toLocaleDateString('pt-BR')}
+                      {r.createdAt ? new Date(r.createdAt).toLocaleDateString('pt-BR') : '-'}
                     </td>
                     <td className="py-3.5 px-4 text-right space-x-2">
                       <button
