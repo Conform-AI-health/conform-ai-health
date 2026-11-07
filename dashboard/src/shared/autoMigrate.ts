@@ -104,9 +104,9 @@ export async function runAutoMigrateAndSeed() {
       await prisma.aiModelConfig.createMany({
         data: [
           {
-            name: 'Google Gemini 2.0 Flash',
+            name: 'Google Gemini 3.5 Flash',
             provider: 'gemini',
-            modelId: 'gemini-2.0-flash',
+            modelId: 'gemini-3.5-flash',
             isActive: true,
             isDefault: true,
             temperature: 0.2,
@@ -137,6 +137,18 @@ export async function runAutoMigrateAndSeed() {
         ],
       });
       console.log('✅ [Seed] 3 modelos de IA provisionados com sucesso no banco.');
+    } else {
+      // Atualização resiliente de modelos descontinuados
+      await prisma.aiModelConfig.updateMany({
+        where: {
+          OR: [{ modelId: 'gemini-2.0-flash' }, { modelId: 'gemini-2.5-flash' }],
+        },
+        data: {
+          name: 'Google Gemini 3.5 Flash',
+          modelId: 'gemini-3.5-flash',
+          description: 'Modelo multimodal de alta velocidade e precisão para auditoria da Res. CFM 2.336/2023.',
+        },
+      });
     }
 
     // 5. Autocura e Sanitização de Registros Legados (P2032 Prevention)

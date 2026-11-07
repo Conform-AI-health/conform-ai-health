@@ -25,7 +25,7 @@ export const reconciliationOutputSchema = z.object({
   completionTokens: z.number().default(0),
   totalTokens: z.number().default(0),
   sourcesUsed: z.array(z.string()).default([]),
-  aiModelUsed: z.string().default('gemini-2.0-flash'),
+  aiModelUsed: z.string().default('gemini-3.5-flash'),
 });
 
 export type ReconciliationOutput = z.infer<typeof reconciliationOutputSchema>;
@@ -96,14 +96,14 @@ export class ReconciliationEngine {
     return {
       name:
         this.activeProvider === 'gemini'
-          ? 'Google Gemini 2.0 Flash'
+          ? 'Google Gemini 3.5 Flash'
           : this.activeProvider === 'ollama'
           ? 'Ollama Local'
           : 'Motor Heurístico Deontológico',
       provider: this.activeProvider,
       modelId:
         this.activeProvider === 'gemini'
-          ? 'gemini-2.0-flash'
+          ? 'gemini-3.5-flash'
           : this.activeProvider === 'ollama'
           ? env.OLLAMA_MODEL
           : 'regex-heuristic-v1',
@@ -152,10 +152,14 @@ export class ReconciliationEngine {
     if (provider === 'gemini') {
       try {
         const apiKey = activeModel.apiKey || env.GEMINI_API_KEY;
+        let modelId = activeModel.modelId || 'gemini-3.5-flash';
+        if (modelId === 'gemini-2.0-flash' || modelId === 'gemini-2.5-flash') {
+          modelId = 'gemini-3.5-flash';
+        }
         if (!apiKey || apiKey === 'mock-key-for-tests-and-dev') {
           return {
             provider: 'gemini',
-            model: activeModel.modelId || 'gemini-2.0-flash',
+            model: modelId,
             status: 'DEGRADED',
             latencyMs: Date.now() - startTime,
             response: 'Ambiente de teste/desenvolvimento: Chave GEMINI_API_KEY mockada. Operando em modo de simulação local.',
@@ -164,13 +168,13 @@ export class ReconciliationEngine {
         }
         const ai = new GoogleGenAI({ apiKey });
         const res = await ai.models.generateContent({
-          model: activeModel.modelId || 'gemini-2.0-flash',
+          model: modelId,
           contents: prompt,
         });
         const latencyMs = Date.now() - startTime;
         return {
           provider: 'gemini',
-          model: activeModel.modelId || 'gemini-2.0-flash',
+          model: modelId,
           status: 'ONLINE',
           latencyMs,
           response: res.text || 'Modelo Gemini respondeu com sucesso ao teste deontológico.',
@@ -179,7 +183,7 @@ export class ReconciliationEngine {
       } catch (err: any) {
         return {
           provider: 'gemini',
-          model: activeModel.modelId || 'gemini-2.0-flash',
+          model: activeModel.modelId || 'gemini-3.5-flash',
           status: 'OFFLINE',
           latencyMs: Date.now() - startTime,
           response: `Falha na comunicação com o Gemini: ${err.message}`,
@@ -394,7 +398,11 @@ Sua missão é auditar o conteúdo de materiais médicos e confrontá-los com as
     modelConfig?: any
   ): Promise<ReconciliationOutput> {
     const apiKey = modelConfig?.apiKey || env.GEMINI_API_KEY;
-    const modelId = modelConfig?.modelId || 'gemini-2.0-flash';
+    let modelId = modelConfig?.modelId || 'gemini-3.5-flash';
+
+    if (modelId === 'gemini-2.0-flash' || modelId === 'gemini-2.5-flash') {
+      modelId = 'gemini-3.5-flash';
+    }
 
     if (!apiKey || apiKey === 'mock-key-for-tests-and-dev') {
       throw new Error('Chave de API do Gemini não configurada em ambiente real.');
@@ -455,7 +463,10 @@ Retorne o resultado estritamente em formato JSON estruturado conforme o seguinte
       },
     });
 
-    const responseText = response.text || '{}';
+    let responseText = response.text || '{}';
+    if (responseText.includes('```')) {
+      responseText = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+    }
     const parsed = JSON.parse(responseText);
 
     const usage: any = (response as any).usageMetadata || {};

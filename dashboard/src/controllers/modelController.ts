@@ -56,9 +56,9 @@ export class ModelController {
         await prisma.aiModelConfig.createMany({
           data: [
             {
-              name: 'Google Gemini 2.0 Flash',
+              name: 'Google Gemini 3.5 Flash',
               provider: 'gemini',
-              modelId: 'gemini-2.0-flash',
+              modelId: 'gemini-3.5-flash',
               isActive: true,
               isDefault: true,
               temperature: 0.2,

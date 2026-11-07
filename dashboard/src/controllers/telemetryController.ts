@@ -70,7 +70,7 @@ export class TelemetryController {
           crm: `CRM/${r.client?.crmUf} ${r.client?.crmResponsavel}`,
           verdict: r.verdict,
           score: r.score ?? 0,
-          aiModelUsed: r.aiModelUsed || 'gemini-2.0-flash',
+          aiModelUsed: r.aiModelUsed || 'gemini-3.5-flash',
           promptTokens: r.promptTokens || 0,
           completionTokens: r.completionTokens || 0,
           totalTokens: r.totalTokens || ((r.promptTokens || 0) + (r.completionTokens || 0)) || 0,

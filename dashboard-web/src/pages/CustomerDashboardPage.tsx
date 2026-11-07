@@ -201,7 +201,7 @@ export const CustomerDashboardPage: React.FC = () => {
 
           <div className="mt-4 pt-3 border-t border-current/20 text-[11px] opacity-75 flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" />
-            <span>Última auditoria em: {overview?.lastAuditDate ? new Date(overview.lastAuditDate).toLocaleDateString('pt-BR') : 'Hoje'}</span>
+            <span>Última auditoria em: {overview?.lastAuditDate ? `${new Date(overview.lastAuditDate).toLocaleDateString('pt-BR')} às ${new Date(overview.lastAuditDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Hoje'}</span>
           </div>
         </div>
 

@@ -30,6 +30,15 @@ export const ReportsPage: React.FC = () => {
   const [totalReports, setTotalReports] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
+  const formatDateTime = (dateStr?: string | Date | null) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '—';
+    const date = d.toLocaleDateString('pt-BR');
+    const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return `${date} às ${time}`;
+  };
+
   const fetchReports = async (page = currentPage, limit = pageSize) => {
     try {
       setLoading(true);
@@ -129,7 +138,7 @@ export const ReportsPage: React.FC = () => {
               <th className="py-3.5 px-4">Veredito Semáforo</th>
               <th className="py-3.5 px-4">Pontuação</th>
               <th className="py-3.5 px-4">Economia Tokens</th>
-              <th className="py-3.5 px-4">Data</th>
+              <th className="py-3.5 px-4">Data & Horário</th>
               <th className="py-3.5 px-4 text-right">Ações</th>
             </tr>
           </thead>
@@ -186,8 +195,8 @@ export const ReportsPage: React.FC = () => {
                     <td className="py-3.5 px-4 text-xs text-purple-400 font-mono">
                       +{r.tokensSaved} tokens
                     </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-400">
-                      {r.createdAt ? new Date(r.createdAt).toLocaleDateString('pt-BR') : '-'}
+                    <td className="py-3.5 px-4 text-xs text-slate-300 font-mono whitespace-nowrap">
+                      {formatDateTime(r.createdAt)}
                     </td>
                     <td className="py-3.5 px-4 text-right space-x-2">
                       <button
@@ -232,15 +241,50 @@ export const ReportsPage: React.FC = () => {
           <div className="bg-[#0b1329] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <div>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                  Laudo ID: {selectedReport.id}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                    Laudo ID: {selectedReport.id}
+                  </span>
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                      selectedReport.status === 'COMPLETED'
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        : selectedReport.status === 'RUNNING'
+                        ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse'
+                        : selectedReport.status === 'QUEUED'
+                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                    }`}
+                  >
+                    {selectedReport.status === 'COMPLETED'
+                      ? 'CONCLUÍDO'
+                      : selectedReport.status === 'RUNNING'
+                      ? 'EM ANÁLISE'
+                      : selectedReport.status === 'QUEUED'
+                      ? 'NA FILA (ASSÍNCRONO)'
+                      : 'FALHA TÉCNICA'}
+                  </span>
+                </div>
                 <h2 className="text-lg font-bold text-white mt-0.5">
                   {selectedReport.client?.tradeName || selectedReport.client?.name || 'Clínica Médica'}
                 </h2>
-                <span className="text-xs font-mono text-slate-400 block mt-0.5">
-                  {selectedReport.targetUrl || 'Canal não informado'}
-                </span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-400">
+                  <span className="font-mono">{selectedReport.targetUrl || 'Canal não informado'}</span>
+                  <span className="text-slate-600">•</span>
+                  <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>Emitido em: {formatDateTime(selectedReport.createdAt)}</span>
+                  </span>
+                  {selectedReport.aiModelUsed && (
+                    <>
+                      <span className="text-slate-600">•</span>
+                      <span className="inline-flex items-center gap-1 text-purple-400 font-mono text-[11px]">
+                        <Sparkles className="h-3 w-3" />
+                        <span>{selectedReport.aiModelUsed}</span>
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => setSelectedReport(null)}
@@ -311,6 +355,36 @@ export const ReportsPage: React.FC = () => {
                       </p>
                     </div>
                   ))}
+
+                  {(!selectedReport.violations || selectedReport.violations.length === 0) && (
+                    <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl text-center">
+                      {selectedReport.status === 'COMPLETED' ? (
+                        <div className="space-y-1">
+                          <CheckCircle className="h-6 w-6 text-emerald-400 mx-auto" />
+                          <p className="text-xs font-semibold text-emerald-300">
+                            Nenhuma infração deontológica identificada nesta varredura.
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            O material auditado encontra-se em plena conformidade com as resoluções vigentes.
+                          </p>
+                        </div>
+                      ) : selectedReport.status === 'QUEUED' || selectedReport.status === 'RUNNING' ? (
+                        <div className="space-y-1">
+                          <Clock className="h-6 w-6 text-amber-400 mx-auto animate-pulse" />
+                          <p className="text-xs font-semibold text-amber-300">
+                            Auditoria em processamento assíncrono pelo motor de IA.
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            Aguarde alguns instantes ou atualize a página para visualizar o parecer e infrações consolidadas.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-red-400">
+                          Auditoria finalizada com falha técnica ou sem dados consolidados.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

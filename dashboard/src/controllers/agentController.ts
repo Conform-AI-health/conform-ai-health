@@ -6,6 +6,7 @@ import { Role, ExtractionMode } from '@prisma/client';
 import { ScraperService } from '../services/scraperService.js';
 import { FirecrawlService } from '../services/firecrawlService.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
+import { AuditExecutionService } from '../services/auditExecutionService.js';
 
 const createAgentSchema = z.object({
   name: z.string().min(2, 'Nome do Módulo é obrigatório'),
@@ -315,168 +316,20 @@ export class AgentController {
         console.warn(`[AgentController] Redis em fallback (${queueErr.message}). Processando job sincronicamente...`);
       }
 
-      // Processamento síncrono/assíncrono direto do Pipeline de Auditoria
+      // Processamento assíncrono direto se Redis estiver ausente/fallback
       if (!queuedViaRedis) {
         setImmediate(async () => {
           try {
-            await prisma.auditReport.update({
-              where: { id: report.id },
-              data: { status: 'RUNNING' },
-            });
-
-            const startTime = Date.now();
-
-            // ========================================================
-            // ETAPA 1 & 2 & 3: Scraping Exclusivo via Firecrawl,
-            // Hash SHA-256 e Persistência no MongoDB (module_scrape_data)
-            // ========================================================
-            await prisma.systemLog.create({
-              data: {
-                level: 'INFO',
-                module: 'SCRAPER',
-                correlationId: report.id,
-                message: `[SCRAPER] [FIRECRAWL] Acionando extração de página via Firecrawl para: ${effectiveTargetUrl}`,
-              },
-            }).catch(() => {});
-
-            const firecrawlResult = await FirecrawlService.scrape(
-              effectiveTargetUrl,
+            await AuditExecutionService.execute({
+              auditReportId: report.id,
+              clientId: effectiveClientId,
+              targetUrl: effectiveTargetUrl,
               agentModuleId,
-              effectiveClientId
-            );
-
-            await prisma.systemLog.create({
-              data: {
-                level: 'INFO',
-                module: 'SCRAPER',
-                correlationId: report.id,
-                message: `[SCRAPER] [FIRECRAWL] Conteúdo extraído em Markdown limpo (${firecrawlResult.markdown.length} caracteres) | Hash SHA-256: ${firecrawlResult.contentHash} | Persistido em 'module_scrape_data'`,
-                details: JSON.stringify({
-                  moduleId: agentModuleId,
-                  url: effectiveTargetUrl,
-                  contentHash: firecrawlResult.contentHash,
-                  source: firecrawlResult.source,
-                  savedRecordId: firecrawlResult.savedRecordId,
-                }),
-              },
-            }).catch(() => {});
-
-            // ========================================================
-            // ETAPA 4 & 5: Resolução Dinâmica de Normas no Banco (Tags)
-            // e Invocação da IA (Reconciliação Deontológica)
-            // ========================================================
-            await prisma.systemLog.create({
-              data: {
-                level: 'INFO',
-                module: 'AI_ENGINE',
-                correlationId: report.id,
-                message: `[AI_INTERACTION] Resolução dinâmica de normas no banco de dados para tags: [${mod.tags.join(', ')}] | Invocando IA com Skill: "${effectiveSkill}"`,
-              },
-            }).catch(() => {});
-
-            // Adaptador para o formato do ReconciliationEngine
-            const scrapeAdapter = {
-              url: effectiveTargetUrl,
-              title: mod.name,
-              rawHtmlLength: firecrawlResult.markdown.length,
-              cleanMarkdown: firecrawlResult.markdown,
-              tokensEstimatedRaw: Math.ceil(firecrawlResult.markdown.length / 3),
-              tokensEstimatedClean: Math.ceil(firecrawlResult.markdown.length / 4),
-              extractedEntities: {
-                crms: [],
-                rqes: [],
-                states: [],
-                hasBeforeAfterMention: firecrawlResult.markdown.toLowerCase().includes('antes e depois'),
-                hasPromotionalPricing: /promoção|desconto|black friday|cupom|sorteio/i.test(firecrawlResult.markdown),
-                hasGuaranteedResultMention: /100%|garantido|cura definitiva|o melhor/i.test(firecrawlResult.markdown),
-              },
-            };
-
-            const recon = await ReconciliationEngine.reconcile(scrapeAdapter as any, agentModuleId);
-            const executionTimeMs = Date.now() - startTime;
-
-            await prisma.systemLog.create({
-              data: {
-                level: 'INFO',
-                module: 'AI_ENGINE',
-                correlationId: report.id,
-                message: `[AI_INTERACTION] Veredito da IA emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms`,
-                details: JSON.stringify({
-                  aiModelUsed: recon.aiModelUsed,
-                  verdict: recon.verdict,
-                  score: recon.score,
-                  promptTokens: recon.promptTokens,
-                  completionTokens: recon.completionTokens,
-                  totalTokens: recon.totalTokens,
-                  executionTimeMs,
-                }),
-              },
-            }).catch(() => {});
-
-            // ========================================================
-            // Gravação do Laudo de Auditoria e Infrações
-            // ========================================================
-            await prisma.$transaction(async (tx) => {
-              await tx.auditReport.update({
-                where: { id: report.id },
-                data: {
-                  status: 'COMPLETED',
-                  verdict: recon.verdict,
-                  score: recon.score,
-                  summary: recon.summary,
-                  rawContent: firecrawlResult.rawContent,
-                  cleanMarkdown: firecrawlResult.markdown,
-                  tokensSaved: Math.max(0, scrapeAdapter.tokensEstimatedRaw - scrapeAdapter.tokensEstimatedClean),
-                  promptTokens: recon.promptTokens,
-                  completionTokens: recon.completionTokens,
-                  totalTokens: recon.totalTokens,
-                  sourcesUsed: recon.sourcesUsed,
-                  aiModelUsed: recon.aiModelUsed,
-                  executionTimeMs,
-                },
-              });
-
-              if (recon.violations.length > 0) {
-                await tx.violation.createMany({
-                  data: recon.violations.map((v) => ({
-                    auditReportId: report.id,
-                    normArticle: v.normArticle,
-                    normCode: v.normCode,
-                    severity: v.severity,
-                    detectedText: v.detectedText,
-                    correctiveAdvice: v.correctiveAdvice,
-                    resolved: false,
-                  })),
-                });
-              }
+              skill: effectiveSkill,
+              extractionMode: effectiveMode,
             });
-
-            await prisma.systemLog.create({
-              data: {
-                level: 'INFO',
-                module: 'RECONCILIATION',
-                correlationId: report.id,
-                message: `[RECONCILIATION] Auditoria concluída com sucesso para "${clientName}" | ${recon.violations.length} infrações detectadas | Status: COMPLETED`,
-              },
-            }).catch(() => {});
           } catch (execErr: any) {
             console.error(`[AgentController] Erro no pipeline de auditoria do módulo ${agentModuleId}:`, execErr);
-            await prisma.auditReport.update({
-              where: { id: report.id },
-              data: {
-                status: 'FAILED',
-                summary: `Falha na execução da auditoria: ${execErr.message}`,
-              },
-            }).catch(() => {});
-
-            await prisma.systemLog.create({
-              data: {
-                level: 'ERROR',
-                module: 'COCKPIT',
-                correlationId: report.id,
-                message: `[COCKPIT] Falha na auditoria do módulo: ${execErr.message}`,
-              },
-            }).catch(() => {});
           }
         });
       }

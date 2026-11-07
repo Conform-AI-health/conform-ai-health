@@ -588,8 +588,8 @@ export const DashboardPage: React.FC = () => {
                           </span>
                         </td>
                         <td className="py-3 px-4 font-bold text-white">{r.score}/100</td>
-                        <td className="py-3 px-4 text-xs text-slate-400">
-                          {new Date(r.createdAt).toLocaleDateString('pt-BR')}
+                        <td className="py-3 px-4 text-xs text-slate-300 font-mono whitespace-nowrap">
+                          {new Date(r.createdAt).toLocaleDateString('pt-BR')} às {new Date(r.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </td>
                       </tr>
                     );
