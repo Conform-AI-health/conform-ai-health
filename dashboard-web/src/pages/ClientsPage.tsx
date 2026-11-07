@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Trash2,
   Stethoscope,
+  X,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
@@ -31,12 +32,7 @@ export const ClientsPage: React.FC = () => {
     name: '',
     tradeName: '',
     cnpj: '',
-    crmResponsavel: '',
-    crmUf: 'SP',
-    rqeResponsavel: '',
-    especialidade: '',
-    websiteUrl: '',
-    instagramHandle: '',
+    status: 'ATIVO',
     email: '',
     phone: '',
   });
@@ -83,18 +79,13 @@ export const ClientsPage: React.FC = () => {
         name: '',
         tradeName: '',
         cnpj: '',
-        crmResponsavel: '',
-        crmUf: 'SP',
-        rqeResponsavel: '',
-        especialidade: '',
-        websiteUrl: '',
-        instagramHandle: '',
+        status: 'ATIVO',
         email: '',
         phone: '',
       });
       fetchClients();
     } catch (err: any) {
-      alert(`Erro ao cadastrar clínica: ${err.response?.data?.error || err.message}`);
+      alert(`Erro ao cadastrar cliente: ${err.response?.data?.error || err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -257,134 +248,123 @@ export const ClientsPage: React.FC = () => {
         />
       </div>
 
-      {/* Modal de Cadastro */}
+      {/* Modal de Cadastro - Novo Cliente Regulado */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-[#0b1329] border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-emerald-400" />
-              <span>Cadastrar Nova Instituição Médica</span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Informe os dados da clínica e do médico responsável técnico segundo a Res. CFM 2.336/23.
-            </p>
+          <div className="bg-[#0b132b] border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative text-left">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800/80">
+              <h2 className="text-base font-bold text-white flex items-center gap-2.5">
+                <Building2 className="h-5 w-5 text-cyan-400" />
+                <span>Novo Cliente Regulado</span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="text-slate-400 hover:text-white transition p-1 rounded-lg hover:bg-slate-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-            <form onSubmit={handleCreateSubmit} className="space-y-3.5 mt-5">
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleCreateSubmit} className="space-y-4 mt-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Razão Social *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: ProntoMed Digital Saúde Ltda"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Nome Fantasia
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: ProntoMed Digital"
+                  value={formData.tradeName}
+                  onChange={(e) => setFormData({ ...formData, tradeName: e.target.value })}
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Razão Social *
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    CNPJ *
                   </label>
                   <input
                     type="text"
                     required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    placeholder="00.000.000/0001-00"
+                    value={formData.cnpj}
+                    onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Nome Fantasia
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Status
                   </label>
-                  <input
-                    type="text"
-                    value={formData.tradeName}
-                    onChange={(e) => setFormData({ ...formData, tradeName: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value="ATIVO">Ativo</option>
+                    <option value="INATIVO">Inativo</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    CRM do Resp. *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.crmResponsavel}
-                    onChange={(e) => setFormData({ ...formData, crmResponsavel: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">UF *</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={2}
-                    value={formData.crmUf}
-                    onChange={(e) => setFormData({ ...formData, crmUf: e.target.value.toUpperCase() })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 uppercase"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">RQE</label>
-                  <input
-                    type="text"
-                    value={formData.rqeResponsavel}
-                    onChange={(e) => setFormData({ ...formData, rqeResponsavel: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Especialidade
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.especialidade}
-                    onChange={(e) => setFormData({ ...formData, especialidade: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    E-mail de Contato *
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    E-mail de Notificação / Compliance
                   </label>
                   <input
                     type="email"
                     required
+                    placeholder="compliance@prontomed.com."
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Telefone de Plantão
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="(11) 98765-4321"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Website / Canal Digital Principal *
-                </label>
-                <input
-                  type="url"
-                  required
-                  value={formData.websiteUrl}
-                  onChange={(e) => setFormData({ ...formData, websiteUrl: e.target.value })}
-                  placeholder="https://clinica.med.br"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800/80">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-2 px-4 rounded-xl transition"
+                  className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs py-2.5 px-6 rounded-xl transition shadow-lg shadow-cyan-500/20 disabled:opacity-50"
                 >
-                  {submitting ? 'Salvando...' : 'Salvar Clínica'}
+                  {submitting ? 'Cadastrando...' : 'Cadastrar'}
                 </button>
               </div>
             </form>

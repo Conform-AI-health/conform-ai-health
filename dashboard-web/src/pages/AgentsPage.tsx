@@ -44,6 +44,7 @@ export const AgentsPage: React.FC = () => {
   const [testingModel, setTestingModel] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
+  const [selectedModelIdForTest, setSelectedModelIdForTest] = useState<string>('');
 
   // Execução de Agente
   const [selectedModuleId, setSelectedModuleId] = useState('');
@@ -55,14 +56,18 @@ export const AgentsPage: React.FC = () => {
   // Modal de Cadastro de Novo Agente
   const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
   const [newAgentData, setNewAgentData] = useState({
+    clientId: '',
+    regulatoryFramework: 'CFM (Resolução 2.336/2023)',
     name: '',
     code: '',
     description: '',
-    category: 'DEONTOLOGIA_MEDICA',
+    cronSchedule: '0 */6 * * *',
+    enabled: true,
     extractionMode: 'CHEERIO',
-    tags: ['CFM'] as string[],
+    targetUrl: '',
+    apiEndpoint: '',
+    mcpUri: '',
     targetNorms: [] as string[],
-    systemPrompt: '',
   });
   const [creatingAgent, setCreatingAgent] = useState(false);
 
@@ -132,13 +137,22 @@ export const AgentsPage: React.FC = () => {
     fetchData(currentPage, pageSize);
   }, [currentPage, pageSize]);
 
+  // Abrir Modal de Teste de Modelo com seleção de modelos do banco
+  const handleOpenTestModal = (modelId?: string) => {
+    const active = aiModels.find((m) => m.isActive);
+    const initialId = modelId || active?.id || aiModels[0]?.id || '';
+    setSelectedModelIdForTest(initialId);
+    setShowTestModal(true);
+    handleRunModelTest(initialId);
+  };
+
   // Testar Modelo de IA
-  const handleTestModel = async () => {
+  const handleRunModelTest = async (modelIdToTest?: string) => {
+    const targetId = modelIdToTest || selectedModelIdForTest;
     try {
       setTestingModel(true);
-      const res = await api.post('/system/test-ai');
+      const res = await api.post('/system/test-ai', { modelConfigId: targetId });
       setTestResult(res.data);
-      setShowTestModal(true);
     } catch (err: any) {
       setTestResult({
         provider: 'desconhecido',
@@ -148,7 +162,6 @@ export const AgentsPage: React.FC = () => {
         response: `Falha na requisição ao endpoint de diagnóstico: ${err.response?.data?.error || err.message}`,
         testedAt: new Date().toISOString(),
       });
-      setShowTestModal(true);
     } finally {
       setTestingModel(false);
     }
@@ -210,20 +223,34 @@ export const AgentsPage: React.FC = () => {
     e.preventDefault();
     try {
       setCreatingAgent(true);
-      await api.post('/agents', newAgentData);
+      await api.post('/agents', {
+        name: newAgentData.name,
+        code: newAgentData.code,
+        description: newAgentData.description,
+        clientId: newAgentData.clientId || null,
+        regulatoryFramework: newAgentData.regulatoryFramework,
+        cronSchedule: newAgentData.cronSchedule,
+        enabled: newAgentData.enabled,
+        extractionMode: newAgentData.extractionMode,
+        targetUrl: newAgentData.targetUrl || null,
+      });
       setShowCreateAgentModal(false);
       setNewAgentData({
+        clientId: '',
+        regulatoryFramework: 'CFM (Resolução 2.336/2023)',
         name: '',
         code: '',
         description: '',
-        category: 'DEONTOLOGIA_MEDICA',
+        cronSchedule: '0 */6 * * *',
+        enabled: true,
         extractionMode: 'CHEERIO',
-        tags: ['CFM'],
+        targetUrl: '',
+        apiEndpoint: '',
+        mcpUri: '',
         targetNorms: [],
-        systemPrompt: '',
       });
       fetchData(currentPage, pageSize);
-      alert('Novo agente cadastrado com sucesso!');
+      alert('Módulo de agente cadastrado com sucesso!');
     } catch (err: any) {
       alert(`Erro ao cadastrar agente: ${err.response?.data?.error || err.message}`);
     } finally {
@@ -306,10 +333,10 @@ export const AgentsPage: React.FC = () => {
           </div>
 
           <button
-            onClick={handleTestModel}
+            onClick={() => handleOpenTestModal()}
             disabled={testingModel}
             className="bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/40 text-purple-200 font-semibold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-purple-950/40 flex items-center gap-2 transition disabled:opacity-50"
-            title="Testar conectividade e tempo de resposta do modelo ativo"
+            title="Testar conectividade e tempo de resposta dos modelos de IA"
           >
             {testingModel ? (
               <RefreshCw className="h-4 w-4 animate-spin text-purple-300" />
@@ -572,25 +599,33 @@ export const AgentsPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      ID: {model.id.slice(-6)}
-                    </span>
+                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => handleOpenTestModal(model.id)}
+                      className="text-xs text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 transition px-2.5 py-1.5 rounded-lg hover:bg-purple-950/40 border border-purple-900/30"
+                      title="Testar resposta deste modelo"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Testar</span>
+                    </button>
 
                     {isCurrentActive ? (
-                      <span className="text-xs text-slate-500 font-semibold italic">Motor padrão atual</span>
+                      <span className="text-xs text-emerald-400 font-semibold italic flex items-center gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>Ativo</span>
+                      </span>
                     ) : (
                       <button
                         onClick={() => handleActivateModel(model.id)}
                         disabled={activatingModelId === model.id}
-                        className="bg-slate-800 hover:bg-purple-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+                        className="bg-slate-800 hover:bg-cyan-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
                       >
                         {activatingModelId === model.id ? (
                           <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <Radio className="h-3.5 w-3.5" />
                         )}
-                        <span>Ativar este Modelo</span>
+                        <span>Ativar</span>
                       </button>
                     )}
                   </div>
@@ -715,41 +750,94 @@ export const AgentsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Cadastro de Novo Agente */}
+      {/* Modal de Cadastro de Novo Módulo de Agente */}
       {showCreateAgentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-[#0b1329] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-6 shadow-2xl relative">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Bot className="h-5 w-5 text-emerald-400" />
-                <span>Cadastrar Novo Agente de Auditoria</span>
+          <div className="bg-[#0b132b] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-6 shadow-2xl relative text-left">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
+              <h2 className="text-base font-bold text-white flex items-center gap-2.5">
+                <Bot className="h-5 w-5 text-cyan-400" />
+                <span>Cadastrar Módulo de Agente</span>
               </h2>
               <button
                 onClick={() => setShowCreateAgentModal(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition hover:bg-slate-800"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreateAgentSubmit} className="space-y-4 mt-5">
-              <div className="grid grid-cols-2 gap-3">
+              {/* Linha 1: Cliente Vinculado & Marco Regulatório */}
+              <div className="grid grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Cliente Vinculado *
+                  </label>
+                  <select
+                    value={newAgentData.clientId}
+                    onChange={(e) => setNewAgentData({ ...newAgentData, clientId: e.target.value })}
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value="">Selecione um cliente...</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.tradeName ? `(${c.tradeName})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Marco Regulatório *
+                  </label>
+                  <select
+                    value={newAgentData.regulatoryFramework}
+                    onChange={(e) =>
+                      setNewAgentData({ ...newAgentData, regulatoryFramework: e.target.value })
+                    }
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value="CFM (Resolução 2.336/2023)">CFM (Resolução 2.336/2023)</option>
+                    <option value="CFM (Resolução 2.314/2022)">CFM (Resolução 2.314/2022)</option>
+                    <option value="LGPD em Saúde (Lei 13.709/18)">LGPD em Saúde (Lei 13.709/18)</option>
+                    <option value="ANS (Padrão TISS / Diretrizes)">ANS (Padrão TISS / Diretrizes)</option>
+                    <option value="ANVISA (RDC Sanitária)">ANVISA (RDC Sanitária)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Linha 2: Nome do Agente & Código Identificador (Slug) */}
+              <div className="grid grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                     Nome do Agente *
                   </label>
                   <input
                     type="text"
                     required
                     value={newAgentData.name}
-                    onChange={(e) => setNewAgentData({ ...newAgentData, name: e.target.value })}
-                    placeholder="Ex: Auditor de Consentimento LGPD"
-                    className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      const autoSlug = name
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/^-+|-+$/g, '');
+                      setNewAgentData({
+                        ...newAgentData,
+                        name,
+                        code: newAgentData.code ? newAgentData.code : autoSlug,
+                      });
+                    }}
+                    placeholder="Ex: Auditor Deontológico CFM"
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Código Identificador (Único) *
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Código Identificador (Slug) *
                   </label>
                   <input
                     type="text"
@@ -758,105 +846,230 @@ export const AgentsPage: React.FC = () => {
                     onChange={(e) =>
                       setNewAgentData({
                         ...newAgentData,
-                        code: e.target.value.toUpperCase().replace(/\s+/g, '-'),
+                        code: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
                       })
                     }
-                    placeholder="Ex: LGPD-CONSENT-01"
-                    className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-emerald-500 uppercase"
+                    placeholder="cfm-publicidade-prontomed"
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                   />
                 </div>
               </div>
 
+              {/* Linha 3: Descrição e Escopo */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Descrição do Agente *
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Descrição e Escopo
                 </label>
                 <textarea
-                  required
                   rows={2}
                   value={newAgentData.description}
                   onChange={(e) => setNewAgentData({ ...newAgentData, description: e.target.value })}
-                  placeholder="Finalidade do agente, tipo de infração fiscalizada..."
-                  className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  placeholder="Finalidade da varredura, escopo das regras auditadas..."
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                 ></textarea>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Linha 4: Frequência Cron & Status do Agente */}
+              <div className="grid grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Categoria Deontológica
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Frequência de Execução (Cron) *
                   </label>
-                  <select
-                    value={newAgentData.category}
-                    onChange={(e) => setNewAgentData({ ...newAgentData, category: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="DEONTOLOGIA_MEDICA">Deontologia Médica (CFM)</option>
-                    <option value="PRIVACIDADE_DADOS">Privacidade & Dados Sensíveis (LGPD)</option>
-                    <option value="VIGILANCIA_SANITARIA">Vigilância Sanitária (ANVISA)</option>
-                    <option value="SAUDE_SUPLEMENTAR">Saúde Suplementar (ANS)</option>
-                  </select>
+                  <input
+                    type="text"
+                    required
+                    value={newAgentData.cronSchedule}
+                    onChange={(e) =>
+                      setNewAgentData({ ...newAgentData, cronSchedule: e.target.value })
+                    }
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                  {/* Sugestões de Cron */}
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap text-[11px]">
+                    <span className="text-slate-500">Sugestões:</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewAgentData({ ...newAgentData, cronSchedule: '0 * * * *' })
+                      }
+                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                    >
+                      1 hora
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewAgentData({ ...newAgentData, cronSchedule: '0 */6 * * *' })
+                      }
+                      className="px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/80 text-cyan-300 font-semibold"
+                    >
+                      6 horas (Padrão)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewAgentData({ ...newAgentData, cronSchedule: '*/10 * * * *' })
+                      }
+                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                    >
+                      10 minutos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewAgentData({ ...newAgentData, cronSchedule: '*/5 * * * * *' })
+                      }
+                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                    >
+                      5 segundos (Teste)
+                    </button>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Modo de Extração Padrão
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Status do Agente
                   </label>
                   <select
-                    value={newAgentData.extractionMode}
-                    onChange={(e) => setNewAgentData({ ...newAgentData, extractionMode: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    value={newAgentData.enabled ? 'Ativo' : 'Inativo'}
+                    onChange={(e) =>
+                      setNewAgentData({
+                        ...newAgentData,
+                        enabled: e.target.value === 'Ativo',
+                      })
+                    }
+                    className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
                   >
-                    <option value="CHEERIO">CHEERIO (Rápido / HTML)</option>
-                    <option value="PUPPETEER">PUPPETEER (SPA / Dinâmico)</option>
-                    <option value="FIRECRAWL">FIRECRAWL (Deep Crawl)</option>
+                    <option value="Ativo">Ativo</option>
+                    <option value="Inativo">Inativo</option>
                   </select>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Vincular Artigos Regulatórios ({newAgentData.targetNorms.length} selecionados):
-                </label>
-                <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-slate-900/60 rounded-xl border border-slate-800">
-                  {catalogNorms.map((norm) => {
-                    const isChecked = newAgentData.targetNorms.includes(norm.id);
-                    return (
-                      <div
-                        key={norm.id}
-                        onClick={() => toggleNormSelection(norm.id)}
-                        className={`p-2 rounded-lg text-xs cursor-pointer flex items-center justify-between transition border ${
-                          isChecked
-                            ? 'bg-emerald-950/40 border-emerald-700 text-white'
-                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
-                        }`}
-                      >
-                        <span className="font-mono font-semibold">
-                          {norm.normCode} - {norm.article}
-                        </span>
-                        <span className="text-[10px] text-slate-500 truncate max-w-[280px]">
-                          {norm.description}
-                        </span>
-                      </div>
-                    );
-                  })}
+              {/* Seção MODO DE EXTRAÇÃO POLIMÓRFICO */}
+              <div className="pt-2">
+                <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider block mb-2">
+                  MODO DE EXTRAÇÃO POLIMÓRFICO
+                </span>
+                <div className="grid grid-cols-3 gap-3">
+                  <div
+                    onClick={() => setNewAgentData({ ...newAgentData, extractionMode: 'CHEERIO' })}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
+                      newAgentData.extractionMode === 'CHEERIO' || newAgentData.extractionMode === 'PUPPETEER'
+                        ? 'bg-cyan-950/30 border-cyan-500 text-white'
+                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Globe className={`h-4 w-4 ${newAgentData.extractionMode === 'CHEERIO' ? 'text-cyan-400' : 'text-slate-400'}`} />
+                      <span className="text-xs font-bold text-white">Scraping Web</span>
+                    </div>
+                    <span className="text-[11px] text-slate-400">DOM, Seletores e URLs</span>
+                  </div>
+
+                  <div
+                    onClick={() => setNewAgentData({ ...newAgentData, extractionMode: 'DATALINK' })}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
+                      newAgentData.extractionMode === 'DATALINK'
+                        ? 'bg-cyan-950/30 border-cyan-500 text-white'
+                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Layers className={`h-4 w-4 ${newAgentData.extractionMode === 'DATALINK' ? 'text-cyan-400' : 'text-slate-400'}`} />
+                      <span className="text-xs font-bold text-white">Datalink / API</span>
+                    </div>
+                    <span className="text-[11px] text-slate-400">Bancos ou APIs REST</span>
+                  </div>
+
+                  <div
+                    onClick={() => setNewAgentData({ ...newAgentData, extractionMode: 'MCP' })}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
+                      newAgentData.extractionMode === 'MCP'
+                        ? 'bg-cyan-950/30 border-cyan-500 text-white'
+                        : 'bg-[#080d1a] border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Cpu className={`h-4 w-4 ${newAgentData.extractionMode === 'MCP' ? 'text-cyan-400' : 'text-slate-400'}`} />
+                      <span className="text-xs font-bold text-white">MCP Server</span>
+                    </div>
+                    <span className="text-[11px] text-slate-400">Model Context Protocol</span>
+                  </div>
                 </div>
               </div>
 
+              {/* Sub-bloco condicional baseado no modo de extração */}
+              <div className="bg-[#080d1a] border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+                <span className="text-xs font-semibold text-slate-300 block">
+                  {newAgentData.extractionMode === 'DATALINK'
+                    ? 'Parâmetros de Extração Datalink / API'
+                    : newAgentData.extractionMode === 'MCP'
+                    ? 'Parâmetros de Extração MCP (Model Context Protocol)'
+                    : 'Parâmetros de Extração Web (Scraping)'}
+                </span>
+
+                {newAgentData.extractionMode === 'DATALINK' ? (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                      Endpoint da API REST / Query *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="https://api.clinica.com.br/v1/auditoria"
+                      value={newAgentData.apiEndpoint}
+                      onChange={(e) =>
+                        setNewAgentData({ ...newAgentData, apiEndpoint: e.target.value })
+                      }
+                      className="w-full bg-[#0b132b] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+                    />
+                  </div>
+                ) : newAgentData.extractionMode === 'MCP' ? (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                      URI do Servidor MCP *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="mcp://localhost:8080 ou https://mcp.clinica.com.br"
+                      value={newAgentData.mcpUri}
+                      onChange={(e) => setNewAgentData({ ...newAgentData, mcpUri: e.target.value })}
+                      className="w-full bg-[#0b132b] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                      URL Alvo (Target URL) *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="https://clinica.med.br/servicos"
+                      value={newAgentData.targetUrl}
+                      onChange={(e) =>
+                        setNewAgentData({ ...newAgentData, targetUrl: e.target.value })
+                      }
+                      className="w-full bg-[#0b132b] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Botões do Rodapé */}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowCreateAgentModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-400 hover:text-white transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={creatingAgent}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-2 px-4 rounded-xl transition"
+                  className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs py-2.5 px-6 rounded-xl transition shadow-lg shadow-cyan-500/20 disabled:opacity-50"
                 >
-                  {creatingAgent ? 'Cadastrando...' : 'Salvar Agente'}
+                  {creatingAgent ? 'Cadastrando...' : 'Cadastrar Módulo'}
                 </button>
               </div>
             </form>
@@ -1035,104 +1248,202 @@ export const AgentsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Diagnóstico do Modelo de IA */}
-      {showTestModal && testResult && (
+      {/* Modal de Diagnóstico do Modelo de IA com Seleção e Ativação */}
+      {showTestModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#0b1329] border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div className="bg-[#0b132b] border border-slate-800 rounded-2xl w-full max-w-xl p-6 shadow-2xl relative text-left">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-purple-950/60 border border-purple-800/40">
                   <Sparkles className="h-5 w-5 text-purple-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Diagnóstico do Modelo de IA</h3>
-                  <span className="text-xs text-slate-400">Verificação de integridade e resposta em tempo real</span>
+                  <h3 className="text-base font-bold text-white">Diagnóstico & Teste de Modelos de IA</h3>
+                  <span className="text-xs text-slate-400">
+                    Selecione um modelo cadastrado no banco para testar resposta, latência e ativar em tempo real.
+                  </span>
                 </div>
               </div>
               <button
                 onClick={() => setShowTestModal(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition hover:bg-slate-800"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="mt-5 space-y-4">
-              <div className="grid grid-cols-3 gap-2.5 text-center">
-                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Status</span>
-                  <span
-                    className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${
-                      testResult.status === 'ONLINE'
-                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
-                        : testResult.status === 'DEGRADED'
-                        ? 'bg-amber-950 text-amber-400 border border-amber-800/60'
-                        : 'bg-red-950 text-red-400 border border-red-800/60'
-                    }`}
-                  >
-                    {testResult.status === 'ONLINE' && <CheckCircle2 className="h-3 w-3" />}
-                    {testResult.status === 'DEGRADED' && <AlertCircle className="h-3 w-3" />}
-                    {testResult.status === 'OFFLINE' && <X className="h-3 w-3" />}
-                    {testResult.status}
-                  </span>
-                </div>
-
-                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Latência</span>
-                  <span className="text-xs font-mono font-bold text-white flex items-center justify-center gap-1">
-                    <Clock className="h-3 w-3 text-purple-400" />
-                    {testResult.latencyMs} ms
-                  </span>
-                </div>
-
-                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Motor</span>
-                  <span className="text-xs font-mono font-bold text-slate-200 truncate block">
-                    {testResult.provider?.toUpperCase()}
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-3.5 bg-slate-900/50 border border-slate-800 rounded-xl text-xs space-y-1.5 font-mono">
-                <div className="flex justify-between text-slate-400">
-                  <span>Modelo Utilizado:</span>
-                  <span className="text-slate-200 font-semibold">{testResult.model}</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Data/Hora do Teste:</span>
-                  <span className="text-slate-300">
-                    {testResult.testedAt ? new Date(testResult.testedAt).toLocaleTimeString('pt-BR') : '-'}
-                  </span>
-                </div>
-              </div>
-
+            <div className="mt-4 space-y-4">
+              {/* Seleção do Modelo Cadastrado */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <Activity className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Resposta Retornada pelo Modelo:</span>
-                </label>
-                <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-300 max-h-48 overflow-y-auto leading-relaxed">
-                  {testResult.response || 'Sem resposta.'}
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-300">
+                    Modelo Cadastrado no Banco (MongoDB) *
+                  </label>
+                  {(() => {
+                    const selModel = aiModels.find((m) => m.id === selectedModelIdForTest);
+                    if (selModel?.isActive) {
+                      return (
+                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>Atualmente Ativo</span>
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedModelIdForTest}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setSelectedModelIdForTest(newId);
+                      handleRunModelTest(newId);
+                    }}
+                    className="flex-1 bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
+                  >
+                    {aiModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.provider} - {m.modelId}) {m.isActive ? '⭐ [ATIVO]' : ''}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRunModelTest()}
+                    disabled={testingModel}
+                    className="bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/40 text-purple-200 font-semibold text-xs py-2.5 px-3 rounded-xl shadow-lg transition flex items-center gap-1.5 disabled:opacity-50"
+                    title="Executar teste neste modelo"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${testingModel ? 'animate-spin' : ''}`} />
+                    <span>{testingModel ? 'Testando...' : 'Testar'}</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={handleTestModel}
-                  disabled={testingModel}
-                  className="px-3.5 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition flex items-center gap-1.5"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${testingModel ? 'animate-spin' : ''}`} />
-                  <span>Testar Novamente</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowTestModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-xl shadow-lg shadow-purple-950/40 transition"
-                >
-                  Fechar
-                </button>
+              {/* Resultado do Teste */}
+              {testResult ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2.5 text-center">
+                    <div className="p-3 bg-[#080d1a] border border-slate-800 rounded-xl">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                        Status
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${
+                          testResult.status === 'ONLINE'
+                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
+                            : testResult.status === 'DEGRADED'
+                            ? 'bg-amber-950 text-amber-400 border border-amber-800/60'
+                            : 'bg-red-950 text-red-400 border border-red-800/60'
+                        }`}
+                      >
+                        {testResult.status === 'ONLINE' && <CheckCircle2 className="h-3 w-3" />}
+                        {testResult.status === 'DEGRADED' && <AlertCircle className="h-3 w-3" />}
+                        {testResult.status === 'OFFLINE' && <X className="h-3 w-3" />}
+                        {testResult.status}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-[#080d1a] border border-slate-800 rounded-xl">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                        Latência
+                      </span>
+                      <span className="text-xs font-mono font-bold text-white flex items-center justify-center gap-1">
+                        <Clock className="h-3 w-3 text-purple-400" />
+                        {testResult.latencyMs} ms
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-[#080d1a] border border-slate-800 rounded-xl">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                        Motor
+                      </span>
+                      <span className="text-xs font-mono font-bold text-slate-200 truncate block">
+                        {testResult.provider?.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-[#080d1a] border border-slate-800 rounded-xl text-xs space-y-1.5 font-mono">
+                    <div className="flex justify-between text-slate-400">
+                      <span>Modelo Auditado:</span>
+                      <span className="text-slate-200 font-semibold">{testResult.model}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-400">
+                      <span>Data/Hora do Teste:</span>
+                      <span className="text-slate-300">
+                        {testResult.testedAt
+                          ? new Date(testResult.testedAt).toLocaleTimeString('pt-BR')
+                          : '-'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                      <Activity className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>Diagnóstico Retornado pelo Modelo:</span>
+                    </label>
+                    <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-300 max-h-36 overflow-y-auto leading-relaxed">
+                      {testResult.response || 'Sem resposta.'}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="p-6 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="h-6 w-6 animate-spin text-purple-400" />
+                  <span>Conectando e realizando teste deontológico no modelo...</span>
+                </div>
+              )}
+
+              {/* Ações do Rodapé: Ativar Modelo e Fechar */}
+              <div className="flex items-center justify-between pt-3 border-t border-slate-800/80">
+                <div>
+                  {(() => {
+                    const selModel = aiModels.find((m) => m.id === selectedModelIdForTest);
+                    if (selModel && !selModel.isActive) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await handleActivateModel(selectedModelIdForTest);
+                          }}
+                          disabled={activatingModelId === selectedModelIdForTest}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 px-4 rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-emerald-950/40 disabled:opacity-50"
+                        >
+                          {activatingModelId === selectedModelIdForTest ? (
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Radio className="h-3.5 w-3.5" />
+                          )}
+                          <span>Ativar Este Modelo</span>
+                        </button>
+                      );
+                    }
+                    if (selModel && selModel.isActive) {
+                      return (
+                        <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span>Este já é o motor ativo de produção</span>
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowTestModal(false)}
+                    className="px-4 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition"
+                  >
+                    Fechar
+                  </button>
+                </div>
               </div>
             </div>
           </div>

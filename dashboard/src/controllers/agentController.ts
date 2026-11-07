@@ -7,13 +7,18 @@ import { ScraperService } from '../services/scraperService.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 
 const createAgentSchema = z.object({
-  name: z.string().min(2, 'Nome é obrigatório'),
-  code: z.string().min(2, 'Código identificador é obrigatório'),
-  description: z.string().min(5, 'Descrição é obrigatória'),
+  name: z.string().min(2, 'Nome do Agente é obrigatório'),
+  code: z.string().min(2, 'Código Identificador (Slug) é obrigatório'),
+  description: z.string().optional().default(''),
   category: z.string().default('DEONTOLOGIA_MEDICA'),
-  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL']).default('CHEERIO'),
+  extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).default('CHEERIO'),
   targetNorms: z.array(z.string()).default([]),
   systemPrompt: z.string().optional(),
+  clientId: z.string().optional().nullable(),
+  regulatoryFramework: z.string().optional().default('CFM (Resolução 2.336/2023)'),
+  cronSchedule: z.string().optional().default('0 */6 * * *'),
+  targetUrl: z.string().optional().nullable(),
+  enabled: z.boolean().optional().default(true),
 });
 
 const updateAgentSchema = createAgentSchema.partial();
@@ -99,13 +104,18 @@ export class AgentController {
       const agent = await prisma.agentModule.create({
         data: {
           name: data.name,
-          code: data.code.toUpperCase(),
+          code: data.code.trim(),
           description: data.description,
           category: data.category,
-          extractionMode: data.extractionMode,
+          extractionMode: data.extractionMode as any,
           rulesCount: data.targetNorms.length > 0 ? data.targetNorms.length : 12,
           targetNorms: data.targetNorms,
           systemPrompt: data.systemPrompt || null,
+          clientId: data.clientId || null,
+          regulatoryFramework: data.regulatoryFramework,
+          cronSchedule: data.cronSchedule,
+          targetUrl: data.targetUrl || null,
+          enabled: data.enabled ?? true,
         },
       });
 

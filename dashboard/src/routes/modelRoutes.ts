@@ -13,5 +13,6 @@ router.get('/:id', ModelController.getById);
 router.put('/:id', ModelController.update);
 router.delete('/:id', ModelController.delete);
 router.post('/:id/activate', ModelController.activate);
+router.post('/:id/test', ModelController.test);
 
 export default router;

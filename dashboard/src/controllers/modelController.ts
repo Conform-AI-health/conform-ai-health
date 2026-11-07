@@ -224,7 +224,7 @@ export class ModelController {
       }
 
       // Desativa todos e ativa o selecionado
-      await prisma.$transaction([
+      const [_, updatedModel] = await prisma.$transaction([
         prisma.aiModelConfig.updateMany({
           where: { isActive: true },
           data: { isActive: false },
@@ -247,8 +247,22 @@ export class ModelController {
 
       res.status(200).json({
         message: `Modelo ${model.name} ativado com sucesso como motor ativo de auditoria.`,
-        activeModel: model,
+        activeModel: updatedModel || { ...model, isActive: true },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Teste pontual de modelo por ID
+   */
+  public static async test(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const prompt = req.body?.prompt ? String(req.body.prompt).slice(0, 1000) : undefined;
+      const result = await ReconciliationEngine.testModelResponse(prompt, id);
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

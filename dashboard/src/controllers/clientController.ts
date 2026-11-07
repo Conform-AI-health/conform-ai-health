@@ -4,18 +4,18 @@ import { prisma } from '../config/prisma.js';
 import { ClientStatus, Role } from '@prisma/client';
 
 const createClientSchema = z.object({
-  name: z.string().min(2, 'Nome é obrigatório'),
-  tradeName: z.string().optional(),
-  cnpj: z.string().optional(),
-  crmResponsavel: z.string().min(3, 'CRM do responsável técnico é obrigatório'),
-  crmUf: z.string().length(2, 'UF do CRM deve ter 2 caracteres').toUpperCase(),
-  rqeResponsavel: z.string().optional(),
-  especialidade: z.string().optional(),
-  websiteUrl: z.string().url('URL do website inválida'),
-  instagramHandle: z.string().optional(),
+  name: z.string().min(2, 'Razão Social é obrigatória'),
+  tradeName: z.string().optional().nullable(),
+  cnpj: z.string().optional().nullable(),
+  crmResponsavel: z.string().optional().nullable(),
+  crmUf: z.string().max(2).optional().nullable(),
+  rqeResponsavel: z.string().optional().nullable(),
+  especialidade: z.string().optional().nullable(),
+  websiteUrl: z.string().optional().nullable(),
+  instagramHandle: z.string().optional().nullable(),
   status: z.enum(['ATIVO', 'INATIVO', 'PENDENTE', 'SUSPENSO']).default('ATIVO'),
-  phone: z.string().optional(),
-  email: z.string().email('Email de contato da clínica inválido'),
+  phone: z.string().optional().nullable(),
+  email: z.string().email('E-mail de Notificação / Compliance inválido'),
 });
 
 const updateClientSchema = createClientSchema.partial();

@@ -86,7 +86,8 @@ export class SystemController {
   public static async testAi(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const prompt = req.body?.prompt ? String(req.body.prompt).slice(0, 1000) : undefined;
-      const result = await ReconciliationEngine.testModelResponse(prompt);
+      const targetModelId = req.body?.modelConfigId || req.body?.modelId;
+      const result = await ReconciliationEngine.testModelResponse(prompt, targetModelId);
 
       await prisma.systemLog.create({
         data: {

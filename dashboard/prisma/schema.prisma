@@ -42,6 +42,7 @@ enum ExtractionMode {
   FALLBACK_AI
   MCP
   FIRECRAWL
+  DATALINK
 }
 
 enum Verdict {
@@ -69,11 +70,11 @@ model Client {
   name              String
   tradeName         String?
   cnpj              String?       @unique
-  crmResponsavel    String
-  crmUf             String
+  crmResponsavel    String?
+  crmUf             String?
   rqeResponsavel    String?
   especialidade     String?
-  websiteUrl        String
+  websiteUrl        String?
   instagramHandle   String?
   status            ClientStatus  @default(ATIVO)
   phone             String?
@@ -87,20 +88,24 @@ model Client {
 }
 
 model AgentModule {
-  id             String          @id @default(auto()) @map("_id") @db.ObjectId
-  name           String
-  code           String          @unique
-  description    String
-  version        String          @default("1.0.0")
-  enabled        Boolean         @default(true)
-  category       String
-  rulesCount     Int             @default(0)
-  extractionMode ExtractionMode  @default(CHEERIO)
-  tags           String[]        @default(["CFM"])
-  targetNorms    String[]        @default([])
-  systemPrompt   String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id                  String          @id @default(auto()) @map("_id") @db.ObjectId
+  name                String
+  code                String          @unique
+  description         String
+  version             String          @default("1.0.0")
+  enabled             Boolean         @default(true)
+  category            String          @default("DEONTOLOGIA_MEDICA")
+  rulesCount          Int             @default(0)
+  extractionMode      ExtractionMode  @default(CHEERIO)
+  tags                String[]        @default(["CFM"])
+  targetNorms         String[]        @default([])
+  systemPrompt        String?
+  clientId            String?         @db.ObjectId
+  regulatoryFramework String?         @default("CFM (Resolução 2.336/2023)")
+  cronSchedule        String?         @default("0 */6 * * *")
+  targetUrl           String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   @@map("agent_modules")
 }

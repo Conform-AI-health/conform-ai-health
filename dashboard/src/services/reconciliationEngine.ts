@@ -100,9 +100,9 @@ export class ReconciliationEngine {
   }
 
   /**
-   * Realiza teste pontual de integridade, latência e conectividade com o modelo ativo
+   * Realiza teste pontual de integridade, latência e conectividade com o modelo ativo ou um modelo específico
    */
-  public static async testModelResponse(customPrompt?: string): Promise<{
+  public static async testModelResponse(customPrompt?: string, targetModelId?: string): Promise<{
     provider: string;
     model: string;
     status: 'ONLINE' | 'DEGRADED' | 'OFFLINE';
@@ -112,7 +112,13 @@ export class ReconciliationEngine {
     details?: any;
   }> {
     const startTime = Date.now();
-    const activeModel = await this.getActiveModelConfig();
+    let activeModel: any = null;
+    if (targetModelId) {
+      activeModel = await prisma.aiModelConfig.findUnique({ where: { id: targetModelId } }).catch(() => null);
+    }
+    if (!activeModel) {
+      activeModel = await this.getActiveModelConfig();
+    }
     const provider = activeModel.provider;
     const prompt =
       customPrompt ||
