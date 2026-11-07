@@ -1,5 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
+
+// Mocks defensivos para garantir isolamento 100% livre de I/O em testes unitários
+vi.mock('../config/prisma.js', () => ({
+  prisma: {
+    $runCommandRaw: vi.fn().mockResolvedValue({ ok: 1 }),
+    systemLog: { create: vi.fn().mockResolvedValue({}) },
+    user: { findUnique: vi.fn(), create: vi.fn() },
+    client: { findMany: vi.fn().mockResolvedValue([]) },
+  },
+}));
+
+vi.mock('../config/redis.js', () => ({
+  getRedisConnection: vi.fn().mockReturnValue({ ping: vi.fn().mockResolvedValue('PONG') }),
+  auditQueue: { count: vi.fn().mockResolvedValue(0) },
+}));
+
 import { createApp } from '../app.js';
 
 describe('Validação Zod e Endpoints da API REST', () => {
@@ -34,6 +50,8 @@ describe('Validação Zod e Endpoints da API REST', () => {
     expect(res.status).toBe(200);
     expect(res.body.service).toContain('ConformIA');
     expect(res.body.aiProvider).toBeDefined();
+    expect(res.body.database).toBeDefined();
+    expect(res.body.redis).toBeDefined();
   });
 });
 
