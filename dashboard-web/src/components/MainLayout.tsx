@@ -34,7 +34,6 @@ export const MainLayout: React.FC = () => {
     ? [
         { label: 'Portal da Clínica', path: '/portal', icon: Shield },
         { label: 'Laudos Técnicos', path: '/reports', icon: FileCheck2 },
-        { label: 'Diretrizes do CFM', path: '/norms', icon: BookOpen },
       ]
     : [
         { label: 'Cockpit do Auditor', path: '/cockpit', icon: LayoutDashboard },
@@ -42,7 +41,6 @@ export const MainLayout: React.FC = () => {
         { label: 'Clínicas & Clientes', path: '/clients', icon: Building2 },
         { label: 'Módulos de Auditoria', path: '/agents', icon: Bot },
         { label: 'Laudos Deontológicos', path: '/reports', icon: FileCheck2 },
-        { label: 'Catálogo de Normas', path: '/norms', icon: BookOpen },
         { label: 'Logs & Telemetria IA', path: '/logs', icon: Terminal },
       ];
 
