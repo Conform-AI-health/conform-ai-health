@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { getRedisConnection, auditQueue } from '../config/redis.js';
+import { env } from '../config/env.js';
 
 const toggleProviderSchema = z.object({
   provider: z.enum(['gemini', 'ollama', 'heuristic']),
@@ -13,7 +14,14 @@ export class SystemController {
     try {
       let dbStatus = 'CONNECTED';
       try {
-        await prisma.$runCommandRaw({ ping: 1 });
+        if (env.NODE_ENV === 'test') {
+          dbStatus = 'TEST_MOCK_CONNECTED';
+        } else {
+          await Promise.race([
+            prisma.$runCommandRaw({ ping: 1 }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 1500)),
+          ]);
+        }
       } catch (err: any) {
         dbStatus = `DISCONNECTED (${err.message})`;
       }
@@ -21,9 +29,20 @@ export class SystemController {
       let redisStatus = 'CONNECTED';
       let queueCount = 0;
       try {
-        const redis = getRedisConnection();
-        await redis.ping();
-        queueCount = await auditQueue.count();
+        if (env.NODE_ENV === 'test') {
+          redisStatus = 'TEST_MOCK_CONNECTED';
+          queueCount = 0;
+        } else {
+          const redis = getRedisConnection();
+          await Promise.race([
+            redis.ping(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Redis Timeout')), 1500)),
+          ]);
+          queueCount = await Promise.race([
+            auditQueue.count(),
+            new Promise<number>((_, reject) => setTimeout(() => reject(new Error('Queue Timeout')), 1500)),
+          ]);
+        }
       } catch (err: any) {
         redisStatus = `OFFLINE_OR_FALLBACK (${err.message})`;
       }

@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { SystemController } from '../controllers/systemController.js';
 import { TelemetryController } from '../controllers/telemetryController.js';
-import { authenticate, authorize } from '../middlewares/auth.js';
-import { Role } from '@prisma/client';
+import { authenticate, authorize, Role } from '../middlewares/auth.js';
 
 const router = Router();
 
