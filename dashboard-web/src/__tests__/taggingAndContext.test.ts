@@ -6,14 +6,16 @@ describe('Frontend - Configurações de Tags e Contexto Deontológico', () => {
     { id: 'LGPD', label: 'LGPD (Proteção de Dados)' },
     { id: 'ANVISA', label: 'ANVISA (Vigilância Sanitária)' },
     { id: 'ANS', label: 'ANS (Saúde Suplementar)' },
+    { id: 'REVOGADO', label: 'REVOGADO (Sem Vigência)' },
   ];
 
-  it('deve conter as 4 tags regulatórias fundamentais do ecossistema de saúde', () => {
+  it('deve conter as tags regulatórias e de status deontológico do ecossistema de saúde', () => {
     const tagIds = REGULATORY_TAG_OPTIONS.map((t) => t.id);
     expect(tagIds).toContain('CFM');
     expect(tagIds).toContain('LGPD');
     expect(tagIds).toContain('ANVISA');
     expect(tagIds).toContain('ANS');
+    expect(tagIds).toContain('REVOGADO');
   });
 
   it('deve calcular corretamente a compatibilidade de contexto para renderização de agentes', () => {

@@ -1216,8 +1216,25 @@ export class ScraperService {
       tags.push('ANS');
     }
 
+    // Tag REVOGADO (Norma ou ato normativo revogado)
+    const revogadoSignals = [
+      'revogado',
+      'revogada',
+      'revogados',
+      'revogadas',
+      'revoga-se',
+      'revogou',
+      'revogando',
+      'revogação',
+      'revogacao',
+    ];
+    if (revogadoSignals.some((sig) => textLower.includes(sig))) {
+      tags.push('REVOGADO');
+    }
+
     // Padrão mínimo: se nenhuma específica bater, assume CFM por ser plataforma deontológica de saúde
-    if (tags.length === 0) {
+    const thematicTags = tags.filter((t) => t !== 'REVOGADO');
+    if (thematicTags.length === 0) {
       tags.push('CFM');
     }
 

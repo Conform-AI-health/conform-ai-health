@@ -7,7 +7,7 @@ import { validateSafeUrl } from '../shared/security.js';
 const scrapeInputSchema = z.object({
   url: z.string().url('URL inválida'),
   mode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL']).optional(),
-  customTags: z.array(z.enum(['CFM', 'LGPD', 'ANVISA', 'ANS'])).optional(),
+  customTags: z.array(z.string()).optional(),
 });
 
 export class ScrapedPageController {

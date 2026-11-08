@@ -48,6 +48,13 @@ const REGULATORY_TAG_OPTIONS = [
     badgeClass: 'bg-amber-950/50 text-amber-400 border-amber-800/40',
     icon: '🏥',
   },
+  {
+    id: 'REVOGADO',
+    label: 'REVOGADO (Sem Vigência)',
+    description: 'Resoluções, atos normativos ou leis com revogação expressa identificada.',
+    badgeClass: 'bg-rose-950/50 text-rose-400 border-rose-800/40',
+    icon: '🚫',
+  },
 ];
 
 export const ScrapingPage: React.FC = () => {
@@ -468,6 +475,7 @@ export const ScrapingPage: React.FC = () => {
               <option value="LGPD">🔒 LGPD (Dados)</option>
               <option value="ANVISA">💊 ANVISA (Sanitário)</option>
               <option value="ANS">🏥 ANS (Saúde Suplementar)</option>
+              <option value="REVOGADO">🚫 REVOGADO (Sem Vigência)</option>
             </select>
           </div>
         </div>
