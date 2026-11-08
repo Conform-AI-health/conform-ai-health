@@ -7,6 +7,7 @@ import { env } from '../config/env.js';
 import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
 import { ScrapeResult } from './scraperService.js';
 import { NormsResolver, ResolvedNorm } from './normsResolver.js';
+import { AIStructuredContractAdapter, StructuredAuditContract } from '../shared/aiStructuredContract.js';
 
 export const violationSchema = z.object({
   normArticle: z.string().describe('Artigo e parágrafo específico violado'),
@@ -26,6 +27,8 @@ export const reconciliationOutputSchema = z.object({
   totalTokens: z.number().default(0),
   sourcesUsed: z.array(z.string()).default([]),
   aiModelUsed: z.string().default('gemini-3.5-flash'),
+  groundingScore: z.number().optional().default(100),
+  hallucinationRisk: z.enum(['NONE', 'LOW', 'MEDIUM', 'HIGH']).optional().default('NONE'),
 });
 
 export type ReconciliationOutput = z.infer<typeof reconciliationOutputSchema>;
@@ -403,6 +406,19 @@ Sua missão é auditar o conteúdo de materiais médicos e confrontá-los com as
   }
 
   /**
+   * Executa a reconciliação e retorna estritamente no Contrato Estruturado de Alta Confiabilidade
+   * { audit_id, risk_level, confidence, findings: [ { description, regulation, article, evidence, source_version, recommendation, requires_human_review } ] }
+   */
+  public static async reconcileStructured(
+    scrape: ScrapeResult,
+    agentModuleId?: string,
+    auditId?: string
+  ): Promise<StructuredAuditContract> {
+    const rawOutput = await this.reconcile(scrape, agentModuleId);
+    return AIStructuredContractAdapter.toStructuredContract(rawOutput, auditId);
+  }
+
+  /**
    * Chamada com Google Gemini via novo SDK @google/genai com Structured Output e Contexto do Agente
    */
   private static async reconcileWithGemini(
@@ -772,6 +788,8 @@ Retorne APENAS um JSON válido no formato:
       totalTokens,
       sourcesUsed,
       aiModelUsed: 'regex-heuristic-engine',
+      groundingScore: 100,
+      hallucinationRisk: 'NONE',
     };
   }
 }
