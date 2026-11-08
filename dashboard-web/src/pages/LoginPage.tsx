@@ -9,6 +9,14 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Forgot password state
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState(false);
+  const [forgotError, setForgotError] = useState('');
+
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -19,8 +27,8 @@ export const LoginPage: React.FC = () => {
 
     try {
       const res = await api.post('/auth/login', { email, password });
-      const { token, user } = res.data;
-      login(token, user);
+      const { token, user, refreshToken } = res.data;
+      login(token, user, refreshToken);
 
       if (user.role === 'CLIENT') {
         navigate('/portal');
@@ -33,6 +41,23 @@ export const LoginPage: React.FC = () => {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotLoading(true);
+
+    try {
+      await api.post('/auth/forgot-password', { email: forgotEmail });
+      setForgotSuccess(true);
+    } catch (err: any) {
+      setForgotError(
+        err.response?.data?.error || 'Erro ao processar solicitação de recuperação.'
+      );
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -83,9 +108,23 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Senha Segura
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Senha Segura
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForgotEmail(email);
+                    setForgotSuccess(false);
+                    setForgotError('');
+                    setShowForgotModal(true);
+                  }}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 transition"
+                >
+                  Esqueceu a senha?
+                </button>
+              </div>
               <div className="relative">
                 <Lock className="h-4 w-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
@@ -115,6 +154,89 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
         </div>
+
+        {/* Modal Esqueci Minha Senha */}
+        {showForgotModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-[#0e172e] border border-slate-700/80 rounded-2xl p-6 max-w-md w-full shadow-2xl relative">
+              <div className="text-center mb-6">
+                <div className="inline-flex h-12 w-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 items-center justify-center mb-3">
+                  <Mail className="h-6 w-6 text-emerald-400" />
+                </div>
+                <h2 className="text-lg font-bold text-white">Recuperação de Senha</h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Informe o e-mail cadastrado para receber instruções seguras de redefinição via Resend API.
+                </p>
+              </div>
+
+              {forgotError && (
+                <div className="mb-4 p-3 bg-red-950/40 border border-red-800/60 rounded-xl flex items-start gap-2.5 text-red-300 text-xs">
+                  <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                  <span>{forgotError}</span>
+                </div>
+              )}
+
+              {forgotSuccess ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-xl flex flex-col items-center gap-2 text-emerald-300 text-xs text-center">
+                    <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+                    <span className="font-semibold text-sm">E-mail de recuperação enviado!</span>
+                    <span className="text-slate-400">
+                      Se o e-mail estiver cadastrado em nossa base, um link com validade de 1 hora foi enviado. Verifique sua caixa de entrada e spam.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 py-2.5 px-4 rounded-xl text-xs font-semibold transition"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleForgotSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      E-mail Cadastrado
+                    </label>
+                    <div className="relative">
+                      <Mail className="h-4 w-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="email"
+                        required
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="seu.nome@clinica.med.br"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(false)}
+                      className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-3 rounded-xl text-xs font-semibold transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 px-3 rounded-xl text-xs font-semibold transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    >
+                      {forgotLoading ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      ) : (
+                        <span>Enviar Link</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Footer info */}
         <p className="text-center text-xs text-slate-600 mt-6 flex items-center justify-center gap-1.5">

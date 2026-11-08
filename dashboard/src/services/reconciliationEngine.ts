@@ -7,6 +7,8 @@ import { env } from '../config/env.js';
 import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
 import { ScrapeResult } from './scraperService.js';
 import { NormsResolver, ResolvedNorm } from './normsResolver.js';
+import { CircuitBreaker } from '../shared/circuitBreaker.js';
+import { Bulkhead } from '../shared/bulkhead.js';
 
 export const violationSchema = z.object({
   normArticle: z.string().describe('Artigo e parágrafo específico violado'),
@@ -48,6 +50,29 @@ export class ReconciliationEngine {
   private static activeProvider: 'gemini' | 'ollama' | 'heuristic' = (env.AI_PROVIDER as any) || 'gemini';
   private static cachedActiveModel: any = null;
   private static cacheTimestamp: number = 0;
+
+  // Padrão de Resiliência: Circuit Breakers para chamadas externas de IA
+  public static geminiCircuitBreaker = new CircuitBreaker({
+    name: 'GeminiReconciliation',
+    failureThreshold: 3,
+    resetTimeoutMs: 15000,
+    successThreshold: 2,
+  });
+
+  public static ollamaCircuitBreaker = new CircuitBreaker({
+    name: 'OllamaReconciliation',
+    failureThreshold: 3,
+    resetTimeoutMs: 15000,
+    successThreshold: 2,
+  });
+
+  // Padrão de Resiliência: Bulkhead para isolamento de concorrência e proteção de recursos
+  public static aiBulkhead = new Bulkhead({
+    name: 'AIPool',
+    maxConcurrent: 5,
+    maxQueue: 20,
+    timeoutMs: 30000,
+  });
 
   public static invalidateModelCache(): void {
     this.cachedActiveModel = null;
@@ -410,8 +435,10 @@ Sua missão é auditar o conteúdo de materiais médicos e confrontá-los com as
     agentContext: AgentContext,
     modelConfig?: any
   ): Promise<ReconciliationOutput> {
-    const apiKey = modelConfig?.apiKey || env.GEMINI_API_KEY;
-    let modelId = modelConfig?.modelId || 'gemini-3.5-flash';
+    return await this.aiBulkhead.execute(() =>
+      this.geminiCircuitBreaker.execute(async () => {
+        const apiKey = modelConfig?.apiKey || env.GEMINI_API_KEY;
+        let modelId = modelConfig?.modelId || 'gemini-3.5-flash';
 
     if (modelId === 'gemini-2.0-flash' || modelId === 'gemini-2.5-flash') {
       modelId = 'gemini-3.5-flash';
@@ -497,6 +524,8 @@ Retorne o resultado estritamente em formato JSON estruturado conforme o seguinte
       sourcesUsed,
       aiModelUsed: `gemini:${modelId}`,
     });
+      })
+    );
   }
 
   /**
@@ -507,8 +536,10 @@ Retorne o resultado estritamente em formato JSON estruturado conforme o seguinte
     agentContext: AgentContext,
     modelConfig?: any
   ): Promise<ReconciliationOutput> {
-    const ollamaUrl = modelConfig?.baseUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434';
-    const model = modelConfig?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b';
+    return await this.aiBulkhead.execute(() =>
+      this.ollamaCircuitBreaker.execute(async () => {
+        const ollamaUrl = modelConfig?.baseUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434';
+        const model = modelConfig?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b';
 
     const relevantNorms = agentContext.activeNorms
       .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
@@ -567,6 +598,8 @@ Retorne APENAS um JSON válido no formato:
       sourcesUsed,
       aiModelUsed: `ollama:${model}`,
     });
+      })
+    );
   }
 
   /**

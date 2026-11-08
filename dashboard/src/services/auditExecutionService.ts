@@ -2,6 +2,7 @@ import { prisma } from '../config/prisma.js';
 import { FirecrawlService } from './firecrawlService.js';
 import { ReconciliationEngine } from './reconciliationEngine.js';
 import { NormsResolver } from './normsResolver.js';
+import { EmailService } from './emailService.js';
 import { ExtractionMode } from '@prisma/client';
 
 export interface ExecuteAuditParams {
@@ -223,6 +224,30 @@ export class AuditExecutionService {
           }),
         },
       }).catch(() => {});
+
+      // 7. Notificação por E-mail do Laudo Concluído para a Clínica (Resend Email API)
+      if (clientId) {
+        try {
+          const client = await prisma.client.findUnique({
+            where: { id: clientId },
+            include: { users: { select: { email: true } } },
+          });
+
+          const recipientEmail = client?.email || (client?.users && client.users.length > 0 ? client.users[0].email : null);
+          if (recipientEmail) {
+            await EmailService.sendAuditReportCompletedEmail(recipientEmail, clientName, {
+              id: auditReportId,
+              targetUrl,
+              score: recon.score,
+              verdict: recon.verdict,
+              summary: recon.summary,
+              violationsCount: recon.violations.length,
+            });
+          }
+        } catch (emailErr: any) {
+          console.warn(`[AuditExecutionService] Aviso ao enviar notificação de laudo por e-mail: ${emailErr.message}`);
+        }
+      }
 
       console.log(`✅ [AuditExecutionService] Concluído com sucesso para ${auditReportId} em ${executionTimeMs}ms (Veredito: ${recon.verdict}, Violações: ${recon.violations.length})`);
 
