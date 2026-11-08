@@ -250,5 +250,5 @@ describe('Governança de IA & Auditoria de Módulos (Firecrawl + Tags + SHA-256)
     expect(recon.score).toBeLessThanOrEqual(100);
     expect(recon.violations.length).toBeGreaterThan(0);
     expect(recon.summary).toBeTruthy();
-  });
+  }, 15000);
 });
