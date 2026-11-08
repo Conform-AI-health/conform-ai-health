@@ -49,6 +49,17 @@ export class NormsResolver {
       console.log(`📚 [NormsResolver] ${dbNorms.length} normas recuperadas da collection 'scraped_pages' no banco.`);
 
       for (const item of dbNorms) {
+        // Exclui estritamente normas que possuam a tag de revogação normativa
+        const isRevogada = (item.tags || []).some((t) => {
+          const upper = t.trim().toUpperCase();
+          return upper === 'REVOGADO' || upper.includes('REVOGAD');
+        });
+
+        if (isRevogada) {
+          console.log(`🚫 [NormsResolver] Norma desconsiderada da auditoria por conter tag de revogação: "${item.title}" (${item.url})`);
+          continue;
+        }
+
         resolved.set(item.url || item.id, {
           id: item.id,
           normCode: item.title,
@@ -64,6 +75,13 @@ export class NormsResolver {
 
     // 2. Consulta complementar no Catálogo Oficial de Normas (NORMS_CATALOG)
     for (const chunk of NORMS_CATALOG) {
+      const isChunkRevogado =
+        chunk.keywords.some((k) => k.toLowerCase().includes('revogad')) ||
+        chunk.title.toLowerCase().includes('revogad');
+      if (isChunkRevogado) {
+        continue;
+      }
+
       const matches = cleanTags.some(
         (t) =>
           chunk.source.toLowerCase() === t ||
@@ -103,6 +121,15 @@ export class NormsResolver {
             );
             if (matchesTag) {
               const fileContent = fs.readFileSync(filePath, 'utf-8');
+              const isFileRevogado =
+                fileName.includes('revogad') ||
+                fileContent.toLowerCase().includes('revogado expressamente') ||
+                fileContent.toLowerCase().includes('revogada expressamente');
+              if (isFileRevogado) {
+                console.log(`🚫 [NormsResolver] Arquivo local ignorado por revogação expressa: ${fileName}`);
+                continue;
+              }
+
               const key = `file:${fileName}`;
               if (!resolved.has(key)) {
                 resolved.set(key, {

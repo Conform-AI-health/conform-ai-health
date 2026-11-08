@@ -115,6 +115,7 @@ export const AgentsPage: React.FC = () => {
     description: '',
     tags: ['cfm'] as string[],
     clientId: '',
+    cronSchedule: '0 */6 * * *',
   });
   const [cockpitTagInput, setCockpitTagInput] = useState('');
   const [savingModule, setSavingModule] = useState(false);
@@ -127,6 +128,7 @@ export const AgentsPage: React.FC = () => {
     targetUrl: '',
     description: '',
     tags: ['cfm'] as string[],
+    cronSchedule: '0 */6 * * *',
   });
   const [newTagInput, setNewTagInput] = useState('');
   const [creatingAgent, setCreatingAgent] = useState(false);
@@ -231,6 +233,7 @@ export const AgentsPage: React.FC = () => {
           description: mod.description || mod.systemPrompt || '',
           tags: mod.tags && mod.tags.length > 0 ? mod.tags : ['cfm'],
           clientId: mod.clientId || '',
+          cronSchedule: mod.cronSchedule || '0 */6 * * *',
         });
       }
     }
@@ -253,6 +256,7 @@ export const AgentsPage: React.FC = () => {
           description: freshMod.description || freshMod.systemPrompt || '',
           tags: freshMod.tags && freshMod.tags.length > 0 ? freshMod.tags : ['cfm'],
           clientId: freshMod.clientId || '',
+          cronSchedule: freshMod.cronSchedule || '0 */6 * * *',
         });
         return;
       }
@@ -267,6 +271,7 @@ export const AgentsPage: React.FC = () => {
       description: mod.description || mod.systemPrompt || '',
       tags: mod.tags && mod.tags.length > 0 ? mod.tags : ['cfm'],
       clientId: mod.clientId || '',
+      cronSchedule: mod.cronSchedule || '0 */6 * * *',
     });
   };
 
@@ -325,6 +330,7 @@ export const AgentsPage: React.FC = () => {
         systemPrompt: cleanDescription,
         clientId: cockpitData.clientId && cockpitData.clientId.trim().length > 0 ? cockpitData.clientId.trim() : null,
         tags: cockpitData.tags,
+        cronSchedule: cockpitData.cronSchedule || '0 */6 * * *',
       });
 
       const updatedAgent = res.data?.agent;
@@ -341,6 +347,7 @@ export const AgentsPage: React.FC = () => {
           description: updatedAgent.description || updatedAgent.systemPrompt || '',
           tags: updatedAgent.tags && updatedAgent.tags.length > 0 ? updatedAgent.tags : ['cfm'],
           clientId: updatedAgent.clientId || '',
+          cronSchedule: updatedAgent.cronSchedule || '0 */6 * * *',
         });
       }
 
@@ -377,6 +384,7 @@ export const AgentsPage: React.FC = () => {
         systemPrompt: cockpitData.description?.trim() || currentMod?.description,
         clientId: cockpitData.clientId && cockpitData.clientId.trim().length > 0 ? cockpitData.clientId.trim() : null,
         tags: cockpitData.tags && cockpitData.tags.length > 0 ? cockpitData.tags : currentMod?.tags,
+        cronSchedule: cockpitData.cronSchedule || currentMod?.cronSchedule || '0 */6 * * *',
       });
 
       // Dispara a auditoria usando o corpo unificado de URL Alvo Oficial e Persona/Skill
@@ -526,6 +534,7 @@ export const AgentsPage: React.FC = () => {
         description: newAgentData.description.trim(),
         systemPrompt: newAgentData.description.trim(),
         tags: newAgentData.tags,
+        cronSchedule: newAgentData.cronSchedule || '0 */6 * * *',
       });
       setShowCreateAgentModal(false);
       setNewAgentData({
@@ -533,6 +542,7 @@ export const AgentsPage: React.FC = () => {
         targetUrl: '',
         description: '',
         tags: ['cfm'],
+        cronSchedule: '0 */6 * * *',
       });
       fetchData(currentPage, pageSize);
       toast.success('Módulo de agente cadastrado com sucesso!');
@@ -706,6 +716,11 @@ export const AgentsPage: React.FC = () => {
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
                       {mod.extractionMode}
                     </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 mb-2 text-xs text-purple-300 font-mono">
+                    <Clock className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+                    <span>Cron: {mod.cronSchedule || '0 */6 * * *'}</span>
                   </div>
 
                   <p className="text-xs text-slate-400 leading-relaxed mb-4 line-clamp-3">{mod.description}</p>
@@ -973,6 +988,7 @@ export const AgentsPage: React.FC = () => {
                                 description: freshMod.description || freshMod.systemPrompt || '',
                                 tags: freshMod.tags && freshMod.tags.length > 0 ? freshMod.tags : ['cfm'],
                                 clientId: freshMod.clientId || '',
+                                cronSchedule: freshMod.cronSchedule || '0 */6 * * *',
                               });
                               return;
                             }
@@ -988,6 +1004,7 @@ export const AgentsPage: React.FC = () => {
                               description: mod.description || mod.systemPrompt || '',
                               tags: mod.tags && mod.tags.length > 0 ? mod.tags : ['cfm'],
                               clientId: mod.clientId || '',
+                              cronSchedule: mod.cronSchedule || '0 */6 * * *',
                             });
                           }
                         }}
@@ -1061,6 +1078,70 @@ export const AgentsPage: React.FC = () => {
                         <span>FIRECRAWL (Markdown Nativo + SHA-256)</span>
                         <span className="text-[10px] bg-emerald-950/80 border border-emerald-800 px-2 py-0.5 rounded font-bold">Oficial</span>
                       </div>
+                    </div>
+
+                    {/* Agendamento Contínuo de Auditoria (Cron Expression) */}
+                    <div className="md:col-span-2 bg-[#080d1a]/90 border border-slate-800/80 rounded-xl p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/60 pb-2">
+                        <label className="text-xs font-semibold text-slate-200 flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-cyan-400" />
+                          <span>Agendamento Contínuo de Auditorias (Cron)</span>
+                          <span className="text-[10px] text-cyan-400 font-mono bg-cyan-950/80 border border-cyan-800 px-2 py-0.5 rounded font-bold">
+                            Execução Periódica
+                          </span>
+                        </label>
+                        <span className="text-[11px] font-mono text-slate-400">
+                          Motor em Background (BullMQ / Cron)
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-400 mb-1.5">
+                            Periodicidade Padrão
+                          </label>
+                          <select
+                            value={
+                              ['0 */6 * * *', '0 * * * *', '0 */12 * * *', '0 3 * * *', '*/15 * * * *'].includes(cockpitData.cronSchedule)
+                                ? cockpitData.cronSchedule
+                                : 'custom'
+                            }
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val !== 'custom') {
+                                setCockpitData({ ...cockpitData, cronSchedule: val });
+                              }
+                            }}
+                            className="w-full bg-[#0b1329] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-medium"
+                          >
+                            <option value="0 */6 * * *">A cada 6 horas (0 */6 * * *) — Recomendado</option>
+                            <option value="0 * * * *">A cada 1 hora (0 * * * *)</option>
+                            <option value="0 */12 * * *">A cada 12 horas (0 */12 * * *)</option>
+                            <option value="0 3 * * *">Diário às 03:00 da madrugada (0 3 * * *)</option>
+                            <option value="*/15 * * * *">A cada 15 minutos (*/15 * * * *) — Testes / Homologação</option>
+                            <option value="custom">Personalizado (Expressão Cron manual)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-400 mb-1.5">
+                            Expressão Cron UNIX (minuto hora dia mês dia-da-semana)
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              required
+                              value={cockpitData.cronSchedule}
+                              onChange={(e) => setCockpitData({ ...cockpitData, cronSchedule: e.target.value })}
+                              placeholder="0 */6 * * *"
+                              className="w-full bg-[#0b1329] border border-slate-700/80 rounded-lg px-3 py-2 font-mono text-xs text-cyan-300 focus:outline-none focus:border-cyan-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        O motor do ConformIA auditará de modo autônomo e contínuo a URL Alvo Oficial conforme este cron, persistindo relatórios deontológicos detalhados no MongoDB.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1531,6 +1612,60 @@ export const AgentsPage: React.FC = () => {
                 {/* Box de Governança / Isolamento de Normas */}
                 <div className="mt-3 p-3 bg-cyan-950/30 border border-cyan-900/50 rounded-xl text-[11px] text-cyan-300/90 leading-relaxed">
                   🛡️ <strong>Isolamento & Governança:</strong> Nenhuma norma física é copiada no cadastro. A IA recuperará dinamicamente todos os documentos normativos do banco de dados MongoDB associados às tags configuradas no momento da auditoria.
+                </div>
+              </div>
+
+              {/* 5. Agendamento Contínuo de Auditoria (Cron) */}
+              <div className="bg-[#080d1a] border border-slate-700/80 rounded-xl p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Clock className="h-4 w-4 text-cyan-400" />
+                    <span>Agendamento Contínuo (Expressão Cron)</span>
+                  </label>
+                  <span className="text-[10px] text-cyan-400 font-mono">
+                    Periódico
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                      Periodicidade
+                    </label>
+                    <select
+                      value={
+                        ['0 */6 * * *', '0 * * * *', '0 */12 * * *', '0 3 * * *', '*/15 * * * *'].includes(newAgentData.cronSchedule)
+                          ? newAgentData.cronSchedule
+                          : 'custom'
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val !== 'custom') {
+                          setNewAgentData({ ...newAgentData, cronSchedule: val });
+                        }
+                      }}
+                      className="w-full bg-[#0b1329] border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="0 */6 * * *">A cada 6 horas (0 */6 * * *)</option>
+                      <option value="0 * * * *">A cada 1 hora (0 * * * *)</option>
+                      <option value="0 */12 * * *">A cada 12 horas (0 */12 * * *)</option>
+                      <option value="0 3 * * *">Diário às 03:00 (0 3 * * *)</option>
+                      <option value="*/15 * * * *">A cada 15 min (*/15 * * * *)</option>
+                      <option value="custom">Personalizado (Manual)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                      Expressão Cron
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newAgentData.cronSchedule}
+                      onChange={(e) => setNewAgentData({ ...newAgentData, cronSchedule: e.target.value })}
+                      placeholder="0 */6 * * *"
+                      className="w-full bg-[#0b1329] border border-slate-700/80 rounded-lg px-3 py-2 font-mono text-xs text-cyan-300 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
                 </div>
               </div>
 

@@ -22,6 +22,14 @@ const { mockModuleScrapeData, mockScrapedPages, mockAgentModules } = vi.hoisted(
       tags: ['LGPD', 'lgpd', 'privacidade'],
       createdAt: new Date(),
     },
+    {
+      id: 'page-revogada',
+      url: 'https://normas.conformia.med.br/cfm-1974-revogada',
+      title: '[CFM] Res. CFM 1.974/11 - Manual de Publicidade Médica (Revogado)',
+      cleanMarkdown: '# Res. CFM 1.974/11 - Revogado expressamente pela Resolução 2.336/23',
+      tags: ['CFM', 'REVOGADO'],
+      createdAt: new Date(),
+    },
   ],
   mockAgentModules: [
     {
@@ -196,6 +204,24 @@ describe('Governança de IA & Auditoria de Módulos (Firecrawl + Tags + SHA-256)
 
     const hasCfm = norms.some((n) => n.source.toLowerCase().includes('cfm') || n.normCode.toLowerCase().includes('cfm'));
     expect(hasCfm).toBe(true);
+  });
+
+  it('4.1. NormsResolver deve desconsiderar estritamente normas que possuam a tag REVOGADO', async () => {
+    const norms = await NormsResolver.resolveByTags(['cfm']);
+
+    // Nenhuma norma retornada deve conter a tag REVOGADO
+    const hasRevogado = norms.some((n) =>
+      n.tags.some((t) => t.toUpperCase() === 'REVOGADO' || t.toUpperCase().includes('REVOGAD'))
+    );
+    expect(hasRevogado).toBe(false);
+
+    // O título da norma revogada não deve estar presente
+    const hasRevogadaTitle = norms.some((n) => n.title.includes('1.974/11'));
+    expect(hasRevogadaTitle).toBe(false);
+
+    // A norma vigente (CFM 2.336) deve estar presente
+    const hasVigente = norms.some((n) => n.title.includes('2.336/23'));
+    expect(hasVigente).toBe(true);
   });
 
   it('5. ReconciliationEngine deve integrar a Skill comportamental e normas dinâmicas na reconciliação', async () => {
