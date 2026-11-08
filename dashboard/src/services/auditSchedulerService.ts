@@ -363,9 +363,9 @@ export class AuditSchedulerService {
    * Encerra o serviço e limpa timers e agendamentos em memória
    */
   public static shutdown(): void {
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval);
-      this.checkInterval = null;
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
     }
     this.activeSchedules.clear();
     this.runningAudits.clear();
