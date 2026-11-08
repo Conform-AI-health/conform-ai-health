@@ -5,6 +5,7 @@ import { ToastProvider } from './context/ToastContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { MainLayout } from './components/MainLayout';
 import { LoginPage } from './pages/LoginPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { CustomerDashboardPage } from './pages/CustomerDashboardPage';
 import { ClientsPage } from './pages/ClientsPage';
@@ -27,6 +28,7 @@ export const App: React.FC = () => {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Rotas Autenticadas compartilhando MainLayout */}
             <Route element={<ProtectedRoute />}>

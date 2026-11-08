@@ -52,15 +52,18 @@ enum Verdict {
 }
 
 model User {
-  id           String    @id @default(auto()) @map("_id") @db.ObjectId
-  email        String    @unique
-  passwordHash String?
-  name         String
-  role         Role      @default(CLIENT)
-  clientId     String?   @db.ObjectId
-  client       Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  createdAt    DateTime? @default(now())
-  updatedAt    DateTime? @updatedAt
+  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
+  email                String    @unique
+  passwordHash         String?
+  name                 String
+  role                 Role      @default(CLIENT)
+  clientId             String?   @db.ObjectId
+  client               Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  refreshToken         String?
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+  createdAt            DateTime? @default(now())
+  updatedAt            DateTime? @updatedAt
 
   @@map("users")
 }

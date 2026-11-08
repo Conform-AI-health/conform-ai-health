@@ -14,7 +14,14 @@ const envSchema = z.object({
   JWT_SECRET: process.env.NODE_ENV === 'test'
     ? z.string().default('conformia-super-secret-jwt-key-2026')
     : z.string().min(16, 'JWT_SECRET must have at least 16 characters'),
-  JWT_EXPIRES_IN: z.string().default('7d'),
+  JWT_EXPIRES_IN: z.string().default('1h'),
+  JWT_REFRESH_SECRET: process.env.NODE_ENV === 'test'
+    ? z.string().default('conformia-refresh-secret-jwt-key-2026')
+    : z.string().min(16, 'JWT_REFRESH_SECRET must have at least 16 characters').default('conformia-refresh-secret-jwt-key-2026'),
+  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+  RESEND_API_KEY: z.string().optional().default(''),
+  EMAIL_FROM: z.string().default('Conform.AI <onboarding@resend.dev>'),
+  FRONTEND_URL: z.string().default('http://localhost:5173'),
   AI_PROVIDER: z.enum(['gemini', 'ollama', 'heuristic']).default('gemini'),
   GEMINI_API_KEY: z.string().optional().default(''),
   OLLAMA_BASE_URL: z.string().default('http://localhost:11434'),

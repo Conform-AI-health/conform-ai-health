@@ -23,7 +23,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (token: string, user: User) => void;
+  login: (token: string, user: User, refreshToken?: string) => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -40,15 +40,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const login = (newToken: string, newUser: User) => {
+  const login = (newToken: string, newUser: User, refreshToken?: string) => {
     localStorage.setItem('conformia_token', newToken);
     localStorage.setItem('conformia_user', JSON.stringify(newUser));
+    if (refreshToken) {
+      localStorage.setItem('conformia_refresh_token', refreshToken);
+    }
     setToken(newToken);
     setUser(newUser);
   };
 
   const logout = () => {
     localStorage.removeItem('conformia_token');
+    localStorage.removeItem('conformia_refresh_token');
     localStorage.removeItem('conformia_user');
     setToken(null);
     setUser(null);

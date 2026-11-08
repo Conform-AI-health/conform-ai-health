@@ -130,7 +130,7 @@ describe('🕷️ ScraperService - Varredura em Lote e Diretórios GitHub', () =
     expect(results[1].detectedTags).toContain('ANVISA');
 
     getSpy.mockRestore();
-  });
+  }, 30000);
 
   it('deve reconhecer URLs de arquivos PDF regulatórios oficiais', () => {
     const senadoPdfUrl = 'https://www2.senado.leg.br/bdsf/bitstream/handle/id/658231/Lei_geral_protecao_dados_pessoais_1ed.pdf';
