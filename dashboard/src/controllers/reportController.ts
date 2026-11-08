@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/prisma.js';
 import { Role, Verdict, AuditStatus, RuleSeverity } from '@prisma/client';
+import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
 
 export class ReportController {
   /**
@@ -81,6 +82,70 @@ export class ReportController {
           totalPages: Math.ceil(total / limit),
         },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Retorna o laudo no formato de Contrato Estruturado de Alta Confiabilidade
+   */
+  public static async getContract(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      const report = await prisma.auditReport.findUnique({
+        where: { id },
+        include: { violations: true },
+      });
+
+      if (!report) {
+        res.status(404).json({ error: 'Laudo de auditoria não encontrado.' });
+        return;
+      }
+
+      if (req.user?.role === Role.CLIENT && req.user.clientId !== report.clientId) {
+        res.status(403).json({
+          error: 'Acesso negado. Você só tem permissão para visualizar laudos da sua própria clínica.',
+          code: 'TENANT_FORBIDDEN',
+        });
+        return;
+      }
+
+      if (report.structuredContract) {
+        try {
+          const parsed = JSON.parse(report.structuredContract);
+          res.status(200).json(parsed);
+          return;
+        } catch {}
+      }
+
+      const structured = AIStructuredContractAdapter.toStructuredContract(
+        {
+          verdict: report.verdict,
+          score: report.score ?? 0,
+          summary: report.summary || 'Laudo de conformidade deontológica.',
+          violations: report.violations.map((v) => ({
+            normArticle: v.normArticle || 'Artigo Geral',
+            normCode: v.normCode || 'CFM 2.336/2023',
+            severity: v.severity,
+            detectedText: v.detectedText || 'Evidência identificada',
+            correctiveAdvice: v.correctiveAdvice || 'Adequar comunicação.',
+          })),
+          promptTokens: report.promptTokens ?? 0,
+          completionTokens: report.completionTokens ?? 0,
+          totalTokens: report.totalTokens ?? 0,
+          sourcesUsed: report.sourcesUsed,
+          aiModelUsed: report.aiModelUsed || 'gemini-3.5-flash',
+          groundingScore: report.groundingScore ?? 100,
+          hallucinationRisk: (report.hallucinationRisk as any) || 'NONE',
+          guardrailsApplied: report.guardrailsApplied ?? false,
+          hallucinationsInterceptedCount: 0,
+        },
+        report.id
+      );
+
+      res.status(200).json(structured);
     } catch (error) {
       next(error);
     }

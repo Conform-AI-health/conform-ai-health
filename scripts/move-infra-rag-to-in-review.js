@@ -1,0 +1,80 @@
+const https = require('https');
+const { execSync } = require('child_process');
+
+function getGitHubToken() {
+  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+  if (process.env.GH_TOKEN) return process.env.GH_TOKEN;
+  try {
+    const out = execSync("powershell -Command \"[System.Environment]::GetEnvironmentVariable('GITHUB_TOKEN', 'User')\"", { encoding: 'utf8' }).trim();
+    if (out) return out;
+  } catch (e) {}
+  return null;
+}
+
+const token = getGitHubToken();
+
+function requestGraphQL(query, variables) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({ query, variables });
+    const req = https.request({
+      hostname: 'api.github.com',
+      path: '/graphql',
+      method: 'POST',
+      headers: {
+        'User-Agent': 'ConformIA-Bot',
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => resolve(JSON.parse(d)));
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+const projectId = "PVT_kwDOFOE58c4BqQlU";
+const statusFieldId = "PVTSSF_lADOFOE58c4BqQlUzhoof5Q";
+const inReviewOptionId = "98236657";
+const itemId = "PVTI_lADOFOE58c4BqQlUzhHC7KY";
+
+async function main() {
+  console.log(`👀 [Estágio 4] Movendo item ${itemId} para [In review]...`);
+  const setStatusMutation = `
+    mutation SetStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+      updateProjectV2ItemFieldValue(input: {
+        projectId: $projectId,
+        itemId: $itemId,
+        fieldId: $fieldId,
+        value: { singleSelectOptionId: $optionId }
+      }) {
+        projectV2Item {
+          id
+        }
+      }
+    }
+  `;
+
+  const res = await requestGraphQL(setStatusMutation, {
+    projectId,
+    itemId,
+    fieldId: statusFieldId,
+    optionId: inReviewOptionId
+  });
+
+  if (res.errors) {
+    console.error("❌ Erro ao mover item:", JSON.stringify(res.errors, null, 2));
+    process.exit(1);
+  }
+
+  console.log(`✅ Item ${itemId} movido com sucesso para [In review]!`);
+}
+
+main().catch(err => {
+  console.error("❌ Erro inesperado:", err);
+  process.exit(1);
+});

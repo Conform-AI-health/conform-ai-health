@@ -17,8 +17,11 @@
 | **5. Negação de Serviço (DoS)** | 🟡 **MÉDIA** | Ausência de limites de memória e CPU, vulnerável a esgotamento da máquina host. | Configuradas diretivas `deploy.resources.limits` com tetos de CPU e RAM para cada serviço. |
 | **6. CORS Desprotegido** | 🟡 **MÉDIA** | `CORS_ORIGIN=*` permitia chamadas de qualquer domínio web. | Restrito para a origem parametrizada `${CORS_ORIGIN:-http://localhost:3000}`. |
 | **7. Variáveis Recentes Omitidas** | 🟢 **BAIXA** | Omissão de `JWT_REFRESH_SECRET`, `RESEND_API_KEY`, etc. | Adicionadas todas as variáveis necessárias para o ecossistema de autenticação resiliente. |
+| **8. Política de Memória do Redis** | 🔴 **ALTA** | Uso de `allkeys-lru` descartava chaves de filas do BullMQ silenciosamente em picos de uso. | Corrigido para `--maxmemory-policy noeviction`, garantindo integridade das filas assíncronas de auditoria. |
+| **9. Senha Padrão no Redis** | 🔴 **ALTA** | `REDIS_PASSWORD` possuía fallback fraco no compose. | Removido fallback fraco. A variável agora é estritamente obrigatória (`${REDIS_PASSWORD:?...}`). |
+| **10. Healthcheck do Worker** | 🟡 **MÉDIA** | `audit-worker` não possuía probe de saúde, podendo falhar sem detecção do orquestrador. | Adicionado healthcheck HTTP dedicado (`GET http://127.0.0.1:3001/health`) e servidor de métricas no worker. |
 
 ---
 
 ## ✅ 2. Conclusão da Auditoria
-O arquivo `docker-compose.yml` está em conformidade com as melhores práticas OWASP para ambientes de containers em produção.
+O arquivo `docker-compose.yml` está em conformidade com as melhores práticas OWASP e CIS Docker Benchmark para ambientes de containers em produção.

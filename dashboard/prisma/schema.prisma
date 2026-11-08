@@ -160,6 +160,13 @@ model AuditReport {
   aiModelUsed     String?
   executionTimeMs Int?           @default(0)
   status          AuditStatus    @default(PENDING)
+  riskLevel       String?        @default("LOW")
+  confidence      Float?         @default(1.0)
+  structuredContract String?     // JSON serializado do Contrato Estruturado de Alta Confiabilidade
+  groundingScore  Int?           @default(100)
+  hallucinationRisk String?      @default("NONE")
+  guardrailsApplied Boolean?     @default(false)
+  requiresHumanReview Boolean?   @default(false)
   violations      Violation[]
   createdAt       DateTime?      @default(now())
   updatedAt       DateTime?      @updatedAt

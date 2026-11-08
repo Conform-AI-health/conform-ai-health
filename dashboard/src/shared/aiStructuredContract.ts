@@ -14,12 +14,28 @@ export const findingSchema = z.object({
   requires_human_review: z.boolean().default(false).describe('Indica se há ambiguidade e necessidade de chancela de auditor humano'),
 });
 
+export const auditMetadataSchema = z.object({
+  tokens: z.object({
+    prompt: z.number().default(0),
+    completion: z.number().default(0),
+    total: z.number().default(0),
+  }).default({ prompt: 0, completion: 0, total: 0 }),
+  latencyMs: z.number().default(0),
+  modelUsed: z.string().default('gemini-3.5-flash'),
+  groundingScore: z.number().default(100),
+  hallucinationRisk: z.enum(['NONE', 'LOW', 'MEDIUM', 'HIGH']).default('NONE'),
+  guardrailsApplied: z.boolean().default(false),
+  hallucinationsInterceptedCount: z.number().default(0),
+  auditedAt: z.string().default(() => new Date().toISOString()),
+}).optional();
+
 export const structuredAuditContractSchema = z.object({
   audit_id: z.string().describe('Identificador único da auditoria'),
   risk_level: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).describe('Classificação de risco deontológico'),
   confidence: z.number().min(0).max(1).describe('Grau de confiança fática e normativa (0.00 a 1.00)'),
   summary: z.string().optional().describe('Resumo executivo do laudo'),
   findings: z.array(findingSchema).describe('Rol de achados regulatórios identificados'),
+  metadata: auditMetadataSchema,
 });
 
 export type Finding = z.infer<typeof findingSchema>;
@@ -93,6 +109,20 @@ export class AIStructuredContractAdapter {
       confidence,
       summary: output.summary,
       findings,
+      metadata: {
+        tokens: {
+          prompt: output.promptTokens ?? 0,
+          completion: output.completionTokens ?? 0,
+          total: output.totalTokens ?? 0,
+        },
+        latencyMs: 0,
+        modelUsed: output.aiModelUsed ?? 'gemini-3.5-flash',
+        groundingScore: output.groundingScore ?? 100,
+        hallucinationRisk: output.hallucinationRisk ?? 'NONE',
+        guardrailsApplied: output.guardrailsApplied ?? false,
+        hallucinationsInterceptedCount: output.hallucinationsInterceptedCount ?? 0,
+        auditedAt: new Date().toISOString(),
+      },
     };
   }
 
