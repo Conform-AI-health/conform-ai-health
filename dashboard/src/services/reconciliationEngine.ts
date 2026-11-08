@@ -254,20 +254,32 @@ export class ReconciliationEngine {
           const agentTags = agent.tags && agent.tags.length > 0 ? agent.tags : ['CFM'];
           const dbNorms = await NormsResolver.resolveByTags(agentTags);
 
-          let activeNorms: NormChunk[] = dbNorms.map((n) => ({
-            id: n.id,
-            normCode: n.normCode,
-            source: (n.source as any) || 'CFM',
-            title: n.title,
-            article: n.article || 'Dispositivo Geral',
-            severityDefault: (n.severityDefault as any) || 'MEDIA',
-            keywords: n.tags,
-            content: n.content,
-            correctiveGuidance: `Adequar conforme as diretrizes regulatórias vigentes da norma ${n.normCode}.`,
-          }));
+          let activeNorms: NormChunk[] = dbNorms
+            .filter((n) => {
+              const isRevogada = (n.tags || []).some(
+                (t) => t.trim().toUpperCase() === 'REVOGADO' || t.trim().toUpperCase().includes('REVOGAD')
+              );
+              return !isRevogada;
+            })
+            .map((n) => ({
+              id: n.id,
+              normCode: n.normCode,
+              source: (n.source as any) || 'CFM',
+              title: n.title,
+              article: n.article || 'Dispositivo Geral',
+              severityDefault: (n.severityDefault as any) || 'MEDIA',
+              keywords: n.tags,
+              content: n.content,
+              correctiveGuidance: `Adequar conforme as diretrizes regulatórias vigentes da norma ${n.normCode}.`,
+            }));
 
           if (activeNorms.length === 0) {
-            activeNorms = [...NORMS_CATALOG];
+            activeNorms = NORMS_CATALOG.filter((chunk) => {
+              const isChunkRevogado =
+                chunk.keywords.some((k) => k.toLowerCase().includes('revogad')) ||
+                chunk.title.toLowerCase().includes('revogad');
+              return !isChunkRevogado;
+            });
           }
 
           // A Descrição e Escopo atua como a Skill comportamental e persona da IA
@@ -280,7 +292,8 @@ export class ReconciliationEngine {
 Skill Comportamental e Escopo do Agente: ${agentSkill}.
 Tags Regulatórias: ${agentTags.join(', ')}.
 Marco Regulatório Auditado: ${agent.regulatoryFramework || 'Conformidade e Deontologia em Saúde'}.
-Sua missão é realizar auditoria deontológica rigorosa confrontando o conteúdo do website com o rol integral de normas associadas.`;
+Sua missão é realizar auditoria deontológica rigorosa confrontando o conteúdo do website com o rol integral de normas associadas.
+DIRETRIZ DE VIGÊNCIA REGULATÓRIA: Normas, resoluções ou artigos revogados não possuem vigência jurídica e JAMAIS devem ser considerados como infração na auditoria deontológica imediata.`;
 
           return {
             id: agent.id,
