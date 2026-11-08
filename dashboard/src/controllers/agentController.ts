@@ -7,6 +7,7 @@ import { ScraperService } from '../services/scraperService.js';
 import { FirecrawlService } from '../services/firecrawlService.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { AuditExecutionService } from '../services/auditExecutionService.js';
+import { AuditSchedulerService } from '../services/auditSchedulerService.js';
 
 const createAgentSchema = z.object({
   name: z.string().min(2, 'Nome do Módulo é obrigatório'),
@@ -20,7 +21,13 @@ const createAgentSchema = z.object({
   systemPrompt: z.string().optional(),
   clientId: z.string().optional().nullable(),
   regulatoryFramework: z.string().optional().default('CFM (Resolução 2.336/2023)'),
-  cronSchedule: z.string().optional().default('0 */6 * * *'),
+  cronSchedule: z
+    .string()
+    .optional()
+    .default('0 */6 * * *')
+    .refine((val) => !val || AuditSchedulerService.isValidCron(val), {
+      message: 'Expressão cron inválida. Use o formato padrão de 5 campos (ex: 0 */6 * * *)',
+    }),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -36,7 +43,12 @@ const updateAgentSchema = z.object({
   systemPrompt: z.string().optional(),
   clientId: z.string().optional().nullable(),
   regulatoryFramework: z.string().optional(),
-  cronSchedule: z.string().optional(),
+  cronSchedule: z
+    .string()
+    .optional()
+    .refine((val) => !val || AuditSchedulerService.isValidCron(val), {
+      message: 'Expressão cron inválida. Use o formato padrão de 5 campos (ex: 0 */6 * * *)',
+    }),
   enabled: z.boolean().optional(),
 });
 
@@ -148,6 +160,9 @@ export class AgentController {
         },
       });
 
+      // Sincroniza o agendador contínuo para o novo módulo
+      await AuditSchedulerService.syncAgentSchedule(agent.id);
+
       res.status(201).json({
         message: 'Agente regulatório cadastrado com sucesso!',
         agent,
@@ -195,8 +210,12 @@ export class AgentController {
           ...(data.category && { category: data.category }),
           ...(data.extractionMode && { extractionMode: data.extractionMode as any }),
           ...(resolvedClientId !== undefined && { clientId: resolvedClientId }),
+          ...(data.cronSchedule !== undefined && { cronSchedule: data.cronSchedule?.trim() || '0 */6 * * *' }),
         },
       });
+
+      // Sincroniza a programação contínua do agente atualizado
+      await AuditSchedulerService.syncAgentSchedule(updated.id);
 
       res.status(200).json({
         message: 'Módulo de agente atualizado com sucesso.',
@@ -213,6 +232,9 @@ export class AgentController {
       await prisma.agentModule.delete({
         where: { id },
       });
+
+      // Remove do agendador contínuo
+      await AuditSchedulerService.removeAgentSchedule(id);
 
       res.status(200).json({
         message: 'Módulo de agente removido com sucesso.',

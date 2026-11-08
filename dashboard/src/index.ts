@@ -2,6 +2,7 @@ import dns from 'node:dns';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { runAutoMigrateAndSeed } from './shared/autoMigrate.js';
+import { AuditSchedulerService } from './services/auditSchedulerService.js';
 
 // Garante resolução IPv4 prioritária em ambientes conteinerizados Docker para evitar falhas de ENETUNREACH
 dns.setDefaultResultOrder('ipv4first');
@@ -26,6 +27,13 @@ async function bootstrap() {
     console.log(`🔒 API Base: http://localhost:${env.PORT}${env.API_PREFIX}`);
     console.log(`🧠 AI Provider: ${env.AI_PROVIDER}`);
     console.log(`========================================================\n`);
+
+    // Inicia o agendador contínuo de auditorias (cron)
+    if (env.NODE_ENV !== 'test') {
+      AuditSchedulerService.init().catch((err) => {
+        console.warn(`[Bootstrap] Falha ao iniciar AuditSchedulerService: ${err.message}`);
+      });
+    }
   });
 
   const shutdown = async () => {
