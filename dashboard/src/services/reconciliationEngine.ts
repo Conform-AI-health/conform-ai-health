@@ -9,6 +9,7 @@ import { ScrapeResult } from './scraperService.js';
 import { NormsResolver, ResolvedNorm } from './normsResolver.js';
 import { CircuitBreaker } from '../shared/circuitBreaker.js';
 import { Bulkhead } from '../shared/bulkhead.js';
+import { AIGuardrails } from '../shared/aiGuardrails.js';
 
 export const violationSchema = z.object({
   normArticle: z.string().describe('Artigo e parágrafo específico violado'),
@@ -28,6 +29,10 @@ export const reconciliationOutputSchema = z.object({
   totalTokens: z.number().default(0),
   sourcesUsed: z.array(z.string()).default([]),
   aiModelUsed: z.string().default('gemini-3.5-flash'),
+  groundingScore: z.number().default(100).describe('Score de ancoragem fática e normativa (0-100)'),
+  hallucinationRisk: z.enum(['NONE', 'LOW', 'MEDIUM', 'HIGH']).default('NONE').describe('Nível de risco de alucinação'),
+  guardrailsApplied: z.boolean().default(false).describe('Indica se guardrails interceptaram alucinações'),
+  hallucinationsInterceptedCount: z.number().default(0).describe('Quantidade de alucinações expurgadas'),
 });
 
 export type ReconciliationOutput = z.infer<typeof reconciliationOutputSchema>;
@@ -394,37 +399,54 @@ Sua missão é auditar o conteúdo de materiais médicos e confrontá-los com as
     // Consome o contexto do agente dinamicamente a partir do banco de dados
     const agentContext = await this.resolveAgentContext(agentModuleId);
 
+    let rawOutput: ReconciliationOutput;
+
     // Se configurado explicitamente para heurística
     if (effectiveProvider === 'heuristic') {
-      return this.reconcileWithHeuristic(
+      rawOutput = this.reconcileWithHeuristic(
         scrape,
         `Execução direta por heurística orientada ao agente (${activeModel.name})`,
         agentContext
       );
-    }
-
-    // Tentativa 1: Gemini
-    if (effectiveProvider === 'gemini') {
+    } else if (effectiveProvider === 'gemini') {
+      // Tentativa 1: Gemini
       try {
-        return await this.reconcileWithGemini(scrape, agentContext, activeModel);
+        rawOutput = await this.reconcileWithGemini(scrape, agentContext, activeModel);
       } catch (err: any) {
         console.warn(`[ReconciliationEngine] Falha na chamada ao Google Gemini (${err.message}). Tentando fallback para Ollama...`);
+        try {
+          rawOutput = await this.reconcileWithOllama(scrape, agentContext, activeModel);
+        } catch (errOllama: any) {
+          console.warn(`[ReconciliationEngine] Falha no Ollama Local (${errOllama.message}). Ativando Heurística orientada ao Agente...`);
+          rawOutput = this.reconcileWithHeuristic(
+            scrape,
+            `Fallback automático ativado: Análise orientada ao agente (${activeModel.name})`,
+            agentContext
+          );
+        }
+      }
+    } else {
+      // Provedor Ollama direto com fallback para heurística
+      try {
+        rawOutput = await this.reconcileWithOllama(scrape, agentContext, activeModel);
+      } catch (err: any) {
+        console.warn(`[ReconciliationEngine] Falha no Ollama Local (${err.message}). Ativando Heurística orientada ao Agente...`);
+        rawOutput = this.reconcileWithHeuristic(
+          scrape,
+          `Fallback automático ativado: Análise orientada ao agente (${activeModel.name})`,
+          agentContext
+        );
       }
     }
 
-    // Tentativa 2: Ollama Local
-    try {
-      return await this.reconcileWithOllama(scrape, agentContext, activeModel);
-    } catch (err: any) {
-      console.warn(`[ReconciliationEngine] Falha no Ollama Local (${err.message}). Ativando Heurística orientada ao Agente...`);
-    }
-
-    // Tentativa 3: Heurística Dinâmica Garantida com as normas e regras do agente
-    return this.reconcileWithHeuristic(
+    // Camada Obrigatória de Quality Gate: Guardrails Anti-Alucinação & Grounding Mandatório
+    const { sanitizedOutput } = await AIGuardrails.validateAndSanitizeOutput(
+      rawOutput,
       scrape,
-      `Fallback automático ativado: Análise orientada ao agente (${activeModel.name})`,
-      agentContext
+      agentContext.activeNorms
     );
+
+    return sanitizedOutput;
   }
 
   /**
@@ -450,8 +472,12 @@ Sua missão é auditar o conteúdo de materiais médicos e confrontá-los com as
 
     const ai = new GoogleGenAI({ apiKey });
 
+    // Pre-Execution Guardrails: Sanitização de entrada contra injeções de prompt
+    const sanitizedMarkdown = AIGuardrails.sanitizeInputPrompt(scrape.cleanMarkdown.substring(0, 10000)).sanitized;
+    const groundingInstructions = AIGuardrails.buildGroundingPromptInstructions(agentContext.activeNorms);
+
     // O agente fornece todo o seu contexto e diretrizes deontológicas
-    const systemInstruction = agentContext.systemPrompt;
+    const systemInstruction = `${agentContext.systemPrompt}\n\n${groundingInstructions}`;
 
     const relevantNorms = agentContext.activeNorms
       .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
@@ -462,10 +488,12 @@ CONTEÚDO AUDITADO:
 Título: ${scrape.title}
 URL: ${scrape.url}
 Markdown da Página:
-${scrape.cleanMarkdown.substring(0, 10000)}
+${sanitizedMarkdown}
 
 NORMAS VINCULADAS AO AGENTE:
 ${relevantNorms}
+
+${groundingInstructions}
 
 ENTIDADES DETECTADAS NO PROCESSAMENTO DA PÁGINA:
 - CRMs: ${scrape.extractedEntities.crms.join(', ') || 'Nenhum detectado'}
@@ -545,14 +573,19 @@ Retorne o resultado estritamente em formato JSON estruturado conforme o seguinte
       .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
       .join('\n');
 
+    const sanitizedMarkdown = AIGuardrails.sanitizeInputPrompt(scrape.cleanMarkdown.substring(0, 4000)).sanitized;
+    const groundingInstructions = AIGuardrails.buildGroundingPromptInstructions(agentContext.activeNorms);
+
     const prompt = `
 ${agentContext.systemPrompt}
+
+${groundingInstructions}
 
 NORMAS VINCULADAS AO AGENTE:
 ${relevantNorms}
 
 TEXTO A AUDITAR:
-${scrape.cleanMarkdown.substring(0, 4000)}
+${sanitizedMarkdown}
 
 Retorne APENAS um JSON válido no formato:
 {
@@ -805,6 +838,10 @@ Retorne APENAS um JSON válido no formato:
       totalTokens,
       sourcesUsed,
       aiModelUsed: 'regex-heuristic-engine',
+      groundingScore: 100,
+      hallucinationRisk: 'NONE',
+      guardrailsApplied: false,
+      hallucinationsInterceptedCount: 0,
     };
   }
 }

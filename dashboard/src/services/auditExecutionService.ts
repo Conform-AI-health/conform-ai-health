@@ -208,19 +208,23 @@ export class AuditExecutionService {
         }
       });
 
-      // Log de sucesso
+      // Log de sucesso com telemetria de guardrails
       await prisma.systemLog.create({
         data: {
           level: 'INFO',
           module: 'RECONCILIATION',
           correlationId,
-          message: `[RECONCILIATION] Auditoria concluída com sucesso para "${clientName}" | ${recon.violations.length} infrações detectadas | Status: COMPLETED | Tempo: ${executionTimeMs}ms`,
+          message: `[RECONCILIATION] Auditoria concluída com sucesso para "${clientName}" | ${recon.violations.length} infrações detectadas | Grounding: ${recon.groundingScore ?? 100}% | Status: COMPLETED | Tempo: ${executionTimeMs}ms`,
           details: JSON.stringify({
             auditReportId,
             score: recon.score,
             verdict: recon.verdict,
             violationsCount: recon.violations.length,
             executionTimeMs,
+            groundingScore: recon.groundingScore ?? 100,
+            hallucinationRisk: recon.hallucinationRisk ?? 'NONE',
+            guardrailsApplied: recon.guardrailsApplied ?? false,
+            hallucinationsInterceptedCount: recon.hallucinationsInterceptedCount ?? 0,
           }),
         },
       }).catch(() => {});
