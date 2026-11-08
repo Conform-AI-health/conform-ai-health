@@ -1,23 +1,37 @@
 services:
   # -------------------------------------------------------------
-  # Redis: Fila BullMQ e Cache Operacional
+  # Redis: Fila BullMQ e Cache Operacional com Autenticação e Proteção
   # -------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: conformia-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-conformia_redis_secure_pass}
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      # Vinculação estrita ao loopback local (127.0.0.1) impedindo exposição pública
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     networks:
       - conformia-net
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-conformia_redis_secure_pass}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 384M
+        reservations:
+          memory: 128M
 
   # -------------------------------------------------------------
   # Backend REST API (Node.js 20 + Express + Prisma)
@@ -36,21 +50,41 @@ services:
       - PORT=3000
       - API_PREFIX=/api/v1
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET:-ASDLAN333SDA0001122Kjashssgaaaaaaaaaaaaaaaaaaasssvveensaaassss}
-      - JWT_EXPIRES_IN=7d
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-conformia_redis_secure_pass}@redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=1h
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - JWT_REFRESH_EXPIRES_IN=7d
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM:-nao-responder@conformia.med.br}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - AI_PROVIDER=${AI_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
       - EXTRACTION_MODE=${EXTRACTION_MODE:-CHEERIO}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
-      - CORS_ORIGIN=*
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - conformia-net
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/api/v1/system/status', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.50'
+          memory: 1024M
+        reservations:
+          memory: 256M
 
   # -------------------------------------------------------------
   # Worker Assíncrono de Auditoria Deontológica (BullMQ)
@@ -68,9 +102,14 @@ services:
       - PORT=3000
       - API_PREFIX=/api/v1
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET:-ASDLAN333SDA0001122Kjashssgaaaaaaaaaaaaaaaaaaasssvveensaaassss}
-      - JWT_EXPIRES_IN=7d
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-conformia_redis_secure_pass}@redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=1h
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - JWT_REFRESH_EXPIRES_IN=7d
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM:-nao-responder@conformia.med.br}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - AI_PROVIDER=${AI_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
@@ -82,6 +121,15 @@ services:
         condition: service_healthy
     networks:
       - conformia-net
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 768M
+        reservations:
+          memory: 256M
 
   # -------------------------------------------------------------
   # Frontend SPA (Vite + React + Nginx Proxy)
@@ -96,9 +144,24 @@ services:
     ports:
       - "${WEB_PORT:-3000}:80"
     depends_on:
-      - dashboard-api
+      dashboard-api:
+        condition: service_healthy
     networks:
       - conformia-net
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          memory: 64M
 
 networks:
   conformia-net:

@@ -10,6 +10,7 @@ import { NormsResolver, ResolvedNorm } from './normsResolver.js';
 import { CircuitBreaker } from '../shared/circuitBreaker.js';
 import { Bulkhead } from '../shared/bulkhead.js';
 import { AIGuardrails } from '../shared/aiGuardrails.js';
+import { AIStructuredContractAdapter, StructuredAuditContract } from '../shared/aiStructuredContract.js';
 
 export const violationSchema = z.object({
   normArticle: z.string().describe('Artigo e parágrafo específico violado'),
@@ -447,6 +448,19 @@ Sua missão é auditar o conteúdo de materiais médicos e confrontá-los com as
     );
 
     return sanitizedOutput;
+  }
+
+  /**
+   * Executa a reconciliação e retorna estritamente no Contrato Estruturado de Alta Confiabilidade
+   * { audit_id, risk_level, confidence, findings: [ { description, regulation, article, evidence, source_version, recommendation, requires_human_review } ] }
+   */
+  public static async reconcileStructured(
+    scrape: ScrapeResult,
+    agentModuleId?: string,
+    auditId?: string
+  ): Promise<StructuredAuditContract> {
+    const rawOutput = await this.reconcile(scrape, agentModuleId);
+    return AIStructuredContractAdapter.toStructuredContract(rawOutput, auditId);
   }
 
   /**

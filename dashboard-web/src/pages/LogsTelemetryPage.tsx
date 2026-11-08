@@ -17,6 +17,11 @@ import {
   AlertTriangle,
   Info,
   X,
+  DollarSign,
+  ShieldAlert,
+  Scale,
+  History,
+  ServerCrash,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
@@ -63,12 +68,24 @@ export const LogsTelemetryPage: React.FC = () => {
     totalTokensSaved: 0,
     savingsPercentage: 0,
     averageLatencyMs: 0,
+    minLatencyMs: 0,
+    maxLatencyMs: 0,
+    p95LatencyMs: 0,
     totalAudits: 0,
     activeAiModel: 'gemini',
+    totalCostUsd: 0,
+    totalCostBrl: 0,
+    averageCostPerAuditUsd: 0,
+    averageCostPerAuditBrl: 0,
+    evidenceMissingRate: 0,
+    invalidCitationsRate: 0,
+    humanAiDivergenceRate: 0,
   };
 
   const audits = telemetry?.auditsTelemetry || [];
   const sourcesDistribution = telemetry?.sourcesDistribution || [];
+  const modelFailureRates = telemetry?.modelFailureRates || [];
+  const promptVersionHistory = telemetry?.promptVersionHistory || [];
   const logs = telemetry?.systemLogs || [];
 
   // Paginação dos Registros de Auditoria
@@ -199,6 +216,96 @@ export const LogsTelemetryPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Linha 2 de KPIs: Custo Financeiro, Confiabilidade de Guardrails e Divergência Humana */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+        {/* Custo Médio e Total por Auditoria */}
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+              Custo por Auditoria
+            </span>
+            <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+              <DollarSign className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className="text-2xl font-extrabold text-emerald-400">
+              R$ {metrics.averageCostPerAuditBrl?.toFixed(4) || '0.0000'}
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">
+              ($ {metrics.averageCostPerAuditUsd?.toFixed(6) || '0.000000'})
+            </span>
+          </div>
+          <div className="mt-3 text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 flex justify-between">
+            <span>Total: R$ {metrics.totalCostBrl?.toFixed(2) || '0.00'}</span>
+            <span>(${metrics.totalCostUsd?.toFixed(4) || '0.0000'})</span>
+          </div>
+        </div>
+
+        {/* Taxa de Respostas sem Evidências */}
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+              Taxa Sem Evidências
+            </span>
+            <div className="h-8 w-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center">
+              <ShieldAlert className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className={`text-3xl font-extrabold ${metrics.evidenceMissingRate > 5 ? 'text-amber-400' : 'text-emerald-400'}`}>
+              {metrics.evidenceMissingRate || 0}%
+            </span>
+            <span className="text-xs text-slate-500">alucinação fática</span>
+          </div>
+          <div className="mt-3 text-[11px] text-slate-400 border-t border-slate-800/80 pt-2">
+            Citações forjadas interceptadas pelo Guardrails
+          </div>
+        </div>
+
+        {/* Taxa de Citações Inválidas */}
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+              Citações Inválidas
+            </span>
+            <div className="h-8 w-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center">
+              <AlertTriangle className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className={`text-3xl font-extrabold ${metrics.invalidCitationsRate > 5 ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {metrics.invalidCitationsRate || 0}%
+            </span>
+            <span className="text-xs text-slate-500">normas fora do escopo</span>
+          </div>
+          <div className="mt-3 text-[11px] text-slate-400 border-t border-slate-800/80 pt-2">
+            Normas revogadas ou inexistentes expurgadas
+          </div>
+        </div>
+
+        {/* Taxa de Divergência Humano vs IA */}
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+              Divergência Humano vs IA
+            </span>
+            <div className="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+              <Scale className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className="text-3xl font-extrabold text-indigo-400">
+              {metrics.humanAiDivergenceRate || 0}%
+            </span>
+            <span className="text-xs text-slate-500">revisões manuais</span>
+          </div>
+          <div className="mt-3 text-[11px] text-slate-400 border-t border-slate-800/80 pt-2">
+            Discordâncias ou ajustes feitos por auditores
+          </div>
+        </div>
+      </div>
+
       {/* Painel de Fontes & Arquivos Utilizados nas Auditorias */}
       <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg">
         <div className="flex items-center justify-between mb-4">
@@ -241,6 +348,125 @@ export const LogsTelemetryPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Grid: Taxa de Falhas por Modelo & Histórico de Prompts e Versões */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Painel de Taxa de Falhas por Modelo de IA */}
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <ServerCrash className="h-5 w-5 text-rose-400" />
+                <span>Taxa de Falhas & Resiliência por Modelo</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Métricas do Circuit Breaker e contingência automática por provedor de IA
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="text-[11px] uppercase tracking-wider font-bold text-slate-400 border-b border-slate-800 bg-slate-900/50">
+                <tr>
+                  <th className="py-2.5 px-3">Modelo / Provedor</th>
+                  <th className="py-2.5 px-3">Invocações</th>
+                  <th className="py-2.5 px-3">Falhas</th>
+                  <th className="py-2.5 px-3">Taxa de Erro</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-medium">
+                {modelFailureRates.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-4 text-center text-slate-500">
+                      Nenhum dado de falha registrado.
+                    </td>
+                  </tr>
+                ) : (
+                  modelFailureRates.map((m: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-slate-900/40">
+                      <td className="py-2.5 px-3 font-mono font-semibold text-white capitalize">
+                        {m.model}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-slate-300">
+                        {m.invocations}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-rose-400">
+                        {m.failures}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${
+                          m.failureRate > 10
+                            ? 'bg-rose-950/60 text-rose-300 border border-rose-800/40'
+                            : 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/40'
+                        }`}>
+                          {m.failureRate}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Histórico de Prompts e Versões dos Agentes */}
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <History className="h-5 w-5 text-teal-400" />
+                <span>Histórico de Prompts & Versões dos Agentes</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Versionamento de instruções comportamentais e marcos deontológicos
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="text-[11px] uppercase tracking-wider font-bold text-slate-400 border-b border-slate-800 bg-slate-900/50">
+                <tr>
+                  <th className="py-2.5 px-3">Agente</th>
+                  <th className="py-2.5 px-3">Versão</th>
+                  <th className="py-2.5 px-3">Marco</th>
+                  <th className="py-2.5 px-3">Prompt Atual</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-medium">
+                {promptVersionHistory.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-4 text-center text-slate-500">
+                      Nenhum módulo de agente registrado.
+                    </td>
+                  </tr>
+                ) : (
+                  promptVersionHistory.slice(0, 5).map((p: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-slate-900/40">
+                      <td className="py-2.5 px-3 font-semibold text-white">
+                        {p.agentName}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded bg-slate-800 text-teal-300 font-mono text-[10px]">
+                          v{p.version}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-[11px] text-slate-400 truncate max-w-[120px]">
+                        {p.framework}
+                      </td>
+                      <td className="py-2.5 px-3 text-[11px] text-slate-400 truncate max-w-[180px]" title={p.promptSnippet}>
+                        {p.promptSnippet}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       {/* Tabela de Telemetria por Auditoria (Tokens & Fontes Utilizadas) */}
       <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg">
         <div className="flex items-center justify-between mb-5">
@@ -267,12 +493,13 @@ export const LogsTelemetryPage: React.FC = () => {
                 <th className="py-3 px-4">Economia</th>
                 <th className="py-3 px-4">Fontes / Normas Utilizadas</th>
                 <th className="py-3 px-4">Latência</th>
+                <th className="py-3 px-4">Custo</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium">
               {audits.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-500 text-xs">
+                  <td colSpan={9} className="py-8 text-center text-slate-500 text-xs">
                     Nenhum registro de telemetria processado até o momento.
                   </td>
                 </tr>
@@ -329,6 +556,9 @@ export const LogsTelemetryPage: React.FC = () => {
                     </td>
                     <td className="py-3 px-4 font-mono text-slate-400">
                       {a.executionTimeMs}ms
+                    </td>
+                    <td className="py-3 px-4 font-mono font-semibold text-emerald-400">
+                      R$ {a.costBrl ? a.costBrl.toFixed(4) : '0.0000'}
                     </td>
                   </tr>
                 ))
