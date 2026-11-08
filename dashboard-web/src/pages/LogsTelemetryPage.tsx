@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Info,
+  X,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
@@ -27,6 +28,12 @@ export const LogsTelemetryPage: React.FC = () => {
   const [livePolling, setLivePolling] = useState(true);
   const [logFilter, setLogFilter] = useState('ALL');
   const [logSearch, setLogSearch] = useState('');
+  const [selectedSourcesAudit, setSelectedSourcesAudit] = useState<{
+    clientName: string;
+    targetUrl: string;
+    aiModelUsed: string;
+    sources: string[];
+  } | null>(null);
 
   const fetchTelemetry = async (silent = false) => {
     try {
@@ -295,22 +302,30 @@ export const LogsTelemetryPage: React.FC = () => {
                     <td className="py-3 px-4 font-mono text-emerald-400">
                       +{a.tokensSaved.toLocaleString('pt-BR')}
                     </td>
-                    <td className="py-3 px-4 max-w-sm">
-                      <div className="flex flex-wrap gap-1">
-                        {a.sourcesUsed && a.sourcesUsed.length > 0 ? (
-                          a.sourcesUsed.map((s: string, idx: number) => (
-                            <span
-                              key={idx}
-                              className="px-2 py-0.5 rounded bg-teal-950/70 border border-teal-800/60 text-[10px] text-teal-300 font-mono"
-                              title={s}
-                            >
-                              📄 {s}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-[10px] text-slate-500 italic">Nenhuma fonte vinculada</span>
-                        )}
-                      </div>
+                    <td className="py-3 px-4">
+                      {a.sourcesUsed && a.sourcesUsed.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedSourcesAudit({
+                              clientName: a.clientName,
+                              targetUrl: a.targetUrl,
+                              aiModelUsed: a.aiModelUsed,
+                              sources: a.sourcesUsed,
+                            })
+                          }
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-teal-950/70 hover:bg-teal-900 border border-teal-800/60 text-teal-300 hover:text-white transition text-xs font-semibold group cursor-pointer shadow-sm"
+                          title="Clique para abrir e inspecionar todas as normas/arquivos utilizados"
+                        >
+                          <BookOpen className="h-3.5 w-3.5 text-teal-400 group-hover:scale-110 transition-transform" />
+                          <span className="font-mono">{a.sourcesUsed.length}</span>
+                          <span className="text-[10px] text-teal-400/80 font-sans">
+                            {a.sourcesUsed.length === 1 ? 'norma' : 'normas'}
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 italic">Nenhuma fonte vinculada</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 font-mono text-slate-400">
                       {a.executionTimeMs}ms
@@ -542,6 +557,92 @@ export const LogsTelemetryPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal Dialog: Detalhamento de Normas e Fontes Utilizadas */}
+      {selectedSourcesAudit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#0b1329] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-slate-900/60">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400">
+                  <BookOpen className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Fontes & Normas Regulatórias Utilizadas</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800/60">
+                      {selectedSourcesAudit.sources.length} arquivos
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {selectedSourcesAudit.clientName} &bull; Modelo:{' '}
+                    <span className="text-purple-300 font-mono font-semibold">
+                      {selectedSourcesAudit.aiModelUsed}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedSourcesAudit(null)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                title="Fechar modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Content - Listagem de Arquivos/Normas */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-2.5 max-h-[55vh]">
+              <div className="text-xs text-slate-400 mb-3 bg-slate-900/40 p-3 rounded-xl border border-slate-800/60">
+                Estas normas e resoluções foram recuperadas dinamicamente da collection{' '}
+                <code className="text-teal-300 font-mono">scraped_pages</code> no MongoDB e injetadas no
+                contexto do modelo de IA para reconciliação do veredito desta auditoria.
+              </div>
+
+              {selectedSourcesAudit.sources.map((src, index) => {
+                const isRevogado = src.toLowerCase().includes('revogad');
+                return (
+                  <div
+                    key={index}
+                    className="p-3 bg-slate-900/70 hover:bg-slate-900 border border-slate-800/80 rounded-xl flex items-start justify-between gap-3 transition"
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <span className="text-sm mt-0.5">📄</span>
+                      <div className="min-w-0">
+                        <span className="font-semibold text-white text-xs block break-words">
+                          {src}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">
+                          Arquivo #{index + 1} &bull; Referência Oficial da Auditoria
+                        </span>
+                      </div>
+                    </div>
+                    {isRevogado && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-rose-950 text-rose-400 border border-rose-800/50 shrink-0">
+                        REVOGADO
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between">
+              <span className="text-xs text-slate-400 font-mono truncate max-w-[380px]" title={selectedSourcesAudit.targetUrl}>
+                Alvo: {selectedSourcesAudit.targetUrl}
+              </span>
+              <button
+                onClick={() => setSelectedSourcesAudit(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold transition"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
