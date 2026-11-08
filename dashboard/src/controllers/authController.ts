@@ -1,10 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { env } from '../config/env.js';
 import { Role } from '@prisma/client';
+import { EmailService } from '../services/emailService.js';
 
 const registerSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -21,6 +23,19 @@ const loginSchema = z.object({
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Senha atual é obrigatória'),
+  newPassword: z.string().min(8, 'Nova senha deve ter pelo menos 8 caracteres'),
+});
+
+const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token é obrigatório'),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email('Email inválido'),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token de recuperação é obrigatório'),
   newPassword: z.string().min(8, 'Nova senha deve ter pelo menos 8 caracteres'),
 });
 
@@ -118,19 +133,17 @@ export class AuthController {
         return;
       }
 
-      const tokenPayload = {
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-        clientId: user.clientId,
-      };
+      const { token, refreshToken } = AuthController.generateTokens(user);
 
-      const token = jwt.sign(tokenPayload, env.JWT_SECRET, {
-        expiresIn: env.JWT_EXPIRES_IN as any,
+      // Salva o refresh token no usuário
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { refreshToken },
       });
 
       res.status(200).json({
         token,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -148,6 +161,168 @@ export class AuthController {
               }
             : null,
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Helper para emissão de Access Token (1h) e Refresh Token (7d)
+   */
+  public static generateTokens(user: { id: string; email: string; role: Role; clientId?: string | null }) {
+    const payload = {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      clientId: user.clientId || null,
+    };
+
+    const token = jwt.sign(payload, env.JWT_SECRET, {
+      expiresIn: '1h', // Estritamente 1 hora conforme Atividade 1
+    });
+
+    const refreshToken = jwt.sign(
+      { userId: user.id, type: 'refresh' },
+      env.JWT_REFRESH_SECRET,
+      { expiresIn: env.JWT_REFRESH_EXPIRES_IN as any }
+    );
+
+    return { token, refreshToken };
+  }
+
+  /**
+   * Renovação de Access Token via Refresh Token com rotação de segurança
+   */
+  public static async refreshToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tokenInput = req.body.refreshToken || req.headers['x-refresh-token'];
+      const { refreshToken } = refreshTokenSchema.parse({ refreshToken: tokenInput });
+
+      let decoded: any;
+      try {
+        decoded = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET);
+      } catch (err: any) {
+        res.status(401).json({
+          error: 'Refresh token expirado ou inválido. Efetue login novamente.',
+          code: 'INVALID_REFRESH_TOKEN',
+        });
+        return;
+      }
+
+      if (!decoded || !decoded.userId || decoded.type !== 'refresh') {
+        res.status(401).json({
+          error: 'Refresh token malformado.',
+          code: 'MALFORMED_REFRESH_TOKEN',
+        });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+      });
+
+      if (!user || user.refreshToken !== refreshToken) {
+        res.status(401).json({
+          error: 'Refresh token revogado ou substituído. Efetue login novamente.',
+          code: 'REVOKED_REFRESH_TOKEN',
+        });
+        return;
+      }
+
+      // Rotação de tokens: emite novo access token (1h) e novo refresh token (7d)
+      const newTokens = AuthController.generateTokens(user);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { refreshToken: newTokens.refreshToken },
+      });
+
+      res.status(200).json({
+        token: newTokens.token,
+        refreshToken: newTokens.refreshToken,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Solicitação de recuperação de senha via e-mail transacional (Resend)
+   */
+  public static async forgotPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { email } = forgotPasswordSchema.parse(req.body);
+
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (user) {
+        // Gera token aleatório de 32 bytes (64 caracteres hex)
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hora de validade
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            resetPasswordToken: resetToken,
+            resetPasswordExpires: resetExpires,
+          },
+        });
+
+        // Dispara e-mail via Resend
+        await EmailService.sendPasswordResetEmail(user.email, resetToken, user.name);
+      }
+
+      // Resposta genérica para mitigar enumeração de contas
+      res.status(200).json({
+        message: 'Se o e-mail informado estiver cadastrado em nosso sistema, as instruções para redefinição foram enviadas.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Redefinição de senha utilizando o token recebido por e-mail
+   */
+  public static async resetPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { token, newPassword } = resetPasswordSchema.parse(req.body);
+
+      const user = await prisma.user.findFirst({
+        where: {
+          resetPasswordToken: token,
+          resetPasswordExpires: {
+            gt: new Date(),
+          },
+        },
+      });
+
+      if (!user) {
+        res.status(400).json({
+          error: 'Token de recuperação inválido ou expirado. Solicite um novo link.',
+          code: 'INVALID_OR_EXPIRED_RESET_TOKEN',
+        });
+        return;
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+
+      // Atualiza senha, limpa tokens de reset e invalida o refresh token anterior
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          resetPasswordToken: null,
+          resetPasswordExpires: null,
+          refreshToken: null,
+        },
+      });
+
+      res.status(200).json({
+        message: 'Senha redefinida com sucesso! Você já pode acessar a plataforma com suas novas credenciais.',
       });
     } catch (error) {
       next(error);

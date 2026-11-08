@@ -134,6 +134,8 @@ export class AIStructuredContractAdapter {
       aiModelUsed: 'gemini-structured-contract',
       groundingScore: Math.round(contract.confidence * 100),
       hallucinationRisk: contract.confidence >= 0.9 ? 'NONE' : contract.confidence >= 0.75 ? 'LOW' : 'MEDIUM',
+      guardrailsApplied: contract.findings.some((f) => f.requires_human_review),
+      hallucinationsInterceptedCount: 0,
     };
   }
 }

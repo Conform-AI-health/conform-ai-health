@@ -3,6 +3,8 @@ import axios from 'axios';
 import { prisma } from '../config/prisma.js';
 import { env } from '../config/env.js';
 import { ScraperService } from './scraperService.js';
+import { CircuitBreaker } from '../shared/circuitBreaker.js';
+import { Bulkhead } from '../shared/bulkhead.js';
 
 export interface FirecrawlScrapeResult {
   markdown: string;
@@ -16,6 +18,22 @@ export interface FirecrawlScrapeResult {
 }
 
 export class FirecrawlService {
+  // Padrão de Resiliência: Circuit Breaker para chamadas de scraping externo
+  public static firecrawlCircuitBreaker = new CircuitBreaker({
+    name: 'FirecrawlScraping',
+    failureThreshold: 3,
+    resetTimeoutMs: 20000,
+    successThreshold: 2,
+  });
+
+  // Padrão de Resiliência: Bulkhead para controle de concorrência e isolamento
+  public static scrapingBulkhead = new Bulkhead({
+    name: 'ScrapingPool',
+    maxConcurrent: 8,
+    maxQueue: 30,
+    timeoutMs: 30000,
+  });
+
   /**
    * Executa a extração exclusiva de URL via API do Firecrawl com conversão para Markdown,
    * cálculo de integridade criptográfica SHA-256 e persistência no MongoDB (module_scrape_data).
@@ -25,23 +43,27 @@ export class FirecrawlService {
     let markdown = '';
     let source: 'FIRECRAWL_API' | 'FIRECRAWL_FALLBACK_ENGINE' = 'FIRECRAWL_FALLBACK_ENGINE';
 
-    // 1. Scraping Exclusivo via Firecrawl API (se chave informada)
+    // 1. Scraping Exclusivo via Firecrawl API com proteção de Circuit Breaker e Bulkhead
     if (firecrawlApiKey && firecrawlApiKey !== 'mock-key' && !firecrawlApiKey.startsWith('mock')) {
       try {
         console.log(`🔥 [FirecrawlService] Disparando scraping via Firecrawl API para: ${url}`);
-        const response = await axios.post(
-          'https://api.firecrawl.dev/v1/scrape',
-          {
-            url,
-            formats: ['markdown'],
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${firecrawlApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            timeout: 30000,
-          }
+        const response = await this.scrapingBulkhead.execute(() =>
+          this.firecrawlCircuitBreaker.execute(() =>
+            axios.post(
+              'https://api.firecrawl.dev/v1/scrape',
+              {
+                url,
+                formats: ['markdown'],
+              },
+              {
+                headers: {
+                  Authorization: `Bearer ${firecrawlApiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                timeout: 30000,
+              }
+            )
+          )
         );
 
         if (response.data?.success && (response.data?.data?.markdown || response.data?.markdown)) {
