@@ -224,12 +224,50 @@ export function startAuditWorker() {
   return worker;
 }
 
-// Executar isoladamente se chamado via CLI ou Docker
+/**
+ * Encerramento gracioso (Graceful Shutdown) do Worker BullMQ e recursos de rede
+ */
+export async function shutdownWorker(signal: string = 'SIGTERM'): Promise<void> {
+  console.log(`[AuditWorker] Sinal ${signal} detectado. Iniciando shutdown gracioso...`);
+  try {
+    if (activeWorkerInstance) {
+      await activeWorkerInstance.close();
+      console.log('[AuditWorker] Fila BullMQ finalizada sem interrupção abrupta de jobs.');
+      activeWorkerInstance = null;
+    }
+    if (healthServerInstance) {
+      await new Promise<void>((resolve) => {
+        healthServerInstance!.close(() => {
+          console.log('[AuditWorker] Servidor de métricas/health encerrado.');
+          resolve();
+        });
+      });
+      healthServerInstance = null;
+    }
+    if (typeof (prisma as any).$disconnect === 'function') {
+      await prisma.$disconnect();
+      console.log('[AuditWorker] Conexão Prisma finalizada.');
+    }
+  } catch (err: any) {
+    console.error(`[AuditWorker] Erro durante shutdown gracioso: ${err.message}`);
+  }
+}
+
+// Listeners de encerramento do processo quando executado isoladamente
 if (
   process.argv[1]?.includes('worker') ||
   process.env.RUN_WORKER === 'true' ||
   process.env.npm_lifecycle_event === 'worker'
 ) {
+  process.on('SIGTERM', async () => {
+    await shutdownWorker('SIGTERM');
+    process.exit(0);
+  });
+  process.on('SIGINT', async () => {
+    await shutdownWorker('SIGINT');
+    process.exit(0);
+  });
+
   startAuditWorker();
   console.log('🚀 Worker de auditoria rodando em background com probe de saúde e métricas...');
 }

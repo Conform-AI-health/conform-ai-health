@@ -19,6 +19,7 @@ vi.mock('../config/prisma.js', () => ({
     client: {
       findUnique: vi.fn(),
     },
+    $disconnect: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -32,6 +33,7 @@ vi.mock('../lib/prisma.js', () => ({
     client: {
       findUnique: vi.fn(),
     },
+    $disconnect: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -387,6 +389,13 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
         'Clínica Exemplo Dermatologia',
         mockReport
       );
+    });
+  });
+
+  describe('Resiliência Operacional: Graceful Shutdown do Worker', () => {
+    it('deve executar shutdownWorker de forma graciosa sem lançar exceções', async () => {
+      const { shutdownWorker } = await import('../worker.js');
+      await expect(shutdownWorker('SIGTERM')).resolves.not.toThrow();
     });
   });
 });
