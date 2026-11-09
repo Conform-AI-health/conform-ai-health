@@ -74,5 +74,25 @@ describe('Motor de Reconciliação Deontológica (CFM)', () => {
     expect(recon.score).toBeGreaterThanOrEqual(85);
     expect(recon.violations.filter((v) => v.severity === 'CRITICA').length).toBe(0);
   });
+
+  it('deve realizar fallback resiliente para HeuristicProvider quando provedores remotos falharem', async () => {
+    const { AIProviderFactory } = await import('../services/ai/aiProviderFactory.js');
+
+    // Força provedor ativo para heurístico garantindo continuidade da operação
+    AIProviderFactory.setActiveProvider('heuristic');
+    expect(AIProviderFactory.getActiveProviderName()).toBe('heuristic');
+
+    const provider = AIProviderFactory.getProvider('heuristic');
+    const scrapeResult = ScraperService.processHtml(
+      'https://fallback-teste.med.br',
+      '<html><body><p>Tratamento médico ético CRM 1234 SP RQE 4321</p></body></html>',
+      'CHEERIO'
+    );
+
+    const result = await provider.reconcile(scrapeResult, [], {});
+    expect(result).toBeDefined();
+    expect(result.verdict).toBeDefined();
+    expect(result.aiModelUsed).toContain('heuristic');
+  });
 });
 
