@@ -85,6 +85,7 @@ jobs:
           tags: |
             ghcr.io/${{ env.REPO_LC }}/dashboard-api:latest
             ghcr.io/${{ env.REPO_LC }}/dashboard-api:${{ github.sha }}
+            ghcr.io/${{ env.REPO_LC }}/dashboard-api:1.0.0
 
       - name: Build & Push Imagem Frontend Web
         uses: docker/build-push-action@v5
@@ -95,6 +96,7 @@ jobs:
           tags: |
             ghcr.io/${{ env.REPO_LC }}/dashboard-web:latest
             ghcr.io/${{ env.REPO_LC }}/dashboard-web:${{ github.sha }}
+            ghcr.io/${{ env.REPO_LC }}/dashboard-web:1.0.0
 
   # -------------------------------------------------------------
   # Job 3: Deploy Automatizado Seguro na AWS EC2
@@ -127,21 +129,22 @@ jobs:
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: latest
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
           username: ${{ secrets.AWS_EC2_USER }} 
           key: ${{ secrets.AWS_EC2_SSH_KEY }}
-          envs: GHCR_USER,GHCR_TOKEN
+          envs: GHCR_USER,GHCR_TOKEN,APP_VERSION
           script: |
             cd /opt/conformia
             echo "🔑 Autenticando no GitHub Container Registry (GHCR)..."
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             echo "📥 Atualizando imagens no servidor de produção..."
-            docker compose pull
+            APP_VERSION=latest docker compose pull || true
             echo "🔄 Reiniciando containers da ConformIA..."
-            docker compose up -d --remove-orphans --no-build
+            APP_VERSION=latest docker compose up -d --remove-orphans
             echo "⏳ Aguardando inicialização e estabilização dos serviços..."
-            sleep 10
+            sleep 15
             echo "🩺 Verificando integridade dos serviços..."
-            curl --fail http://localhost/health || curl --fail http://localhost:3000/health || curl --fail http://localhost:3333/health || exit 1
+            curl --fail http://localhost:3333/health || curl --fail http://localhost:3000/health || curl --fail http://localhost/health || exit 1
             echo "✅ Deploy concluído com sucesso!"
