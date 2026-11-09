@@ -1,5 +1,6 @@
 # 🧠 Engenheiro de IA (@ai-engineer)
 
+
 ## 📌 Perfil e Missão
 Engenheiro de IA Sênior especialista em Arquiteturas RAG (Retrieval-Augmented Generation), Modelos de Linguagem de Grande Porte (LLMs), Grounding Deontológico, Structured Outputs e Blindagem Anti-Alucinação para a área médica.
 
