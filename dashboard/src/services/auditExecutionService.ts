@@ -3,6 +3,7 @@ import { FirecrawlService } from './firecrawlService.js';
 import { ReconciliationEngine } from './reconciliationEngine.js';
 import { NormsResolver } from './normsResolver.js';
 import { EmailService } from './emailService.js';
+import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
 import { ExtractionMode } from '@prisma/client';
 
 export interface ExecuteAuditParams {
@@ -167,6 +168,10 @@ export class AuditExecutionService {
         },
       }).catch(() => {});
 
+      // Gera Contrato Estruturado de Alta Confiabilidade
+      const structuredContract = AIStructuredContractAdapter.toStructuredContract(recon, auditReportId);
+      const requiresHumanReview = structuredContract.findings.some((f) => f.requires_human_review);
+
       // 6. Persistência Transacional no MongoDB (AuditReport e Violations)
       await prisma.$transaction(async (tx) => {
         await tx.auditReport.update({
@@ -176,6 +181,13 @@ export class AuditExecutionService {
             verdict: recon.verdict,
             score: recon.score,
             summary: recon.summary,
+            riskLevel: structuredContract.risk_level,
+            confidence: structuredContract.confidence,
+            structuredContract: JSON.stringify(structuredContract),
+            groundingScore: recon.groundingScore ?? 100,
+            hallucinationRisk: recon.hallucinationRisk ?? 'NONE',
+            guardrailsApplied: recon.guardrailsApplied ?? false,
+            requiresHumanReview,
             rawContent: firecrawlResult.rawContent,
             cleanMarkdown: firecrawlResult.markdown,
             tokensSaved: Math.max(0, scrapeAdapter.tokensEstimatedRaw - scrapeAdapter.tokensEstimatedClean),

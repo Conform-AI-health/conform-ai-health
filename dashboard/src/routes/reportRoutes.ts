@@ -7,6 +7,7 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', ReportController.list);
+router.get('/:id/contract', ReportController.getContract);
 router.get('/:id', ReportController.getById);
 router.get('/:id/export', ReportController.exportMarkdown);
 router.patch('/:id/violations/:violationId/resolve', ReportController.resolveViolation);
