@@ -39,7 +39,7 @@ flowchart TD
 ---
 
 ## ⚙️ Estágio 2: Arquitetura & Codificação Full-Stack
-> **Governança Mandatória:** Toda implementação técnica deve respeitar incondicionalmente as **[Regras Arquiteturais Corporativas](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/.agents/rules/architecture-rules.md)** (Regras 1 a 6: Desacoplamento de IA, Resiliência, Contratos Estruturados, RAG Deontológico, Observabilidade e DevSecOps).
+> **Governança Mandatória:** Toda implementação técnica deve respeitar incondicionalmente as **[Regras Arquiteturais Corporativas](./architecture-rules.md)** (Regras 1 a 6: Desacoplamento de IA, Resiliência, Contratos Estruturados, RAG Deontológico, Observabilidade e DevSecOps).
 
 - **Agentes Participantes:**
   - `@architect` (`.agents/agents/architect.md` | Skill: `architecture-review`): Desenho de arquitetura, contratos de saída estruturados (`StructuredAuditContract`), padrões de resiliência (**Circuit Breaker** e **Bulkhead**), e modelos de dados Prisma/MongoDB.

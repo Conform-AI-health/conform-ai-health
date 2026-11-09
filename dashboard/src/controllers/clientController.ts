@@ -352,6 +352,14 @@ export class ClientController {
     try {
       const { id } = req.params;
 
+      if (req.user?.role === Role.CLIENT && req.user.clientId !== id) {
+        res.status(403).json({
+          error: 'Acesso negado. Você só tem permissão para visualizar dados extraídos da sua própria clínica.',
+          code: 'TENANT_FORBIDDEN',
+        });
+        return;
+      }
+
       const items = await prisma.clientScrapedData.findMany({
         where: { clientId: id },
         orderBy: { createdAt: 'desc' },

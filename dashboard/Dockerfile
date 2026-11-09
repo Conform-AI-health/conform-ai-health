@@ -20,6 +20,7 @@ COPY src ./src
 # Gera o client do Prisma e compila TypeScript
 RUN npx prisma generate
 RUN npm run build
+RUN npm prune --production
 
 # ==========================================
 # Estágio 2: Runtime Mínimo e Seguro
@@ -39,6 +40,6 @@ COPY --chown=node:node --from=builder /app/dist ./dist
 
 USER node
 
-EXPOSE 3000
+EXPOSE 3000 3001
 
 CMD ["node", "dist/index.js"]

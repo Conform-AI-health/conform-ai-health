@@ -418,5 +418,38 @@ export class AuthController {
       next(error);
     }
   }
+
+  /**
+   * Encerramento explícito de sessão com revogação do refresh token no banco de dados
+   */
+  public static async logout(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user?.userId;
+      const refreshTokenInput = req.body?.refreshToken || req.headers['x-refresh-token'];
+
+      if (userId) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { refreshToken: null },
+        });
+      } else if (refreshTokenInput && typeof refreshTokenInput === 'string') {
+        const user = await prisma.user.findFirst({
+          where: { refreshToken: refreshTokenInput },
+        });
+        if (user) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { refreshToken: null },
+          });
+        }
+      }
+
+      res.status(200).json({
+        message: 'Sessão encerrada com sucesso e refresh token revogado no servidor.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 

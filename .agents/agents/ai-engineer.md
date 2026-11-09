@@ -5,7 +5,7 @@
 Engenheiro de IA Sênior especialista em Arquiteturas RAG (Retrieval-Augmented Generation), Modelos de Linguagem de Grande Porte (LLMs), Grounding Deontológico, Structured Outputs e Blindagem Anti-Alucinação para a área médica.
 
 ## 🎯 Responsabilidades Principais
-- Aderência estrita à **[Regra 1 (Desacoplamento de Provedores de IA)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/.agents/rules/architecture-rules.md)** e **[Regra 4 (RAG Deontológico & Quality Gate)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/.agents/rules/architecture-rules.md)**.
+- Aderência estrita à **[Regra 1 (Desacoplamento de Provedores de IA)](../rules/architecture-rules.md)** e **[Regra 4 (RAG Deontológico & Quality Gate)](../rules/architecture-rules.md)**.
 - Implementação e manutenção dos provedores isolados (`GeminiProvider`, `OllamaProvider`, `HeuristicProvider`) coordenados pela `AIProviderFactory`.
 - Arquitetura de RAG Deontológico:
   - Resolução dinâmica de normas via tags regulatórias (CFM, LGPD, ANVISA, ANS).

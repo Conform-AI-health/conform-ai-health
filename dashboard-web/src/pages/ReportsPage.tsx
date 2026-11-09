@@ -11,6 +11,10 @@ import {
   Clock,
   Sparkles,
   Building,
+  ShieldAlert,
+  AlertTriangle,
+  UserCheck,
+  Activity,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
@@ -72,8 +76,14 @@ export const ReportsPage: React.FC = () => {
   const handleOpenDetails = async (id: string) => {
     try {
       setLoadingDetails(true);
-      const res = await api.get(`/reports/${id}`);
-      setSelectedReport(res.data);
+      const [resReport, resContract] = await Promise.all([
+        api.get(`/reports/${id}`),
+        api.get(`/reports/${id}/contract`).catch(() => ({ data: null })),
+      ]);
+      setSelectedReport({
+        ...resReport.data,
+        contract: resContract.data,
+      });
     } catch (err: any) {
       toast.error(`Erro ao abrir detalhes: ${err.message}`);
     } finally {
@@ -295,8 +305,28 @@ export const ReportsPage: React.FC = () => {
             </div>
 
             <div className="mt-4 space-y-4">
+              {/* Alerta de Governança Médica / Revisão Humana Obrigatória */}
+              {selectedReport.contract?.requires_human_review && (
+                <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3 animate-in fade-in duration-300">
+                  <ShieldAlert className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <span>Intervenção Médica Mandatória (CFM)</span>
+                      </h4>
+                      <span className="text-[10px] font-mono px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded-md border border-amber-500/40">
+                        {selectedReport.contract.audit_id || 'AUD-CFM'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-amber-200/90 mt-1 leading-relaxed">
+                      Este laudo contém apontamentos com potencial impacto disciplinar que exigem validação e assinatura por médico auditor ou Responsável Técnico (CRM/RQE) antes de conclusões definitivas.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Badges de Topo */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Veredito</span>
                   <span className="text-sm font-bold text-emerald-400 block mt-1">
@@ -310,9 +340,23 @@ export const ReportsPage: React.FC = () => {
                   </span>
                 </div>
                 <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Eficiência</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Nível de Risco</span>
+                  <span className={`text-sm font-bold block mt-1 ${
+                    selectedReport.contract?.risk_level === 'CRITICAL' || selectedReport.contract?.risk_level === 'HIGH'
+                      ? 'text-rose-400'
+                      : selectedReport.contract?.risk_level === 'MEDIUM'
+                      ? 'text-amber-400'
+                      : 'text-emerald-400'
+                  }`}>
+                    {selectedReport.contract?.risk_level || 'PADRÃO'}
+                  </span>
+                </div>
+                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Certeza do Modelo</span>
                   <span className="text-sm font-bold text-purple-400 block mt-1">
-                    {selectedReport.tokensSaved} tokens salvos
+                    {selectedReport.contract?.confidence
+                      ? `${Math.round(selectedReport.contract.confidence * 100)}%`
+                      : '95%'}
                   </span>
                 </div>
               </div>
@@ -331,30 +375,42 @@ export const ReportsPage: React.FC = () => {
                   Violações e Apontamentos ({selectedReport.violations?.length || 0})
                 </h3>
                 <div className="space-y-3">
-                  {selectedReport.violations?.map((v: any) => (
-                    <div
-                      key={v.id}
-                      className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-white">
-                          [{v.severity}] {v.normCode} — {v.normArticle}
-                        </span>
-                        {v.resolved && (
-                          <span className="text-[10px] text-emerald-400 font-bold">
-                            Regularizado
+                  {selectedReport.violations?.map((v: any, index: number) => {
+                    const matchedFinding = selectedReport.contract?.findings?.[index];
+                    const requiresReview = matchedFinding?.requires_human_review ?? (v.severity === 'CRITICA' || v.severity === 'GRAVE');
+                    return (
+                      <div
+                        key={v.id}
+                        className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl space-y-1.5"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-white">
+                            [{v.severity}] {v.normCode} — {v.normArticle}
                           </span>
-                        )}
+                          <div className="flex items-center gap-1.5">
+                            {requiresReview && (
+                              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                                <UserCheck className="h-3 w-3" />
+                                <span>Revisão Humana Mandatória</span>
+                              </span>
+                            )}
+                            {v.resolved && (
+                              <span className="text-[10px] text-emerald-400 font-bold">
+                                Regularizado
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          <span className="text-slate-300">Evidência:</span>{' '}
+                          <span className="italic">"{v.detectedText}"</span>
+                        </p>
+                        <p className="text-xs text-emerald-400 font-medium">
+                          <span className="text-slate-300">Recomendação:</span> {v.correctiveAdvice}
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-400">
-                        <span className="text-slate-300">Evidência:</span>{' '}
-                        <span className="italic">"{v.detectedText}"</span>
-                      </p>
-                      <p className="text-xs text-emerald-400 font-medium">
-                        <span className="text-slate-300">Recomendação:</span> {v.correctiveAdvice}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {(!selectedReport.violations || selectedReport.violations.length === 0) && (
                     <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl text-center">

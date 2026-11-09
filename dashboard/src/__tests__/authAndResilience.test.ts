@@ -19,6 +19,7 @@ vi.mock('../config/prisma.js', () => ({
     client: {
       findUnique: vi.fn(),
     },
+    $disconnect: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -32,6 +33,7 @@ vi.mock('../lib/prisma.js', () => ({
     client: {
       findUnique: vi.fn(),
     },
+    $disconnect: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -360,6 +362,30 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
         })
       );
     });
+
+    it('deve revogar refresh token e encerrar sessão no logout', async () => {
+      (prisma.user.update as any).mockResolvedValue({ id: 'user-002', refreshToken: null });
+
+      const req: any = {
+        user: { userId: 'user-002' },
+        body: {},
+        headers: {},
+      };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+
+      await AuthController.logout(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'user-002' },
+          data: { refreshToken: null },
+        })
+      );
+    });
   });
 
   describe('Notificação de Laudo Concluído via EmailService', () => {
@@ -387,6 +413,13 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
         'Clínica Exemplo Dermatologia',
         mockReport
       );
+    });
+  });
+
+  describe('Resiliência Operacional: Graceful Shutdown do Worker', () => {
+    it('deve executar shutdownWorker de forma graciosa sem lançar exceções', async () => {
+      const { shutdownWorker } = await import('../worker.js');
+      await expect(shutdownWorker('SIGTERM')).resolves.not.toThrow();
     });
   });
 });

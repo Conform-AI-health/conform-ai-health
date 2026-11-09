@@ -37,7 +37,7 @@ services:
   # Backend REST API (Node.js 20 + Express + Prisma)
   # -------------------------------------------------------------
   dashboard-api:
-    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:latest
+    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:${APP_VERSION:-1.0.0}
     build:
       context: ./dashboard
       dockerfile: Dockerfile
@@ -90,13 +90,16 @@ services:
   # Worker Assíncrono de Auditoria Deontológica (BullMQ)
   # -------------------------------------------------------------
   audit-worker:
-    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:latest
+    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:${APP_VERSION:-1.0.0}
     build:
       context: ./dashboard
       dockerfile: Dockerfile
     container_name: conformia-worker
     restart: unless-stopped
     command: ["node", "dist/worker.js"]
+    ports:
+      # Exposição da porta de saúde e telemetria Prometheus do Worker no loopback
+      - "127.0.0.1:${WORKER_HEALTH_PORT:-3001}:3001"
     environment:
       - NODE_ENV=production
       - PORT=3001
@@ -142,7 +145,7 @@ services:
   # Frontend SPA (Vite + React + Nginx Proxy)
   # -------------------------------------------------------------
   dashboard-web:
-    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-web:latest
+    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-web:${APP_VERSION:-1.0.0}
     build:
       context: ./dashboard-web
       dockerfile: Dockerfile

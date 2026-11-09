@@ -115,5 +115,35 @@ describe('Segurança & Isolamento Multi-Tenant (RBAC & Tenant Guards)', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('ClientController.listScrapedData deve bloquear usuário CLIENT ao tentar ler dados extraídos de outro tenant (403 Forbidden)', async () => {
+    const { ClientController } = await import('../controllers/clientController.js');
+
+    const req = {
+      user: {
+        userId: 'user-clinica-a',
+        email: 'admin@clinica-a.med.br',
+        role: Role.CLIENT,
+        clientId: 'client-id-clinica-a',
+      },
+      params: { id: 'client-id-clinica-b' },
+    } as unknown as Request;
+
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+
+    const next = vi.fn() as NextFunction;
+
+    await ClientController.listScrapedData(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'TENANT_FORBIDDEN',
+      })
+    );
+  });
 });
 
