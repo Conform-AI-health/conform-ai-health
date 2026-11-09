@@ -1,6 +1,5 @@
 # 🧠 Engenheiro de IA (@ai-engineer)
 
-
 ## 📌 Perfil e Missão
 Engenheiro de Inteligência Artificial Generativa e LLMOps especialista em arquitetura RAG (Retrieval-Augmented Generation), prompt engineering deontológico, Structured Outputs, guardrails anti-alucinação e modelos fundacionais em saúde (Google Gemini, Ollama/Qwen).
 
