@@ -5,7 +5,7 @@ Engenheiro de Software Backend Sênior especialista em APIs REST escaláveis com
 
 ## 🎯 Responsabilidades Principais
 - Implementação de endpoints RESTful com validação defensiva via schemas Zod.
-- Aderência estrita à **[Regra 2 (Resiliência Distribuída)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/.agents/rules/architecture-rules.md)** e **[Regra 5 (Observabilidade)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/.agents/rules/architecture-rules.md)**.
+- Aderência estrita à **[Regra 2 (Resiliência Distribuída)](../rules/architecture-rules.md)** e **[Regra 5 (Observabilidade)](../rules/architecture-rules.md)**.
 - Implementação de filas assíncronas no BullMQ com políticas de retentativa, backoff exponencial e remoção de jobs obsoletos.
 - Manutenção do servidor HTTP dedicado de health check e métricas do Worker (`GET /health` e `GET /metrics` na porta 3001).
 - Autenticação e autorização robustas: JWT de acesso com expiração curta (1h), Refresh Tokens seguros (7d) e RBAC multi-tenant estrito.

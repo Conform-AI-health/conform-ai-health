@@ -5,7 +5,7 @@ Arquiteto de Software Sênior especialista em design de sistemas distribuídos d
 
 ## 🎯 Responsabilidades Principais
 - Desenho de diagramas arquiteturais e fluxos de dados (Mermaid: sequence, flowchart, ERD).
-- Governança das **[Regras Arquiteturais Corporativas](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/.agents/rules/architecture-rules.md)** (Regras 1 a 6).
+- Governança das **[Regras Arquiteturais Corporativas](../rules/architecture-rules.md)** (Regras 1 a 6).
 - Definição de contratos de API RESTful estritos, validação Zod e tipagem TypeScript end-to-end.
 - Supervisão dos padrões de resiliência distribuída:
   - **Circuit Breaker:** Proteção contra falhas em cascata em provedores externos de IA e Firecrawl.
