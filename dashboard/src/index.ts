@@ -36,16 +36,43 @@ async function bootstrap() {
     }
   });
 
-  const shutdown = async () => {
-    console.log('\n🛑 Encerrando servidor HTTP gracefully...');
-    server.close(() => {
-      console.log('✅ Servidor HTTP finalizado.');
+  // INF-03: Graceful Shutdown Coordenado do Servidor HTTP, Agendador e Conexões de Banco
+  const shutdown = async (signal: string) => {
+    console.log(`\n🛑 Sinal ${signal} recebido. Encerrando servidor HTTP gracefully...`);
+
+    const forceExitTimeout = setTimeout(() => {
+      console.error('⚠️ Timeout de encerramento excedido (10s). Forçando finalização do processo.');
+      process.exit(1);
+    }, 10000);
+    forceExitTimeout.unref();
+
+    try {
+      await new Promise<void>((resolve) => {
+        server.close((err) => {
+          if (err) console.warn('Aviso ao fechar servidor HTTP:', err.message);
+          console.log('✅ Servidor HTTP finalizado.');
+          resolve();
+        });
+      });
+
+      const { prisma } = await import('./config/prisma.js');
+      if (typeof (prisma as any).$disconnect === 'function') {
+        await prisma.$disconnect();
+        console.log('✅ Conexão com MongoDB finalizada.');
+      }
+
+      clearTimeout(forceExitTimeout);
+      console.log('🚀 Finalização graciosa concluída com sucesso.');
       process.exit(0);
-    });
+    } catch (err: any) {
+      clearTimeout(forceExitTimeout);
+      console.error('Erro durante shutdown:', err.message);
+      process.exit(1);
+    }
   };
 
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 bootstrap().catch((err) => {

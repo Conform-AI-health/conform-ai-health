@@ -206,8 +206,9 @@ describe('🔬 Avaliação & Qualidade do Sistema RAG em Saúde (RAG Quality & E
 
       // A violação alucinada deve ter sido removida
       expect(result.sanitizedOutput.violations.length).toBe(0);
-      expect(result.sanitizedOutput.verdict).toBe('CONFORME');
-      expect(result.sanitizedOutput.score).toBe(100);
+      // AI-01: Quando todas as violações são alucinações, o veredito torna-se PARCIALMENTE_CONFORME (inconclusivo com revisão humana mandatória)
+      expect(result.sanitizedOutput.verdict).toBe('PARCIALMENTE_CONFORME');
+      expect(result.sanitizedOutput.score).toBeLessThanOrEqual(60);
       expect(result.sanitizedOutput.guardrailsApplied).toBe(true);
       expect(result.sanitizedOutput.hallucinationsInterceptedCount).toBe(1);
     });

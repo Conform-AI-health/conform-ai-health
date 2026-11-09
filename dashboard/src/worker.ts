@@ -2,6 +2,7 @@ import http from 'http';
 import { Worker, Job } from 'bullmq';
 import { getRedisConnection } from './config/redis.js';
 import { prisma } from './config/prisma.js';
+import { env } from './config/env.js';
 import { AuditExecutionService } from './services/auditExecutionService.js';
 import { AuditSchedulerService } from './services/auditSchedulerService.js';
 import { ExtractionMode } from '@prisma/client';
@@ -114,7 +115,29 @@ export function startWorkerHealthServer(port: number = Number(process.env.WORKER
       return;
     }
 
-    if (url === '/metrics') {
+    if (url === '/metrics' || url.startsWith('/metrics?')) {
+      // INF-02: Proteção de acesso ao endpoint de métricas operacionais com MONITORING_API_KEY
+      const monitoringKey = env.MONITORING_API_KEY;
+      if (monitoringKey && monitoringKey.trim().length > 0) {
+        const authHeader = req.headers.authorization;
+        const apiKeyHeader = req.headers['x-api-key'];
+        const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
+        const queryKey = parsedUrl.searchParams.get('key') || parsedUrl.searchParams.get('apiKey');
+
+        const providedKey = apiKeyHeader || queryKey || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
+
+        if (!providedKey || providedKey !== monitoringKey) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'Não autorizado. Chave de monitoramento inválida ou ausente.',
+              code: 'UNAUTHORIZED_METRICS_ACCESS',
+            })
+          );
+          return;
+        }
+      }
+
       try {
         const metrics = getWorkerMetrics();
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -225,10 +248,18 @@ export function startAuditWorker() {
 }
 
 /**
- * Encerramento gracioso (Graceful Shutdown) do Worker BullMQ e recursos de rede
+ * Encerramento gracioso (Graceful Shutdown) do Worker BullMQ e recursos de rede (INF-03)
  */
 export async function shutdownWorker(signal: string = 'SIGTERM'): Promise<void> {
   console.log(`[AuditWorker] Sinal ${signal} detectado. Iniciando shutdown gracioso...`);
+
+  // Timeout de segurança para evitar deadlocks caso conexões travem
+  const forceExitTimeout = setTimeout(() => {
+    console.error('[AuditWorker] Timeout de segurança de shutdown excedido (10s). Forçando encerramento.');
+    process.exit(1);
+  }, 10000);
+  forceExitTimeout.unref();
+
   try {
     if (activeWorkerInstance) {
       await activeWorkerInstance.close();
@@ -248,7 +279,10 @@ export async function shutdownWorker(signal: string = 'SIGTERM'): Promise<void> 
       await prisma.$disconnect();
       console.log('[AuditWorker] Conexão Prisma finalizada.');
     }
+    clearTimeout(forceExitTimeout);
+    console.log('[AuditWorker] Shutdown gracioso finalizado com sucesso.');
   } catch (err: any) {
+    clearTimeout(forceExitTimeout);
     console.error(`[AuditWorker] Erro durante shutdown gracioso: ${err.message}`);
   }
 }

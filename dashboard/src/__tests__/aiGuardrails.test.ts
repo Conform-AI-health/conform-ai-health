@@ -253,7 +253,7 @@ describe('🛡️ AI Guardrails Anti-Alucinação & Grounding Deontológico', ()
       );
     });
 
-    it('se todas as violações forem alucinações forjadas pela IA, o veredito deve ser restaurado para CONFORME e nota 100', async () => {
+    it('se todas as violações forem alucinações forjadas pela IA, o veredito NÃO deve ser CONFORME 100, mas sim PARCIALMENTE_CONFORME inconclusivo (AI-01)', async () => {
       const hallucinatedOutput: ReconciliationOutput = {
         verdict: 'NAO_CONFORME',
         score: 10,
@@ -282,11 +282,43 @@ describe('🛡️ AI Guardrails Anti-Alucinação & Grounding Deontológico', ()
 
       // Expurgou a violação alucinada
       expect(sanitizedOutput.violations.length).toBe(0);
-      // Restaurou integridade e conformidade
-      expect(sanitizedOutput.score).toBe(100);
-      expect(sanitizedOutput.verdict).toBe('CONFORME');
-      expect(sanitizedOutput.summary).toContain('Guardrails Anti-Alucinação');
+      // REGRA AI-01: Não pode ser 100 nem CONFORME! Deve ser prudencialmente PARCIALMENTE_CONFORME (inconclusivo)
+      expect(sanitizedOutput.score).toBe(60);
+      expect(sanitizedOutput.verdict).toBe('PARCIALMENTE_CONFORME');
+      expect(sanitizedOutput.summary).toContain('INCONCLUSIVO / REVISÃO HUMANA MANDATÓRIA');
       expect(guardrailsReport.interceptedIncidents.length).toBe(1);
+    });
+
+    it('deve classificar como inconclusivo caso o conteúdo raspado seja insuficiente (< 50 caracteres)', async () => {
+      const emptyScrape: ScrapeResult = {
+        url: 'https://clinica-vazia.med.br',
+        title: 'Vazio',
+        rawHtmlLength: 20,
+        cleanMarkdown: 'Página em branco.',
+        tokensEstimatedRaw: 5,
+        tokensEstimatedClean: 5,
+      };
+
+      const rawAiOutput: ReconciliationOutput = {
+        verdict: 'CONFORME',
+        score: 100,
+        summary: 'Aprovado.',
+        violations: [],
+        promptTokens: 10,
+        completionTokens: 10,
+        totalTokens: 20,
+        sourcesUsed: [],
+      };
+
+      const { sanitizedOutput } = await AIGuardrails.validateAndSanitizeOutput(
+        rawAiOutput,
+        emptyScrape,
+        mockActiveNorms
+      );
+
+      expect(sanitizedOutput.verdict).toBe('PARCIALMENTE_CONFORME');
+      expect(sanitizedOutput.score).toBe(50);
+      expect(sanitizedOutput.summary).toContain('INSUFICIÊNCIA FÁTICA');
     });
   });
 });

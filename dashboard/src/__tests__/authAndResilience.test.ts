@@ -6,7 +6,7 @@ import { AuthController } from '../controllers/authController.js';
 import { prisma } from '../config/prisma.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { env } from '../config/env.js';
+import { env, envSchema } from '../config/env.js';
 
 // Mocks do prisma em ../config/prisma.js e ../lib/prisma.js
 vi.mock('../config/prisma.js', () => ({
@@ -15,6 +15,7 @@ vi.mock('../config/prisma.js', () => ({
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      create: vi.fn(),
     },
     client: {
       findUnique: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('../lib/prisma.js', () => ({
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      create: vi.fn(),
     },
     client: {
       findUnique: vi.fn(),
@@ -420,6 +422,146 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
     it('deve executar shutdownWorker de forma graciosa sem lançar exceções', async () => {
       const { shutdownWorker } = await import('../worker.js');
       await expect(shutdownWorker('SIGTERM')).resolves.not.toThrow();
+    });
+  });
+
+  describe('SEC-01: Controle de Acesso e Prevenção de Elevação de Privilégio', () => {
+    it('deve rejeitar registro público que tenta injetar role ADMIN ou diferente de CLIENT', async () => {
+      const req: any = {
+        body: {
+          email: 'hacker@malicious.com',
+          password: 'Password123!',
+          name: 'Attacker',
+          role: 'ADMIN',
+        },
+      };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+
+      await AuthController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'PRIVILEGE_ELEVATION_FORBIDDEN',
+        })
+      );
+    });
+
+    it('deve rejeitar registro público que tenta associar clientId arbitrário', async () => {
+      const req: any = {
+        body: {
+          email: 'hacker2@malicious.com',
+          password: 'Password123!',
+          name: 'Attacker',
+          clientId: 'arbitrary-tenant-id',
+        },
+      };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+
+      await AuthController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'ARBITRARY_CLIENT_LINKING_FORBIDDEN',
+        })
+      );
+    });
+
+    it('deve permitir criação de usuário interno com role AUDITOR via endpoint administrativo dedicado', async () => {
+      (prisma.user.findUnique as any).mockResolvedValue(null);
+      (prisma.user.create as any).mockResolvedValue({
+        id: 'user-created-001',
+        email: 'auditor.interno@conformia.med.br',
+        name: 'Dr. Auditor',
+        role: 'AUDITOR',
+        clientId: null,
+      });
+
+      const req: any = {
+        user: { role: 'ADMIN', userId: 'admin-001' },
+        body: {
+          email: 'auditor.interno@conformia.med.br',
+          password: 'SecureAdminCreatedPass123!',
+          name: 'Dr. Auditor',
+          role: 'AUDITOR',
+        },
+      };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+
+      await AuthController.createInternalUser(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('criado com sucesso'),
+          user: expect.objectContaining({
+            email: 'auditor.interno@conformia.med.br',
+            role: 'AUDITOR',
+          }),
+        })
+      );
+    });
+  });
+
+  describe('SEC-04: Hardening de Configuração e Validação de Variáveis de Produção', () => {
+    it('deve rejeitar secret fraco conhecido em ambiente de produção', () => {
+      const prodEnvWithWeakSecret = {
+        NODE_ENV: 'production',
+        PORT: '3000',
+        DATABASE_URL: 'mongodb://prod-db:27017/conformia',
+        JWT_SECRET: 'conformia-super-secret-jwt-key-2026', // Inseguro!
+        JWT_REFRESH_SECRET: 'super-secure-refresh-token-key-longer-than-32-chars-random',
+        CORS_ORIGIN: 'https://app.conformia.med.br',
+      };
+
+      const result = envSchema.safeParse(prodEnvWithWeakSecret);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const issues = result.error.issues;
+        expect(issues.some((i) => i.path.includes('JWT_SECRET'))).toBe(true);
+      }
+    });
+
+    it('deve rejeitar wildcard CORS em ambiente de produção', () => {
+      const prodEnvWithWildcardCors = {
+        NODE_ENV: 'production',
+        PORT: '3000',
+        DATABASE_URL: 'mongodb://prod-db:27017/conformia',
+        JWT_SECRET: 'ultra-secure-jwt-key-longer-than-32-chars-random-123456',
+        JWT_REFRESH_SECRET: 'ultra-secure-refresh-key-longer-than-32-chars-random-123456',
+        CORS_ORIGIN: '*', // Inseguro em produção!
+      };
+
+      const result = envSchema.safeParse(prodEnvWithWildcardCors);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const issues = result.error.issues;
+        expect(issues.some((i) => i.path.includes('CORS_ORIGIN'))).toBe(true);
+      }
+    });
+
+    it('deve aprovar ambiente de produção com secrets robustos e CORS restrito', () => {
+      const validProdEnv = {
+        NODE_ENV: 'production',
+        PORT: '3000',
+        DATABASE_URL: 'mongodb://prod-db:27017/conformia',
+        JWT_SECRET: 'crypto-secure-jwt-secret-min-32-bytes-production-key-abc123',
+        JWT_REFRESH_SECRET: 'crypto-secure-jwt-refresh-secret-min-32-bytes-production-key-def456',
+        CORS_ORIGIN: 'https://app.conformia.med.br,https://admin.conformia.med.br',
+      };
+
+      const result = envSchema.safeParse(validProdEnv);
+      expect(result.success).toBe(true);
     });
   });
 });

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { AuthController } from '../controllers/authController.js';
-import { authenticate } from '../middlewares/auth.js';
+import { authenticate, authorize, Role } from '../middlewares/auth.js';
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
@@ -24,6 +24,9 @@ router.post('/reset-password', authLimiter, AuthController.resetPassword);
 router.get('/me', authenticate, AuthController.me);
 router.post('/change-password', authenticate, AuthController.changePassword);
 router.post('/logout', AuthController.logout);
+
+// Gestão de usuários administrativos / internos (SEC-01)
+router.post('/users', authenticate, authorize(Role.ADMIN), AuthController.createInternalUser);
 
 export default router;
 

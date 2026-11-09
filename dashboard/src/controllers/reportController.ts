@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { Role, Verdict, AuditStatus, RuleSeverity } from '@prisma/client';
 import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
@@ -307,6 +308,99 @@ export class ReportController {
       res.status(200).json({
         message: 'Violação marcada como resolvida com sucesso.',
         violation: updated,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * AI-05: Fluxo de Governança e Revisão Humana de Laudo Deontológico
+   * Permite que auditores humanos homologuem, alterem ou rejeitem pareceres da IA
+   */
+  public static async reviewReport(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      const reviewSchema = z.object({
+        decision: z.enum(['APPROVED', 'REJECTED', 'CHANGES_REQUESTED']),
+        notes: z.string().min(5, 'Parecer técnico da revisão humana é obrigatório (mínimo 5 caracteres).'),
+        adjustedScore: z.number().min(0).max(100).optional(),
+        adjustedVerdict: z.nativeEnum(Verdict).optional(),
+      });
+
+      const { decision, notes, adjustedScore, adjustedVerdict } = reviewSchema.parse(req.body);
+
+      const report = await prisma.auditReport.findUnique({
+        where: { id },
+      });
+
+      if (!report) {
+        res.status(404).json({ error: 'Laudo de auditoria não encontrado.' });
+        return;
+      }
+
+      // Atualiza contrato estruturado para conter o bloco auditável de revisão humana
+      let contractObj: any = {};
+      if (report.structuredContract) {
+        try {
+          contractObj = JSON.parse(report.structuredContract);
+        } catch {}
+      }
+
+      contractObj.humanReview = {
+        decision,
+        reviewerId: req.user?.userId || 'system',
+        reviewerEmail: req.user?.email || 'auditor@conformia.med.br',
+        reviewedAt: new Date().toISOString(),
+        notes,
+        adjustedScore,
+        adjustedVerdict,
+      };
+
+      const dataToUpdate: any = {
+        structuredContract: JSON.stringify(contractObj),
+      };
+
+      if (decision === 'APPROVED') {
+        dataToUpdate.requiresHumanReview = false;
+        if (adjustedScore !== undefined) dataToUpdate.score = adjustedScore;
+        if (adjustedVerdict !== undefined) dataToUpdate.verdict = adjustedVerdict;
+      } else if (decision === 'REJECTED') {
+        dataToUpdate.requiresHumanReview = false;
+        dataToUpdate.verdict = Verdict.NAO_CONFORME;
+        if (adjustedScore !== undefined) dataToUpdate.score = adjustedScore;
+      } else if (decision === 'CHANGES_REQUESTED') {
+        dataToUpdate.requiresHumanReview = true;
+      }
+
+      const updatedReport = await prisma.auditReport.update({
+        where: { id },
+        data: dataToUpdate,
+      });
+
+      // Registro de trilha de auditoria e conformidade (LGPD / CFM)
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'HUMAN_REVIEW',
+          message: `Revisão humana registrada: ${decision} para o laudo ${id}`,
+          correlationId: id,
+          details: JSON.stringify({
+            decision,
+            reviewerId: req.user?.userId,
+            reviewerEmail: req.user?.email,
+            notes,
+            adjustedVerdict,
+            adjustedScore,
+          }),
+        },
+      });
+
+      res.status(200).json({
+        message: `Revisão humana registrada com sucesso (${decision}).`,
+        report: updatedReport,
+        review: contractObj.humanReview,
       });
     } catch (error) {
       next(error);

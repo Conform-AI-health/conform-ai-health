@@ -8,11 +8,18 @@ import { env } from '../config/env.js';
 import { Role } from '@prisma/client';
 import { EmailService } from '../services/emailService.js';
 
-const registerSchema = z.object({
+const publicRegisterSchema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
   name: z.string().min(2, 'Nome deve ter no mínimo 2 caracteres'),
-  role: z.enum(['ADMIN', 'AUDITOR', 'CLIENT', 'VIEWER']).default('CLIENT'),
+  // Cadastro público NUNCA permite elevação de privilégio: role é sempre forçado a CLIENT
+});
+
+const internalUserSchema = z.object({
+  email: z.string().email('Email inválido'),
+  password: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
+  name: z.string().min(2, 'Nome deve ter no mínimo 2 caracteres'),
+  role: z.enum(['ADMIN', 'AUDITOR', 'CLIENT', 'VIEWER']),
   clientId: z.string().optional(),
 });
 
@@ -40,9 +47,31 @@ const resetPasswordSchema = z.object({
 });
 
 export class AuthController {
+  /**
+   * Cadastro público de novos usuários (SEC-01)
+   * Atribui estritamente Role.CLIENT e impede incondicionalmente elevação de privilégio.
+   */
   public static async register(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const data = registerSchema.parse(req.body);
+      // Rejeita tentativas explícitas de elevação de privilégio
+      if (req.body?.role && req.body.role !== 'CLIENT') {
+        res.status(403).json({
+          error: 'Elevação de privilégio não permitida no cadastro público.',
+          code: 'PRIVILEGE_ELEVATION_FORBIDDEN',
+        });
+        return;
+      }
+
+      // Rejeita injeção arbitrária de clientId não autenticado
+      if (req.body?.clientId) {
+        res.status(403).json({
+          error: 'Vínculo arbitrário a clínicas não é permitido no cadastro público.',
+          code: 'ARBITRARY_CLIENT_LINKING_FORBIDDEN',
+        });
+        return;
+      }
+
+      const data = publicRegisterSchema.parse(req.body);
 
       const existingUser = await prisma.user.findUnique({
         where: { email: data.email },
@@ -56,14 +85,62 @@ export class AuthController {
         return;
       }
 
-      // Validação de clientId se o papel for CLIENT
-      if (data.role === 'CLIENT' && data.clientId) {
+      const passwordHash = await bcrypt.hash(data.password, 12);
+
+      const user = await prisma.user.create({
+        data: {
+          email: data.email,
+          passwordHash,
+          name: data.name,
+          role: Role.CLIENT,
+          clientId: null,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          clientId: true,
+          createdAt: true,
+        },
+      });
+
+      res.status(201).json({
+        message: 'Usuário cadastrado com sucesso.',
+        user,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Criação administrativa de usuários internos (ADMIN e AUDITOR)
+   * Exige perfil ADMIN autenticado.
+   */
+  public static async createInternalUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = internalUserSchema.parse(req.body);
+
+      const existingUser = await prisma.user.findUnique({
+        where: { email: data.email },
+      });
+
+      if (existingUser) {
+        res.status(409).json({
+          error: 'Um usuário com este e-mail já está cadastrado no sistema.',
+          code: 'USER_ALREADY_EXISTS',
+        });
+        return;
+      }
+
+      if (data.clientId) {
         const clientExists = await prisma.client.findUnique({
           where: { id: data.clientId },
         });
         if (!clientExists) {
           res.status(404).json({
-            error: 'A clínica informada para o usuário não foi encontrada.',
+            error: 'A clínica informada não foi encontrada.',
             code: 'CLIENT_NOT_FOUND',
           });
           return;
@@ -91,12 +168,19 @@ export class AuthController {
       });
 
       res.status(201).json({
-        message: 'Usuário cadastrado com sucesso.',
+        message: 'Usuário interno criado com sucesso pela administração.',
         user,
       });
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Helper para computar hash SHA-256 de tokens antes de persistir no banco (SEC-05)
+   */
+  public static hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 
   public static async login(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -135,10 +219,11 @@ export class AuthController {
 
       const { token, refreshToken } = AuthController.generateTokens(user);
 
-      // Salva o refresh token no usuário
+      // Salva o hash SHA-256 do refresh token no banco para mitigar vazamentos (SEC-05)
+      const refreshTokenHash = AuthController.hashToken(refreshToken);
       await prisma.user.update({
         where: { id: user.id },
-        data: { refreshToken },
+        data: { refreshToken: refreshTokenHash },
       });
 
       res.status(200).json({
@@ -222,7 +307,10 @@ export class AuthController {
         where: { id: decoded.userId },
       });
 
-      if (!user || user.refreshToken !== refreshToken) {
+      const tokenHash = AuthController.hashToken(refreshToken);
+      const isTokenValid = user && (user.refreshToken === tokenHash || user.refreshToken === refreshToken);
+
+      if (!user || !isTokenValid) {
         res.status(401).json({
           error: 'Refresh token revogado ou substituído. Efetue login novamente.',
           code: 'REVOKED_REFRESH_TOKEN',
@@ -232,10 +320,11 @@ export class AuthController {
 
       // Rotação de tokens: emite novo access token (1h) e novo refresh token (7d)
       const newTokens = AuthController.generateTokens(user);
+      const newRefreshTokenHash = AuthController.hashToken(newTokens.refreshToken);
 
       await prisma.user.update({
         where: { id: user.id },
-        data: { refreshToken: newTokens.refreshToken },
+        data: { refreshToken: newRefreshTokenHash },
       });
 
       res.status(200).json({
@@ -261,17 +350,18 @@ export class AuthController {
       if (user) {
         // Gera token aleatório de 32 bytes (64 caracteres hex)
         const resetToken = crypto.randomBytes(32).toString('hex');
+        const resetTokenHash = AuthController.hashToken(resetToken);
         const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hora de validade
 
         await prisma.user.update({
           where: { id: user.id },
           data: {
-            resetPasswordToken: resetToken,
+            resetPasswordToken: resetTokenHash,
             resetPasswordExpires: resetExpires,
           },
         });
 
-        // Dispara e-mail via Resend
+        // Dispara e-mail via Resend com token original
         await EmailService.sendPasswordResetEmail(user.email, resetToken, user.name);
       }
 
@@ -290,10 +380,14 @@ export class AuthController {
   public static async resetPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { token, newPassword } = resetPasswordSchema.parse(req.body);
+      const tokenHash = AuthController.hashToken(token);
 
       const user = await prisma.user.findFirst({
         where: {
-          resetPasswordToken: token,
+          OR: [
+            { resetPasswordToken: tokenHash },
+            { resetPasswordToken: token }, // Compatibilidade transitória com tokens legados
+          ],
           resetPasswordExpires: {
             gt: new Date(),
           },

@@ -54,4 +54,3 @@ describe('Validação Zod e Endpoints da API REST', () => {
     expect(res.body.redis).toBeDefined();
   });
 });
-
