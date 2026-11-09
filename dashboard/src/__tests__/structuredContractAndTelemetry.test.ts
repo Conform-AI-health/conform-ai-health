@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AIStructuredContractAdapter, structuredAuditContractSchema } from '../shared/aiStructuredContract.js';
 import { ReconciliationOutput, ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { TelemetryController } from '../controllers/telemetryController.js';
+import { ReportController } from '../controllers/reportController.js';
 import { prisma } from '../config/prisma.js';
 
 vi.mock('../config/prisma.js', () => ({
   prisma: {
     auditReport: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
     },
     systemLog: {
       findMany: vi.fn(),
@@ -223,6 +226,125 @@ describe('📋 Contrato Estruturado de IA & Telemetria Avançada', () => {
       // 8. Custo individual nas auditorias
       expect(data.auditsTelemetry[0]).toHaveProperty('costUsd');
       expect(data.auditsTelemetry[0]).toHaveProperty('costBrl');
+    });
+  });
+
+  describe('AI-05: Fluxo de Revisão Humana de Laudo Deontológico', () => {
+    it('deve registrar parecer do auditor, homologar aprovação e desativar requiresHumanReview', async () => {
+      const mockReport = {
+        id: 'rep-human-01',
+        requiresHumanReview: true,
+        verdict: 'PARCIALMENTE_CONFORME',
+        score: 60,
+        structuredContract: JSON.stringify({
+          audit_id: 'AUD-001',
+          risk_level: 'MEDIUM',
+          confidence: 0.85,
+          findings: [],
+        }),
+      };
+
+      (prisma.auditReport.findUnique as any).mockResolvedValue(mockReport);
+      (prisma.auditReport.update as any).mockImplementation(({ data }: any) => ({
+        ...mockReport,
+        ...data,
+      }));
+
+      const req: any = {
+        params: { id: 'rep-human-01' },
+        user: { userId: 'auditor-007', email: 'auditor@cfm.org.br', role: 'AUDITOR' },
+        body: {
+          decision: 'APPROVED',
+          notes: 'Evidências verificadas manualmente. Adequação formal homologada.',
+          adjustedScore: 90,
+          adjustedVerdict: 'CONFORME',
+        },
+      };
+
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await ReportController.reviewReport(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const resBody = res.json.mock.calls[0][0];
+
+      expect(resBody.message).toContain('APPROVED');
+      expect(resBody.review).toBeDefined();
+      expect(resBody.review.decision).toBe('APPROVED');
+      expect(resBody.review.reviewerId).toBe('auditor-007');
+      expect(resBody.review.notes).toContain('Evidências verificadas manualmente');
+
+      // Verifica update no Prisma
+      expect(prisma.auditReport.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'rep-human-01' },
+          data: expect.objectContaining({
+            requiresHumanReview: false,
+            score: 90,
+            verdict: 'CONFORME',
+          }),
+        })
+      );
+
+      // Verifica registro de auditoria no systemLog
+      expect(prisma.systemLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            module: 'HUMAN_REVIEW',
+            level: 'INFO',
+          }),
+        })
+      );
+    });
+
+    it('deve rejeitar laudo em caso de discordância grave do auditor humano', async () => {
+      const mockReport = {
+        id: 'rep-human-02',
+        requiresHumanReview: true,
+        verdict: 'CONFORME',
+        score: 100,
+        structuredContract: JSON.stringify({}),
+      };
+
+      (prisma.auditReport.findUnique as any).mockResolvedValue(mockReport);
+      (prisma.auditReport.update as any).mockImplementation(({ data }: any) => ({
+        ...mockReport,
+        ...data,
+      }));
+
+      const req: any = {
+        params: { id: 'rep-human-02' },
+        user: { userId: 'auditor-008', email: 'auditor2@cfm.org.br', role: 'AUDITOR' },
+        body: {
+          decision: 'REJECTED',
+          notes: 'Identificada propaganda enganosa explícita ignorada pelo extrator.',
+          adjustedScore: 10,
+        },
+      };
+
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await ReportController.reviewReport(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(prisma.auditReport.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'rep-human-02' },
+          data: expect.objectContaining({
+            requiresHumanReview: false,
+            verdict: 'NAO_CONFORME',
+            score: 10,
+          }),
+        })
+      );
     });
   });
 });

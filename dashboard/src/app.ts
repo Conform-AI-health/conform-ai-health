@@ -27,13 +27,41 @@ export function createApp(): Express {
     })
   );
 
-  // 2. CORS
+  // 2. CORS Seguro com restrição estrita de origens permitidas (SEC-06)
+  const allowedOrigins = (env.CORS_ORIGIN || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
   app.use(
     cors({
-      origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN,
+      origin: (origin, callback) => {
+        // Requisições diretas sem origin (ex: ferramentas internas, curl ou testes unitários sem cabeçalho origin)
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        // Em desenvolvimento ou teste, permite localhost
+        if (env.NODE_ENV !== 'production') {
+          if (
+            origin.startsWith('http://localhost:') ||
+            origin.startsWith('http://127.0.0.1:') ||
+            allowedOrigins.includes(origin)
+          ) {
+            return callback(null, true);
+          }
+        }
+
+        // Em produção, valida estritamente contra as origens configuradas (proibindo wildcard com credentials)
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`Acesso bloqueado pela política de CORS: origem ${origin} não autorizada.`));
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-refresh-token'],
     })
   );
 

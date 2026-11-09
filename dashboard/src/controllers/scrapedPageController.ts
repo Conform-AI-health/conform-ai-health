@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { ScraperService } from '../services/scraperService.js';
-import { validateSafeUrl } from '../shared/security.js';
+import { validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
 
 const scrapeInputSchema = z.object({
   url: z.string().url('URL inválida'),
@@ -18,8 +18,8 @@ export class ScrapedPageController {
     try {
       const { url, mode, customTags } = scrapeInputSchema.parse(req.body);
 
-      // 1. Verificação de segurança contra SSRF
-      const safeCheck = validateSafeUrl(url);
+      // 1. Verificação de segurança contra SSRF e DNS Rebinding (SEC-02)
+      const safeCheck = await validateSafeUrlAsync(url);
       if (!safeCheck.safe) {
         res.status(400).json({
           error: `URL rejeitada por política de segurança: ${safeCheck.reason}`,
@@ -193,16 +193,26 @@ export class ScrapedPageController {
       });
 
       // Filtra agentes cujo array de tags possui interseção com as tags da página
-      const compatibleAgents = allAgents.filter((agent) => {
-        const agentTags = agent.tags || ['CFM'];
-        return agentTags.some((t) => page.tags.includes(t));
-      });
+      // Higienização de segurança (SEC-03): não vaza systemPrompt ou regras internas
+      const sanitizedAgents = allAgents
+        .filter((agent) => {
+          const agentTags = agent.tags || ['CFM'];
+          return agentTags.some((t) => page.tags.includes(t));
+        })
+        .map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          code: agent.code,
+          description: agent.description,
+          tags: agent.tags,
+          enabled: agent.enabled,
+        }));
 
       res.status(200).json({
         pageId: page.id,
         pageUrl: page.url,
         pageTags: page.tags,
-        compatibleAgents,
+        compatibleAgents: sanitizedAgents,
       });
     } catch (error) {
       next(error);

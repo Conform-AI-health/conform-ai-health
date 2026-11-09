@@ -139,10 +139,31 @@ export class AIProviderFactory {
       }
 
       // Tentativa 2: Ollama Local (se o primário era Gemini)
+      // AI-02: Garantir que o Ollama use parâmetros isolados (modelId e baseUrl) e nunca o modelId do Gemini
       if (activeModel.provider === 'gemini') {
         try {
           const ollama = this.getProvider('ollama');
-          return await ollama.reconcile(scrape, agentContext, activeModel);
+          let ollamaDbConfig = null;
+          try {
+            ollamaDbConfig = await prisma.aiModelConfig.findFirst({
+              where: { provider: 'ollama' },
+            });
+          } catch {
+            // Falha graciosa de I/O
+          }
+
+          const ollamaModelConfig = {
+            id: ollamaDbConfig?.id,
+            name: ollamaDbConfig?.name || 'Ollama Local Fallback',
+            provider: 'ollama' as AIProviderType,
+            modelId: ollamaDbConfig?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b',
+            baseUrl: ollamaDbConfig?.baseUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434',
+            apiKey: null,
+            temperature: ollamaDbConfig?.temperature ?? activeModel.temperature ?? 0.2,
+            maxTokens: ollamaDbConfig?.maxTokens ?? activeModel.maxTokens ?? 2048,
+          };
+
+          return await ollama.reconcile(scrape, agentContext, ollamaModelConfig);
         } catch (err: any) {
           console.warn(`[AIProviderFactory] Falha no Ollama Local: ${err.message}. Ativando Heurística...`);
         }

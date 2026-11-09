@@ -99,50 +99,65 @@ export class AIGuardrails {
   }
 
   /**
-   * Post-Execution: Validação de Ancoragem Normativa
-   * Confere se a norma e artigo citados pela IA realmente existem no catálogo ativo
+   * Post-Execution: Validação de Ancoragem Normativa Estrita (AI-03)
+   * Confere se a norma e artigo citados pela IA realmente existem no catálogo ativo,
+   * checando código canônico, vigência e situação de revogação sem correspondências parciais fracas.
    */
   public static verifyNormativeGrounding(
     normCode: string,
     normArticle: string,
     activeNorms: NormChunk[]
-  ): { isGrounded: boolean; isRevoked: boolean; matchedNorm?: NormChunk } {
-    if (!normCode) {
-      return { isGrounded: false, isRevoked: false };
+  ): { isGrounded: boolean; isRevoked: boolean; matchedNorm?: NormChunk; reason?: string } {
+    if (!normCode || normCode.trim().length === 0) {
+      return { isGrounded: false, isRevoked: false, reason: 'Código da norma não fornecido.' };
     }
 
     const cleanCode = normCode.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    // Verifica se é uma norma conhecida expressamente revogada
+    // 1. Verificação explícita de normas revogadas conhecidas (ex: Res. CFM 1.974/2011)
     if (
       cleanCode.includes('1974') ||
       normCode.toLowerCase().includes('revogad') ||
       normArticle.toLowerCase().includes('revogad')
     ) {
-      return { isGrounded: false, isRevoked: true };
+      return {
+        isGrounded: false,
+        isRevoked: true,
+        reason: `A norma citada "${normCode}" está formalmente revogada e extinta do ordenamento deontológico.`,
+      };
     }
 
-    // Busca nas normas ativas autorizadas
+    // 2. Busca estrita nas normas ativas autorizadas
     for (const norm of activeNorms) {
-      const targetClean = norm.normCode.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const titleClean = norm.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const targetCodeClean = norm.normCode.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normIdClean = norm.id.toLowerCase().replace(/[^a-z0-9]/g, '');
 
+      // Correspondência exata de código ou ID canônico
+      if (cleanCode === targetCodeClean || cleanCode === normIdClean) {
+        return { isGrounded: true, isRevoked: false, matchedNorm: norm };
+      }
+
+      // Correspondência precisa com a resolução (ex: 'cfm2336' ou '23362023')
       if (
-        cleanCode.includes(targetClean) ||
-        targetClean.includes(cleanCode) ||
-        titleClean.includes(cleanCode) ||
-        norm.id.toLowerCase().includes(cleanCode)
+        (cleanCode.includes('2336') && targetCodeClean.includes('2336')) ||
+        (cleanCode.includes('2217') && targetCodeClean.includes('2217')) ||
+        (cleanCode.includes('13709') && targetCodeClean.includes('13709')) ||
+        (cleanCode.includes('lgpd') && targetCodeClean.includes('lgpd'))
       ) {
         return { isGrounded: true, isRevoked: false, matchedNorm: norm };
       }
     }
 
-    return { isGrounded: false, isRevoked: false };
+    return {
+      isGrounded: false,
+      isRevoked: false,
+      reason: `A norma "${normCode}" não foi validada contra o repositório oficial de normas vigentes.`,
+    };
   }
 
   /**
-   * Post-Execution: Verificação de Fidelidade Fática (Evidence Factuality Verification)
-   * Garante que o texto de evidência citado pela IA realmente consta no material raspado
+   * Post-Execution: Verificação de Fidelidade Fática Rigorosa (AI-04)
+   * Garante que a evidência textual é real, eliminando regras genéricas que aprovam sem comprovação.
    */
   public static verifyFactuality(
     evidenceText: string,
@@ -153,47 +168,67 @@ export class AIGuardrails {
       return { isGrounded: false, matchRatio: 0, reason: 'Evidência textual vazia.' };
     }
 
-    const cleanEvidence = evidenceText.toLowerCase().trim();
-    const cleanScraped = (scrapedMarkdown || '').toLowerCase();
+    const cleanMarkdown = (scrapedMarkdown || '').trim();
 
-    // 1. Exceções válidas para detecção de ausência obrigatória de elementos
+    // Detecção de falha de extração ou documento vazio
+    if (cleanMarkdown.length < 50) {
+      return {
+        isGrounded: false,
+        matchRatio: 0,
+        reason: 'Conteúdo do documento auditado insuficiente ou não extraído.',
+      };
+    }
+
+    const cleanEvidence = evidenceText.toLowerCase().trim();
+    const cleanScraped = cleanMarkdown.toLowerCase();
+
+    // 1. Validação estrita de alegações de ausência (somente com confirmação explícita de entidades)
     const absenceKeywords = [
-      'nenhum',
       'ausência',
-      'não identificado',
-      'não consta',
       'ausente',
+      'nenhum',
+      'nenhuma',
+      'não identificado',
+      'não identificada',
+      'não localizado',
+      'não localizada',
+      'não consta',
       'sem menção',
+      'sem indicação',
       'não informado',
-      'sem o',
-      'sem número',
-      'sem registro',
       'falta de',
     ];
     const isAbsenceClaim = absenceKeywords.some((w) => cleanEvidence.includes(w));
+
     if (isAbsenceClaim) {
-      // Se a IA aponta ausência de CRM/RQE/Estado e o scraper confirmou que não foi detectado
-      if (cleanEvidence.includes('crm') && extractedEntities?.crms?.length === 0) {
-        return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de ausência de CRM confirmada.' };
-      }
-      if (cleanEvidence.includes('rqe') && extractedEntities?.rqes?.length === 0) {
-        return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de ausência de RQE confirmada.' };
-      }
-      if (cleanEvidence.includes('uf') || cleanEvidence.includes('estado')) {
-        if (extractedEntities?.states?.length === 0) {
-          return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de ausência de Estado/UF confirmada.' };
+      if (cleanEvidence.includes('crm')) {
+        if (extractedEntities && Array.isArray(extractedEntities.crms) && extractedEntities.crms.length === 0) {
+          return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de ausência de CRM confirmada por varredura.' };
         }
+        return { isGrounded: false, matchRatio: 0, reason: 'Alegação de ausência de CRM não pôde ser confirmada pelas entidades extraídas.' };
       }
-      // Ausência plausível verificada
-      return { isGrounded: true, matchRatio: 0.9, reason: 'Alegação de ausência contextual válida.' };
+
+      if (cleanEvidence.includes('rqe')) {
+        if (extractedEntities && Array.isArray(extractedEntities.rqes) && extractedEntities.rqes.length === 0) {
+          return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de ausência de RQE confirmada por varredura.' };
+        }
+        return { isGrounded: false, matchRatio: 0, reason: 'Alegação de ausência de RQE não confirmada pelas entidades extraídas.' };
+      }
+
+      // Alegações de ausência genéricas sem comprovação determinística são rejeitadas
+      return {
+        isGrounded: false,
+        matchRatio: 0,
+        reason: 'Alegação de ausência sem validação objetiva por entidades do extrator.',
+      };
     }
 
-    // 2. Comprovação Fática Cruzada com as Entidades Extraídas pelo Scraper
+    // 2. Validação Fática de Infrações Específicas com base em flags do Extrator
     if (
       (cleanEvidence.includes('resultado') || cleanEvidence.includes('garantia') || cleanEvidence.includes('promessa') || cleanEvidence.includes('cura')) &&
       extractedEntities?.hasGuaranteedResultMention
     ) {
-      return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de promessa ou resultado garantido confirmada.' };
+      return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de promessa de resultado garantido confirmada.' };
     }
 
     if (
@@ -207,22 +242,22 @@ export class AIGuardrails {
       (cleanEvidence.includes('antes') || cleanEvidence.includes('depois')) &&
       extractedEntities?.hasBeforeAfterMention
     ) {
-      return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de menção a antes e depois confirmada.' };
+      return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de fotos ou menção a antes/depois confirmada.' };
     }
 
-    // 3. Substring Match Direto (100% fático)
+    // 3. Substring Match Literal (100% fático)
     if (cleanScraped.includes(cleanEvidence)) {
       return { isGrounded: true, matchRatio: 1.0 };
     }
 
-    // 3. N-gram Token Overlap (tolerância a aspas ou pontuação recortada)
+    // 4. Token Overlap com limiar rigoroso (paráfrase auditada)
     const words = cleanEvidence
       .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '')
       .split(/\s+/)
       .filter((w) => w.length > 3);
 
     if (words.length === 0) {
-      return { isGrounded: false, matchRatio: 0, reason: 'Evidência sem palavras significativas.' };
+      return { isGrounded: false, matchRatio: 0, reason: 'Evidência sem termos substantivos para correspondência.' };
     }
 
     let matches = 0;
@@ -234,15 +269,15 @@ export class AIGuardrails {
 
     const ratio = matches / words.length;
 
-    // Se pelo menos 50% das palavras-chave relevantes estão no texto auditado
-    if (ratio >= 0.5) {
+    // Exige correspondência mínima de 65% das palavras relevantes
+    if (ratio >= 0.65) {
       return { isGrounded: true, matchRatio: ratio };
     }
 
     return {
       isGrounded: false,
       matchRatio: ratio,
-      reason: `Evidência não encontrada no conteúdo do site (apenas ${(ratio * 100).toFixed(0)}% de correspondência).`,
+      reason: `Evidência não encontrada no conteúdo do site (${(ratio * 100).toFixed(0)}% de correspondência; mínimo requerido: 65%).`,
     };
   }
 
@@ -313,19 +348,27 @@ export class AIGuardrails {
       passedChecks.push('Todas as violações citadas possuem ancoragem normativa e fática comprovada.');
     }
 
-    // 2. Recálculo e Coerência de Score e Veredito
+    // 2. Recálculo e Coerência de Score e Veredito (AI-01: Integridade Regulatória)
     let recalculatedScore = rawOutput.score;
     let recalculatedVerdict = rawOutput.verdict;
     let recalculatedSummary = rawOutput.summary;
 
-    if (rawOutput.violations.length > 0 && validViolations.length === 0) {
-      // Todas as violações eram alucinações!
-      recalculatedScore = 100;
-      recalculatedVerdict = 'CONFORME';
-      recalculatedSummary = `${rawOutput.summary} [Guardrails Anti-Alucinação: ${interceptedIncidents.length} apontamento(s) fiduciariamente inválido(s) expurgado(s) por falta de ancoragem].`;
-      passedChecks.push('Ajuste matemático determinístico de integridade do laudo aplicado com sucesso.');
+    // Cenário 2.1: Conteúdo insuficiente ou falha na extração de texto
+    if (cleanMarkdown.length < 50) {
+      recalculatedScore = 50;
+      recalculatedVerdict = 'PARCIALMENTE_CONFORME';
+      recalculatedSummary = `[INSUFICIÊNCIA FÁTICA / INCONCLUSIVO] O documento ou página extraída possui apenas ${cleanMarkdown.length} caracteres, impedindo uma auditoria deontológica conclusiva. Requer reextração ou inspeção presencial.`;
+      passedChecks.push('Classificação de insuficiência fática aplicada (conteúdo inferior a 50 caracteres).');
+    }
+    // Cenário 2.2: Todas as violações alegadas pelo LLM eram alucinações de norma ou evidência forjada!
+    // REGRA DE OURO (AI-01): Violação descartada NÃO significa conformidade! Ausência de evidência não é prova de conformidade!
+    else if (rawOutput.violations.length > 0 && validViolations.length === 0) {
+      recalculatedScore = 60; // Nota prudencial rebaixada
+      recalculatedVerdict = 'PARCIALMENTE_CONFORME'; // Estado inconclusivo regulatório
+      recalculatedSummary = `[INCONCLUSIVO / REVISÃO HUMANA MANDATÓRIA] Todas as ${interceptedIncidents.length} infração(ões) alegadas pela IA foram descartadas pelos Guardrails por falta de ancoragem normativa ou fática. O expurgo de alucinações não constitui conformidade automática e exige auditoria humana.`;
+      passedChecks.push('Classificação de inconclusividade deontológica aplicada: bloqueada aprovação automática.');
     } else if (validViolations.length < rawOutput.violations.length) {
-      // Parte das violações eram alucinações -> reajusta score proporcionalmente
+      // Cenário 2.3: Parte das violações eram alucinações -> reajusta score proporcionalmente apenas sobre as violações legítimas
       const severityDeductions: Record<string, number> = {
         CRITICA: 30,
         GRAVE: 20,
@@ -343,7 +386,7 @@ export class AIGuardrails {
 
       recalculatedScore = Math.max(0, 100 - deductions);
 
-      if (validViolations.length === 0 || recalculatedScore >= 90) {
+      if (recalculatedScore >= 90) {
         recalculatedVerdict = 'CONFORME';
       } else if (recalculatedScore >= 70 && !hasCritica) {
         recalculatedVerdict = 'PARCIALMENTE_CONFORME';
