@@ -1,0 +1,346 @@
+{
+  "$schema": "https://conform.ai/schemas/regulatory-scraping-blueprint.v1.json",
+  "versao": "1.0.0",
+  "nome": "Manifesto Diretor de Coleta & Indexação de Normas CFM para Firecrawl",
+  "orgaoEmissor": "CFM - Conselho Federal de Medicina",
+  "descricao": "Guia canônico que orienta o motor de scraping (Firecrawl / ScraperService) a coletar, estruturar, classificar por tags e gerenciar vigência das normas médicas oficiais para alimentação do RAG deontológico da Conform.ai.",
+  "dataAtualizacao": "2026-11-09T22:40:00Z",
+
+  "fontesOficiais": [
+    {
+      "id": "cfm-portal-sistemas",
+      "nome": "Portal de Normas e Sistemas do CFM",
+      "descricao": "Base oficial do CFM para resoluções, pareceres, recomendações e instruções normativas.",
+      "baseUrl": "https://sistemas.cfm.org.br/normas/pesquisar",
+      "rotasCanonicaResolucoes": "https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/{ano}/{numero}",
+      "prioridade": "ALTA",
+      "tipoExtracao": "FIRECRAWL_MARKDOWN",
+      "instrucoesScraper": {
+        "formatos": ["markdown"],
+        "removerSeletores": ["header nav", "footer", "script", "style", "div.botoes-compartilhar", ".cookie-banner"],
+        "seletoresConteudo": ["div.texto-norma", "div.ementa", "article.corpo-resolucao", "div#conteudo"]
+      }
+    },
+    {
+      "id": "dou-imprensa-nacional",
+      "nome": "Diário Oficial da União (Imprensa Nacional - in.gov.br)",
+      "descricao": "Publicação primária com eficácia executiva das resoluções do CFM na Seção 1.",
+      "baseUrl": "https://www.in.gov.br/leiturajornal?secao=dou1",
+      "rotasFiltro": "https://www.in.gov.br/consulta/-/buscar/dou?q=Conselho+Federal+de+Medicina",
+      "prioridade": "CONTINUA",
+      "tipoExtracao": "DOU_LEITURA_JORNAL",
+      "instrucoesScraper": {
+        "orgaoAlvo": "Conselho Federal de Medicina",
+        "tipoAto": ["Resolução", "Parecer", "Instrução Normativa"]
+      }
+    }
+  ],
+
+  "taxonomiaTags": {
+    "descricao": "Dicionário de tags em 4 camadas que orienta o classificador e direciona a resolução dinâmica de normas pelos agentes de IA via NormsResolver.",
+    
+    "camada1_orgao": [
+      {
+        "tag": "CFM",
+        "label": "Conselho Federal de Medicina",
+        "descricao": "Norma emitida ou regulamentada pelo CFM ou seus Conselhos Regionais (CRMs)."
+      },
+      {
+        "tag": "LGPD",
+        "label": "Lei Geral de Proteção de Dados (Saúde)",
+        "descricao": "Dispositivos que tratam de privacidade, sigilo, prontuário e dados sensíveis de pacientes (Art. 11 Lei 13.709/18)."
+      },
+      {
+        "tag": "ANVISA",
+        "label": "Vigilância Sanitária",
+        "descricao": "Interface com regulação de medicamentos, substâncias e equipamentos médicos (RDC 727/22)."
+      },
+      {
+        "tag": "ANS",
+        "label": "Agência Nacional de Saúde Suplementar",
+        "descricao": "Interface com operadoras, planos de saúde, rede credenciada e carências (RN 509/22)."
+      }
+    ],
+
+    "camada2_vigencia": [
+      {
+        "tag": "VIGENTE",
+        "label": "Norma em Pleno Vigor",
+        "descricao": "Dispositivo normativo ativo e com plena eficácia deontológica. Elegível para auditorias imediatas da IA."
+      },
+      {
+        "tag": "REVOGADO",
+        "label": "Norma Revogada / Sem Eficácia",
+        "descricao": "Dispositivo normativo superado ou expressamente revogado por norma posterior. O NormsResolver descarta sumariamente do contexto do LLM."
+      }
+    ],
+
+    "camada3_eixosTematicos": [
+      {
+        "tag": "publicidade-medica",
+        "label": "Publicidade & Propaganda Médica",
+        "severidadePadrao": "CRITICA",
+        "normaMatriz": "Res. CFM 2.336/23",
+        "termosGatilho": [
+          "publicidade",
+          "propaganda",
+          "anúncio",
+          "anuncio",
+          "divulgação",
+          "redes sociais",
+          "antes e depois",
+          "promessa de resultado",
+          "sensacionalismo",
+          "preço",
+          "desconto",
+          "black friday",
+          "sorteio",
+          "consulta gratuita",
+          "cartão fidelidade"
+        ]
+      },
+      {
+        "tag": "etica-medica",
+        "label": "Código de Ética Médica & Deontologia Geral",
+        "severidadePadrao": "CRITICA",
+        "normaMatriz": "Res. CFM 2.217/18",
+        "termosGatilho": [
+          "código de ética",
+          "deontologia",
+          "diretor técnico",
+          "direção técnica",
+          "responsabilidade profissional",
+          "autonomia do paciente",
+          "segunda opinião",
+          "relação médico-paciente"
+        ]
+      },
+      {
+        "tag": "telemedicina",
+        "label": "Telemedicina & Saúde Digital",
+        "severidadePadrao": "GRAVE",
+        "normaMatriz": "Res. CFM 2.314/22",
+        "termosGatilho": [
+          "telemedicina",
+          "teleconsulta",
+          "telediagnóstico",
+          "teleinterconsulta",
+          "telemonitoramento",
+          "atendimento remoto",
+          "plataforma digital"
+        ]
+      },
+      {
+        "tag": "prontuario-eletronico",
+        "label": "Prontuário Médico & Prescrição Eletrônica",
+        "severidadePadrao": "GRAVE",
+        "normaMatriz": "Res. CFM 1.821/07 e Res. CFM 2.299/21",
+        "termosGatilho": [
+          "prontuário",
+          "prontuario",
+          "guarda de documentos",
+          "prescrição eletrônica",
+          "assinatura digital",
+          "icp-brasil",
+          "nível de garantia",
+          "sistemas de registro eletrônico"
+        ]
+      },
+      {
+        "tag": "privacidade-dados",
+        "label": "Sigilo Médico & Dados Pessoais Sensíveis",
+        "severidadePadrao": "CRITICA",
+        "normaMatriz": "LGPD Art. 11 e Código de Ética Art. 73",
+        "termosGatilho": [
+          "sigilo médico",
+          "segredo profissional",
+          "confidencialidade",
+          "consentimento livre e esclarecido",
+          "termo de consentimento",
+          "tcle",
+          "política de privacidade",
+          "dados de saúde"
+        ]
+      },
+      {
+        "tag": "ia-medica",
+        "label": "Inteligência Artificial & Sistemas de Suporte à Decisão",
+        "severidadePadrao": "CRITICA",
+        "normaMatriz": "Diretrizes CFM para IA & Pareceres Técnicos",
+        "termosGatilho": [
+          "inteligência artificial",
+          "inteligencia artificial",
+          "ia",
+          "algoritmo",
+          "escriba médico",
+          "scribe",
+          "suporte à decisão clínica",
+          "diagnóstico automatizado",
+          "software médico",
+          "samd"
+        ]
+      },
+      {
+        "tag": "especialidades-rqe",
+        "label": "Especialidades Médicas & Qualificação (RQE)",
+        "severidadePadrao": "CRITICA",
+        "normaMatriz": "Res. CFM 2.380/24 e Res. 2.336/23",
+        "termosGatilho": [
+          "especialidade",
+          "especialista",
+          "rqe",
+          "qualificação de especialista",
+          "área de atuação",
+          "comissão mista de especialidades",
+          "titulação"
+        ]
+      },
+      {
+        "tag": "auditoria-e-pericia",
+        "label": "Auditoria Médica & Relação com Operadoras",
+        "severidadePadrao": "MEDIA",
+        "normaMatriz": "Res. CFM 1.614/01 e normas de auditoria médica",
+        "termosGatilho": [
+          "médico auditor",
+          "perícia médica",
+          "glosa",
+          "plano de saúde",
+          "operadora",
+          "junta médica",
+          "autorização prévia"
+        ]
+      }
+    ],
+
+    "camada4_subTagsEntidades": [
+      "crm",
+      "rqe",
+      "antes-e-depois",
+      "promessa-de-resultado",
+      "desconto-promocional",
+      "redes-sociais",
+      "sigilo-medico",
+      "assinatura-digital",
+      "consentimento",
+      "diretor-tecnico"
+    ]
+  },
+
+  "regrasDeteccaoVigencia": {
+    "descricao": "Instruções algorítmicas para o ScraperService classificar a vigência no momento da ingestão.",
+    "gatilhosRevogacao": [
+      "revogado expressamente",
+      "revogada expressamente",
+      "revogam-se as disposições em contrário",
+      "fica revogada a resolução",
+      "ficam revogados os artigos",
+      "perdeu a vigência",
+      "declarada nula",
+      "suspensa cautelarmente"
+    ],
+    "acaoAoDetectarRevogacao": {
+      "adicionarTag": "REVOGADO",
+      "removerTag": "VIGENTE",
+      "statusVigencia": "REVOGADA",
+      "politicaAuditoria": "Exclusão sumária do contexto ativo no ReconciliationEngine. Mantida na base apenas para rastreabilidade e histórico."
+    }
+  },
+
+  "schemaEstruturaDocumento": {
+    "descricao": "Contrato estruturado canônico do documento após processamento pelo Firecrawl para persistência no MongoDB (scraped_pages).",
+    "tipo": "object",
+    "propriedadesObrigatorias": [
+      "url",
+      "title",
+      "normCode",
+      "source",
+      "cleanMarkdown",
+      "tags",
+      "tokensCount",
+      "contentHash"
+    ],
+    "exemplo": {
+      "url": "https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2023/2336",
+      "title": "Resolução CFM nº 2.336/2023 - Publicidade e Propaganda Médica",
+      "normCode": "Res. CFM 2.336/23",
+      "source": "CFM",
+      "tipo": "RESOLUCAO",
+      "numero": "2336",
+      "ano": 2023,
+      "ementa": "Dispõe sobre a publicidade e propaganda médicas, regulamentando a utilização das redes sociais...",
+      "statusVigencia": "VIGENTE",
+      "tags": [
+        "CFM",
+        "VIGENTE",
+        "publicidade-medica",
+        "etica-medica",
+        "crm",
+        "rqe",
+        "antes-e-depois",
+        "promessa-de-resultado",
+        "desconto-promocional"
+      ],
+      "severidadePadrao": "CRITICA",
+      "cleanMarkdown": "# Resolução CFM nº 2.336/2023\n\n## Art. 1º É direito do médico...",
+      "tokensCount": 1850,
+      "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+
+  "normasMatrizPrioritarias": [
+    {
+      "normCode": "Res. CFM 2.336/23",
+      "title": "Resolução CFM nº 2.336/2023 (Publicidade Médica)",
+      "targetUrl": "https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2023/2336",
+      "situacaoEsperada": "Vigente",
+      "tags": ["CFM", "VIGENTE", "publicidade-medica", "crm", "rqe", "antes-e-depois", "promessa-de-resultado", "desconto-promocional"],
+      "severidadeDefault": "CRITICA",
+      "artigosChave": ["Artigo 1º, § 1º (CRM/UF)", "Artigo 1º, § 2º (RQE)", "Artigo 9º (Descontos/Mercantilização)", "Artigo 11 (Promessas)", "Artigo 14 (Antes e Depois)"]
+    },
+    {
+      "normCode": "Res. CFM 2.217/18",
+      "title": "Resolução CFM nº 2.217/2018 (Código de Ética Médica)",
+      "targetUrl": "https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2018/2217",
+      "situacaoEsperada": "Vigente",
+      "tags": ["CFM", "VIGENTE", "etica-medica", "diretor-tecnico", "sigilo-medico"],
+      "severidadeDefault": "CRITICA",
+      "artigosChave": ["Art. 18 (Direção Técnica)", "Art. 73 (Sigilo Médico)", "Art. 75 (Comunicação ao Público)"]
+    },
+    {
+      "normCode": "Res. CFM 2.314/22",
+      "title": "Resolução CFM nº 2.314/2022 (Telemedicina)",
+      "targetUrl": "https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2022/2314",
+      "situacaoEsperada": "Vigente",
+      "tags": ["CFM", "VIGENTE", "telemedicina", "consentimento", "sigilo-medico"],
+      "severidadeDefault": "GRAVE",
+      "artigosChave": ["Art. 3º (Teleconsulta e TCLE)", "Art. 7º (Prontuário em Telemedicina)"]
+    },
+    {
+      "normCode": "Res. CFM 1.821/07",
+      "title": "Resolução CFM nº 1.821/2007 (Prontuário Eletrônico e Guarda)",
+      "targetUrl": "https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2007/1821",
+      "situacaoEsperada": "Vigente",
+      "tags": ["CFM", "VIGENTE", "prontuario-eletronico", "assinatura-digital"],
+      "severidadeDefault": "GRAVE",
+      "artigosChave": ["Art. 3º (Certificação Digital ICP-Brasil)", "Art. 8º (Tempo de Guarda)"]
+    },
+    {
+      "normCode": "Res. CFM 2.299/21",
+      "title": "Resolução CFM nº 2.299/2021 (Prescrição e Documentos Digitais)",
+      "targetUrl": "https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2021/2299",
+      "situacaoEsperada": "Vigente",
+      "tags": ["CFM", "VIGENTE", "prontuario-eletronico", "assinatura-digital"],
+      "severidadeDefault": "GRAVE",
+      "artigosChave": ["Art. 2º (Requisitos de Assinatura Eletrônica em Prescrições)"]
+    },
+    {
+      "normCode": "Res. CFM 1.974/11",
+      "title": "Resolução CFM nº 1.974/2011 (Antigo Manual de Publicidade - Revogada)",
+      "targetUrl": "https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2011/1974",
+      "situacaoEsperada": "Revogada",
+      "tags": ["CFM", "REVOGADO", "publicidade-medica"],
+      "severidadeDefault": "LEVE",
+      "artigosChave": ["Revogada integralmente pela Resolução CFM nº 2.336/2023"]
+    }
+  ]
+}
