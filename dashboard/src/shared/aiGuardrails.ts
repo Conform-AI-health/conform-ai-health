@@ -195,6 +195,9 @@ export class AIGuardrails {
       'não consta',
       'sem menção',
       'sem indicação',
+      'sem registro',
+      'sem divulgação',
+      'sem',
       'não informado',
       'falta de',
     ];
