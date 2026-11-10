@@ -10,9 +10,9 @@
 
 | Status do Board | Total de Tarefas | Tarefas Mapeadas |
 |---|:---:|---|
-| 📌 **Backlog** | 3 | T15 (Auditoria Docker/CI), T18 (Golden Set RAG), T19 (Docs/Licença) |
+| 📌 **Backlog** | 2 | T18 (Golden Set RAG), T19 (Docs/Licença) |
 | 🔨 **In Progress** | 0 | — |
-| 👀 **In review** | 16 | **T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T16, T17** |
+| 👀 **In review** | 17 | **T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T15, T16, T17** |
 | 🚀 **Done** | 0 | *(Aguardando aprovação de PR e merge)* |
 
 ---
@@ -128,6 +128,13 @@
 * **Evidência no Código:**
   * `dashboard/src/services/auditExecutionService.ts` e `agentController.ts`: Transição garantida para `FAILED` com gravação em `SystemLog`, sem deixar execuções presas em `QUEUED`/`RUNNING`.
 
+#### [T15] Auditoria de Imagens Docker e Integridade do Docker Compose (Anti-Crash)
+* **Responsáveis:** `@devops-engineer`, `@qa-engineer` | Gate: `@security-reviewer`
+* **Status:** `In review`
+* **Evidência no Código:**
+  * `docker-compose.yml`: Injeção de `ADMIN_EMAIL`, `ADMIN_PASSWORD` obrigatória e `CORS_ORIGIN` restrito em produção. Alinhamento de healthcheck leve `/health` com tolerância e retries.
+  * `dashboard/src/__tests__/dockerIntegrity.test.ts`: Suíte automatizada com 8 testes cobrindo integridade sintática, dependências `depends_on`, validação Zod `envSchema` de produção, healthchecks e consistência com `.env.example`.
+
 #### [T16] Idempotência do seed e migrações
 * **Responsáveis:** `@architect`, `@backend-specialist` | Gate: `@security-reviewer`
 * **Status:** `In review`
@@ -138,6 +145,6 @@
 * **Responsáveis:** `@qa-engineer` | Gate: `@security-reviewer`
 * **Status:** `In review`
 * **Evidência no Código:**
-  * `dashboard`: 14 arquivos de testes e **106 testes unitários/integração 100% verdes**.
+  * `dashboard`: 15 arquivos de testes e **114 testes unitários/integração 100% verdes**.
   * `dashboard-web`: 4 arquivos de testes e **11 testes unitários 100% verdes**.
-  * Total consolidado: **117 testes automatizados passando**.
+  * Total consolidado: **125 testes automatizados passando 100%**.
