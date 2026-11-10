@@ -527,8 +527,14 @@ export class AuthController {
           data: { refreshToken: null },
         });
       } else if (refreshTokenInput && typeof refreshTokenInput === 'string') {
+        const hashedInput = AuthController.hashToken(refreshTokenInput);
         const user = await prisma.user.findFirst({
-          where: { refreshToken: refreshTokenInput },
+          where: {
+            OR: [
+              { refreshToken: hashedInput },
+              { refreshToken: refreshTokenInput },
+            ],
+          },
         });
         if (user) {
           await prisma.user.update({

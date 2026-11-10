@@ -14,6 +14,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { safeHttpUrl } from '../utils/urlSecurity';
 
 export const CustomerDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -128,15 +129,30 @@ export const CustomerDashboardPage: React.FC = () => {
                   </>
                 )}
               </p>
-              <a
-                href={client?.websiteUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-emerald-400 hover:underline mt-1.5 inline-flex items-center gap-1 font-mono"
-              >
-                <span>{client?.websiteUrl}</span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
+              {(() => {
+                const safeUrl = safeHttpUrl(client?.websiteUrl);
+                if (safeUrl) {
+                  return (
+                    <a
+                      href={safeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-emerald-400 hover:underline mt-1.5 inline-flex items-center gap-1 font-mono"
+                    >
+                      <span>{safeUrl}</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  );
+                }
+                if (client?.websiteUrl) {
+                  return (
+                    <span className="text-xs text-slate-500 mt-1.5 font-mono italic block">
+                      {client.websiteUrl}
+                    </span>
+                  );
+                }
+                return null;
+              })()}
             </div>
           </div>
 

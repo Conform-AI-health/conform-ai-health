@@ -22,6 +22,7 @@ import {
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
 import { useToast } from '../context/ToastContext';
+import { safeHttpUrl } from '../utils/urlSecurity';
 
 export const ClientsPage: React.FC = () => {
   const toast = useToast();
@@ -389,19 +390,30 @@ export const ClientsPage: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-xs font-mono text-slate-400">
-                      {c.websiteUrl ? (
-                        <a
-                          href={c.websiteUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="hover:text-emerald-400 inline-flex items-center gap-1"
-                        >
-                          <span className="max-w-[180px] truncate">{c.websiteUrl}</span>
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      ) : (
-                        <span className="text-slate-500 italic">Sem URL</span>
-                      )}
+                      {(() => {
+                        const safeUrl = safeHttpUrl(c.websiteUrl);
+                        if (safeUrl) {
+                          return (
+                            <a
+                              href={safeUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-emerald-400 inline-flex items-center gap-1"
+                            >
+                              <span className="max-w-[180px] truncate">{safeUrl}</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          );
+                        }
+                        if (c.websiteUrl) {
+                          return (
+                            <span className="text-slate-500 italic max-w-[180px] truncate block" title={c.websiteUrl}>
+                              {c.websiteUrl}
+                            </span>
+                          );
+                        }
+                        return <span className="text-slate-500 italic">Sem URL</span>;
+                      })()}
                     </td>
                     <td className="py-3.5 px-4">
                       <span

@@ -6,16 +6,30 @@ export async function runAutoMigrateAndSeed() {
   console.log('🌱 [AutoMigrate & Seed] Verificando e provisionando administrador e módulos oficiais...');
 
   try {
-    // 1. Usuário Administrador Oficial (lido das variáveis de ambiente reais)
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@conform.ai';
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123456';
-    const saltRounds = 12;
-    const adminPasswordHash = await bcrypt.hash(adminPassword, saltRounds);
+    // 1. Usuário Administrador Oficial (Hardening T01 - Regra 6.1)
+    const isProduction = process.env.NODE_ENV === 'production';
+    const adminEmail = process.env.ADMIN_EMAIL || (isProduction ? '' : 'admin@conform.ai');
+    const adminPassword = process.env.ADMIN_PASSWORD || (isProduction ? '' : 'admin123456');
+
+    if (isProduction) {
+      if (!adminEmail || !adminPassword || adminPassword.length < 12) {
+        throw new Error(
+          '❌ [Segurança T01] Em ambiente de produção, ADMIN_EMAIL e ADMIN_PASSWORD são obrigatórios e a senha deve ter pelo menos 12 caracteres.'
+        );
+      }
+      if (['admin123456', 'password', '12345678', 'admin', 'administrator'].includes(adminPassword)) {
+        throw new Error(
+          '❌ [Segurança T01] É proibido iniciar a aplicação em produção com senhas administrativas padrão conhecidas.'
+        );
+      }
+    }
 
     // Auto-recuperação resiliente para documentos corrompidos ou legados do MongoDB
     let user = null;
     try {
-      user = await prisma.user.findUnique({ where: { email: adminEmail } });
+      if (adminEmail) {
+        user = await prisma.user.findUnique({ where: { email: adminEmail } });
+      }
     } catch {
       console.log('⚠️ [Seed] Detectado usuário com tipos legados incompatíveis no Mongo. Limpando registro corrompido...');
       try {
@@ -28,7 +42,9 @@ export async function runAutoMigrateAndSeed() {
       }
     }
 
-    if (!user) {
+    if (!user && adminEmail && adminPassword) {
+      const saltRounds = 12;
+      const adminPasswordHash = await bcrypt.hash(adminPassword, saltRounds);
       await prisma.user.create({
         data: {
           email: adminEmail,
@@ -37,17 +53,11 @@ export async function runAutoMigrateAndSeed() {
           role: 'ADMIN',
         },
       });
-    } else {
-      await prisma.user.update({
-        where: { email: adminEmail },
-        data: {
-          name: 'Administrador ConformIA',
-          role: 'ADMIN',
-          passwordHash: adminPasswordHash,
-        },
-      });
+      console.log(`✅ [Seed] Novo usuário administrador provisionado com sucesso: ${adminEmail}`);
+    } else if (user) {
+      // T01: NUNCA sobrescrever senha ou dados de administrador existente no boot
+      console.log(`ℹ️ [Seed] Administrador existente detectado (${adminEmail}). Preservando credenciais e senha atuais.`);
     }
-    console.log(`✅ [Seed] Administrador oficial ativo: ${adminEmail}`);
 
     // 2. Módulos de Agente: Cadastro estritamente manual pelo usuário (seeds automáticos removidos conforme governança)
     console.log(`ℹ️ [Governança] Módulos de agente operam com cadastro estritamente manual pelo usuário.`);
@@ -172,20 +182,7 @@ export async function runAutoMigrateAndSeed() {
         console.log(`🛡️ [AutoMigrate] ${agentsWithoutCode.length} Módulo(s) de Agente legados sanitizados com slugs válidos.`);
       }
 
-      // 5.2 Atualizar Clientes com email nulo ou vazio
-      const clientsWithoutEmail = await prisma.client.findMany({
-        where: { email: null },
-      }).catch(() => []);
-
-      for (const cl of clientsWithoutEmail) {
-        await prisma.client.update({
-          where: { id: cl.id },
-          data: { email: 'contato@clinica.com' },
-        }).catch(() => {});
-      }
-      if (clientsWithoutEmail.length > 0) {
-        console.log(`🛡️ [AutoMigrate] ${clientsWithoutEmail.length} Cliente(s) legados sanitizados com e-mail de contato.`);
-      }
+      // 5.2 Clientes com email nulo são preservados sem injeção de e-mails mockados (T08)
 
       // 5.3 Atualizar Clientes e Módulos com datas nulas (createdAt / updatedAt)
       const clientsWithoutDates = await prisma.client.findMany({

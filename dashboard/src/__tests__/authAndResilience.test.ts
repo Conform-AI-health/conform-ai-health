@@ -558,10 +558,30 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
         JWT_SECRET: 'crypto-secure-jwt-secret-min-32-bytes-production-key-abc123',
         JWT_REFRESH_SECRET: 'crypto-secure-jwt-refresh-secret-min-32-bytes-production-key-def456',
         CORS_ORIGIN: 'https://app.conformia.med.br,https://admin.conformia.med.br',
+        ADMIN_EMAIL: 'admin.prod@conformia.med.br',
+        ADMIN_PASSWORD: 'SuperSecureProdAdminPassword2026!#',
       };
 
       const result = envSchema.safeParse(validProdEnv);
       expect(result.success).toBe(true);
+    });
+
+    it('deve rejeitar ambiente de produção se ADMIN_PASSWORD for fraca ou ausente (T01)', () => {
+      const invalidAdminEnv = {
+        NODE_ENV: 'production',
+        PORT: '3000',
+        DATABASE_URL: 'mongodb://prod-db:27017/conformia',
+        JWT_SECRET: 'crypto-secure-jwt-secret-min-32-bytes-production-key-abc123',
+        JWT_REFRESH_SECRET: 'crypto-secure-jwt-refresh-secret-min-32-bytes-production-key-def456',
+        CORS_ORIGIN: 'https://app.conformia.med.br',
+        ADMIN_PASSWORD: 'fraca', // Menos de 12 chars
+      };
+
+      const result = envSchema.safeParse(invalidAdminEnv);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((i) => i.path.includes('ADMIN_PASSWORD'))).toBe(true);
+      }
     });
   });
 });

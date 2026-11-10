@@ -8,6 +8,7 @@ import { FirecrawlService } from '../services/firecrawlService.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { AuditExecutionService } from '../services/auditExecutionService.js';
 import { AuditSchedulerService } from '../services/auditSchedulerService.js';
+import { validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
 
 const createAgentSchema = z.object({
   name: z.string().min(2, 'Nome do Módulo é obrigatório'),
@@ -62,6 +63,24 @@ const runAuditSchema = z.object({
 export class AgentController {
   public static async listModules(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      const isClient = req.user?.role === Role.CLIENT;
+      const where: any = isClient
+        ? {
+            OR: [
+              { clientId: null },
+              ...(req.user?.clientId ? [{ clientId: req.user.clientId }] : []),
+            ],
+          }
+        : {};
+
+      const sanitize = (m: any) => {
+        const item = { ...m, code: m.code || `agent-${m.id.slice(-6)}` };
+        if (isClient) {
+          delete (item as any).systemPrompt;
+        }
+        return item;
+      };
+
       const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10) || 1) : null;
       const limit = req.query.limit ? Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 10)) : null;
 
@@ -69,8 +88,9 @@ export class AgentController {
         const effectivePage = page || 1;
         const effectiveLimit = limit || 10;
         const [total, modules] = await Promise.all([
-          prisma.agentModule.count(),
+          prisma.agentModule.count({ where }),
           prisma.agentModule.findMany({
+            where,
             skip: (effectivePage - 1) * effectiveLimit,
             take: effectiveLimit,
             orderBy: { createdAt: 'asc' },
@@ -78,7 +98,7 @@ export class AgentController {
         ]);
 
         res.status(200).json({
-          data: modules.map((m) => ({ ...m, code: m.code || `agent-${m.id.slice(-6)}` })),
+          data: modules.map(sanitize),
           pagination: {
             total,
             page: effectivePage,
@@ -90,9 +110,10 @@ export class AgentController {
       }
 
       const modules = await prisma.agentModule.findMany({
+        where,
         orderBy: { createdAt: 'asc' },
       });
-      res.status(200).json(modules.map((m) => ({ ...m, code: m.code || `agent-${m.id.slice(-6)}` })));
+      res.status(200).json(modules.map(sanitize));
     } catch (error) {
       next(error);
     }
@@ -107,6 +128,16 @@ export class AgentController {
 
       if (!mod) {
         res.status(404).json({ error: 'Módulo de agente não encontrado.' });
+        return;
+      }
+
+      if (req.user?.role === Role.CLIENT) {
+        if (mod.clientId && mod.clientId !== req.user.clientId) {
+          res.status(403).json({ error: 'Acesso negado a este módulo.', code: 'TENANT_FORBIDDEN' });
+          return;
+        }
+        const { systemPrompt, ...sanitized } = mod;
+        res.status(200).json(sanitized);
         return;
       }
 
@@ -258,43 +289,99 @@ export class AgentController {
         return;
       }
 
-      // A URL Alvo vem do cadastro do módulo ou do corpo da requisição
-      const effectiveTargetUrl = parsedBody.targetUrl || mod.targetUrl;
-      if (!effectiveTargetUrl) {
-        res.status(400).json({ error: 'Nenhuma URL Alvo informada no módulo ou no disparo da auditoria.' });
-        return;
-      }
+      // Validação de Tenant e Restrição de URL Alvo anti-SSRF (T02 / T05)
+      let effectiveClientId: string;
+      let effectiveTargetUrl: string;
+      let client: any = null;
 
-      // Resolução da clínica vinculada ou clínica ativa padrão
-      let effectiveClientId = parsedBody.clientId || mod.clientId;
-      if (!effectiveClientId) {
-        const firstClient = await prisma.client.findFirst({ where: { status: 'ATIVO' } });
-        if (firstClient) {
-          effectiveClientId = firstClient.id;
-        } else {
-          const defaultClient = await prisma.client.create({
-            data: {
-              name: 'Clínica Principal Auditada',
-              websiteUrl: effectiveTargetUrl,
-              status: 'ATIVO',
-            },
+      if (req.user?.role === Role.CLIENT) {
+        if (!req.user.clientId) {
+          res.status(403).json({
+            error: 'Acesso negado. Usuário do tipo cliente sem clínica associada.',
+            code: 'TENANT_FORBIDDEN',
           });
-          effectiveClientId = defaultClient.id;
+          return;
+        }
+
+        effectiveClientId = req.user.clientId;
+        client = await prisma.client.findUnique({
+          where: { id: effectiveClientId },
+        });
+
+        if (!client || client.status !== 'ATIVO') {
+          res.status(403).json({
+            error: 'Clínica inativa ou não encontrada.',
+            code: 'CLIENT_INACTIVE',
+          });
+          return;
+        }
+
+        // Clientes não podem fornecer URLs arbitrárias fora da cadastrada na clínica
+        if (parsedBody.targetUrl && parsedBody.targetUrl.trim() !== (client.websiteUrl || '').trim()) {
+          res.status(403).json({
+            error: 'Acesso negado. Clientes só podem disparar auditorias para a URL oficial cadastrada em sua clínica.',
+            code: 'ARBITRARY_TARGET_URL_FORBIDDEN',
+          });
+          return;
+        }
+
+        effectiveTargetUrl = (client.websiteUrl || '').trim();
+        if (!effectiveTargetUrl) {
+          res.status(400).json({
+            error: 'A clínica não possui websiteUrl cadastrado para realização de auditoria.',
+            code: 'MISSING_CLIENT_URL',
+          });
+          return;
+        }
+
+        const safeCheck = validateSafeUrl(effectiveTargetUrl);
+        if (!safeCheck.safe) {
+          res.status(400).json({
+            error: `URL cadastrada da clínica é inválida ou insegura: ${safeCheck.reason}`,
+            code: 'SSRF_BLOCKED',
+          });
+          return;
+        }
+      } else {
+        effectiveTargetUrl = parsedBody.targetUrl || mod.targetUrl || '';
+        if (!effectiveTargetUrl) {
+          res.status(400).json({ error: 'Nenhuma URL Alvo informada no módulo ou no disparo da auditoria.' });
+          return;
+        }
+
+        // Validação anti-SSRF completa com resolução DNS assíncrona para auditores e admins
+        const safeCheck = await validateSafeUrlAsync(effectiveTargetUrl);
+        if (!safeCheck.safe) {
+          res.status(400).json({
+            error: `URL Alvo rejeitada por política de segurança: ${safeCheck.reason}`,
+            code: 'SSRF_BLOCKED',
+          });
+          return;
+        }
+
+        effectiveClientId = parsedBody.clientId || mod.clientId || '';
+        if (!effectiveClientId) {
+          const firstClient = await prisma.client.findFirst({ where: { status: 'ATIVO' } });
+          if (firstClient) {
+            effectiveClientId = firstClient.id;
+            client = firstClient;
+          } else {
+            const defaultClient = await prisma.client.create({
+              data: {
+                name: 'Clínica Principal Auditada',
+                websiteUrl: effectiveTargetUrl,
+                status: 'ATIVO',
+              },
+            });
+            effectiveClientId = defaultClient.id;
+            client = defaultClient;
+          }
+        } else {
+          client = await prisma.client.findUnique({
+            where: { id: effectiveClientId },
+          });
         }
       }
-
-      // Isolamento multi-tenant: CLIENT só pode disparar auditoria para si mesmo
-      if (req.user?.role === Role.CLIENT && req.user.clientId !== effectiveClientId) {
-        res.status(403).json({
-          error: 'Acesso negado. Você só pode disparar auditorias para a sua própria clínica.',
-          code: 'TENANT_FORBIDDEN',
-        });
-        return;
-      }
-
-      const client = await prisma.client.findUnique({
-        where: { id: effectiveClientId },
-      });
 
       const clientName = client?.name || 'Clínica Auditada';
       const effectiveSkill = parsedBody.skill || mod.description || 'compliance-specialist';

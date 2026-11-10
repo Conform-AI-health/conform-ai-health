@@ -4,6 +4,14 @@ import { prisma } from '../config/prisma.js';
 import { ClientStatus, Role, ExtractionMode } from '@prisma/client';
 import { ScraperService } from '../services/scraperService.js';
 
+const safeHttpUrlSchema = z
+  .string()
+  .url('Formato de URL inválido')
+  .refine(
+    (val) => val.startsWith('http://') || val.startsWith('https://'),
+    'Apenas os protocolos HTTP e HTTPS são permitidos'
+  );
+
 const createClientSchema = z.object({
   name: z.string().min(2, 'Razão Social é obrigatória'),
   tradeName: z.string().optional().nullable(),
@@ -12,11 +20,19 @@ const createClientSchema = z.object({
   crmUf: z.string().max(2).optional().nullable(),
   rqeResponsavel: z.string().optional().nullable(),
   especialidade: z.string().optional().nullable(),
-  websiteUrl: z.string().optional().nullable(),
+  websiteUrl: safeHttpUrlSchema.optional().nullable().or(z.literal('')),
   instagramHandle: z.string().optional().nullable(),
   status: z.enum(['ATIVO', 'INATIVO', 'PENDENTE', 'SUSPENSO']).default('ATIVO'),
   phone: z.string().optional().nullable(),
   email: z.string().email('E-mail de Notificação / Compliance inválido').optional().nullable().or(z.literal('')),
+});
+
+const clientSelfUpdateSchema = z.object({
+  tradeName: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().email('E-mail de Notificação / Compliance inválido').optional().nullable().or(z.literal('')),
+  websiteUrl: safeHttpUrlSchema.optional().nullable().or(z.literal('')),
+  instagramHandle: z.string().optional().nullable(),
 });
 
 const updateClientSchema = createClientSchema.partial();
@@ -63,7 +79,7 @@ export class ClientController {
       res.status(200).json({
         data: clients.map((c) => ({
           ...c,
-          email: c.email || 'contato@clinica.com',
+          email: c.email || null,
           createdAt: c.createdAt || new Date(),
           updatedAt: c.updatedAt || new Date(),
         })),
@@ -230,19 +246,54 @@ export class ClientController {
     try {
       const { id } = req.params;
 
-      if (req.user?.role === Role.CLIENT && req.user.clientId !== id) {
-        res.status(403).json({
-          error: 'Acesso negado. Você só pode atualizar a sua própria clínica.',
-          code: 'TENANT_FORBIDDEN',
+      if (req.user?.role === Role.CLIENT) {
+        if (req.user.clientId !== id) {
+          res.status(403).json({
+            error: 'Acesso negado. Você só pode atualizar a sua própria clínica.',
+            code: 'TENANT_FORBIDDEN',
+          });
+          return;
+        }
+
+        // Impede que usuários CLIENT alterem campos sensíveis como status, cnpj ou responsáveis técnicos
+        if (
+          'status' in req.body ||
+          'cnpj' in req.body ||
+          'crmResponsavel' in req.body ||
+          'rqeResponsavel' in req.body
+        ) {
+          res.status(403).json({
+            error: 'Clientes não possuem autorização para alterar status cadastral, CNPJ ou responsáveis técnicos.',
+            code: 'CLIENT_FIELD_FORBIDDEN',
+          });
+          return;
+        }
+
+        const data = clientSelfUpdateSchema.parse(req.body);
+        const updated = await prisma.client.update({
+          where: { id },
+          data: {
+            ...data,
+            updatedAt: new Date(),
+          },
+        });
+
+        res.status(200).json({
+          message: 'Dados de contato da clínica atualizados com sucesso.',
+          client: updated,
         });
         return;
       }
 
+      // ADMIN e AUDITOR
       const data = updateClientSchema.parse(req.body);
 
       const updated = await prisma.client.update({
         where: { id },
-        data,
+        data: {
+          ...data,
+          updatedAt: new Date(),
+        },
       });
 
       res.status(200).json({

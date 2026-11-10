@@ -3,12 +3,23 @@ import rateLimit from 'express-rate-limit';
 import { AuthController } from '../controllers/authController.js';
 import { authenticate, authorize, Role } from '../middlewares/auth.js';
 
-const authLimiter = rateLimit({
+const authBruteForceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 30, // 30 requisições por janela
+  max: 10, // Máximo 10 tentativas para prevenir brute-force em credenciais
   message: {
     error: 'Muitas tentativas de autenticação a partir deste IP. Tente novamente em 15 minutos.',
-    code: 'RATE_LIMIT_EXCEEDED',
+    code: 'AUTH_RATE_LIMIT_EXCEEDED',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 60, // Limite mais tolerante para renovação automática contínua de sessão
+  message: {
+    error: 'Limite de renovações de sessão excedido. Tente novamente mais tarde.',
+    code: 'REFRESH_RATE_LIMIT_EXCEEDED',
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -16,11 +27,11 @@ const authLimiter = rateLimit({
 
 const router = Router();
 
-router.post('/register', authLimiter, AuthController.register);
-router.post('/login', authLimiter, AuthController.login);
-router.post('/refresh', authLimiter, AuthController.refreshToken);
-router.post('/forgot-password', authLimiter, AuthController.forgotPassword);
-router.post('/reset-password', authLimiter, AuthController.resetPassword);
+router.post('/register', authBruteForceLimiter, AuthController.register);
+router.post('/login', authBruteForceLimiter, AuthController.login);
+router.post('/refresh', refreshLimiter, AuthController.refreshToken);
+router.post('/forgot-password', authBruteForceLimiter, AuthController.forgotPassword);
+router.post('/reset-password', authBruteForceLimiter, AuthController.resetPassword);
 router.get('/me', authenticate, AuthController.me);
 router.post('/change-password', authenticate, AuthController.changePassword);
 router.post('/logout', AuthController.logout);

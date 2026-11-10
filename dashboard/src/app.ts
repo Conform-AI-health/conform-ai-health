@@ -65,9 +65,9 @@ export function createApp(): Express {
     })
   );
 
-  // 3. Parsers com limites adequados para extração de PDFs e normas
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+  // 3. Parsers com limites estritos anti-DoS (T09): 100kb global
+  app.use(express.json({ limit: '100kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
   // 4. Healthcheck simples
   app.get('/health', (_req, res) => {

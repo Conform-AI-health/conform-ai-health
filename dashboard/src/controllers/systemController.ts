@@ -24,7 +24,7 @@ export class SystemController {
           ]);
         }
       } catch (err: any) {
-        dbStatus = `DISCONNECTED (${err.message})`;
+        dbStatus = env.NODE_ENV === 'production' ? 'DISCONNECTED' : `DISCONNECTED (${err.message})`;
       }
 
       let redisStatus = 'CONNECTED';
@@ -45,7 +45,7 @@ export class SystemController {
           ]);
         }
       } catch (err: any) {
-        redisStatus = `OFFLINE_OR_FALLBACK (${err.message})`;
+        redisStatus = env.NODE_ENV === 'production' ? 'OFFLINE_OR_FALLBACK' : `OFFLINE_OR_FALLBACK (${err.message})`;
       }
 
       res.status(200).json({

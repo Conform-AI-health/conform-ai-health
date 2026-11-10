@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { getPaginationParams, buildPaginatedResponse } from '../shared/pagination.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
+import { validateSafeUrl } from '../shared/security.js';
 
 const createModelSchema = z.object({
   name: z.string().min(2, 'Nome do modelo é obrigatório'),
@@ -137,6 +138,18 @@ export class ModelController {
     try {
       const data = createModelSchema.parse(req.body);
 
+      // Validação anti-SSRF em URLs de inferência customizadas (T10 / SEC-P1)
+      if (data.baseUrl && data.baseUrl.trim().length > 0) {
+        const check = validateSafeUrl(data.baseUrl.trim());
+        if (!check.safe && !data.baseUrl.includes('localhost') && !data.baseUrl.includes('127.0.0.1')) {
+          res.status(400).json({
+            error: `URL base de inferência rejeitada por segurança: ${check.reason}`,
+            code: 'SSRF_INVALID_BASE_URL',
+          });
+          return;
+        }
+      }
+
       // Se for marcado como ativo, desativa os outros modelos
       if (data.isActive) {
         await prisma.aiModelConfig.updateMany({
@@ -191,6 +204,17 @@ export class ModelController {
       if (!existing) {
         res.status(404).json({ error: 'Modelo não encontrado para atualização.', code: 'MODEL_NOT_FOUND' });
         return;
+      }
+
+      if (data.baseUrl && data.baseUrl.trim().length > 0) {
+        const check = validateSafeUrl(data.baseUrl.trim());
+        if (!check.safe && !data.baseUrl.includes('localhost') && !data.baseUrl.includes('127.0.0.1')) {
+          res.status(400).json({
+            error: `URL base de inferência rejeitada por segurança: ${check.reason}`,
+            code: 'SSRF_INVALID_BASE_URL',
+          });
+          return;
+        }
       }
 
       if (data.isActive && !existing.isActive) {
