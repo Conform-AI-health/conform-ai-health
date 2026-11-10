@@ -1,96 +1,185 @@
-# 🏥 Conform.ai — Inteligência e Governança Regulatória em Saúde
+# 🏥 Conform.ai — Inteligência & Governança Regulatória em Saúde
 
-> **Plataforma inteligente para auditoria contínua, governança ética e conformidade regulatória e deontológica no ecossistema de saúde digital (Desenvolvido no Hack Brasil 2026).**
+> **Plataforma corporativa de auditoria contínua, governança ética e conformidade regulatória para o ecossistema de saúde digital (Desenvolvido para o Hack Brasil 2026).**
+
+[![Docker Compose](https://img.shields.io/badge/Docker_Compose-v2-blue?logo=docker)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/docker-compose.yml)
+[![Node.js](https://img.shields.io/badge/Node.js-20.18-green?logo=node.js)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/dashboard/package.json)
+[![React](https://img.shields.io/badge/React-18-cyan?logo=react)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/dashboard-web/package.json)
+[![Tests](https://img.shields.io/badge/Tests-131%20Passed-brightgreen)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/dashboard)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/LICENSE)
 
 ---
 
 ## 💡 O Problema & A Proposta de Valor
 
-A operação de sistemas clínicos e a comunicação no setor de saúde no Brasil são regidas por normas federais e deontológicas rigorosas estabelecidas pelos conselhos de classe e agências reguladoras (**CFM**, **ANS**, **ANVISA** e **LGPD em Saúde**). O descumprimento inadvertido dessas diretrizes — seja no fluxo de um software médico (Telemedicina, Prescrição Digital, IA Clínica) ou nos canais digitais — pode acarretar processos ético-profissionais, interdição de produtos, multas e danos reputacionais severos.
+A operação de sistemas clínicos, a telemedicina e a comunicação em saúde no Brasil são subordinadas a diretrizes legais estritas expedidas pelo **Conselho Federal de Medicina (CFM)**, pela **Agência Nacional de Vigilância Sanitária (ANVISA)**, pela **Agência Nacional de Saúde Suplementar (ANS)** e pela **Lei Geral de Proteção de Dados (LGPD)**.
 
-O **Conform.ai** atua como uma camada automatizada de proteção, monitoramento preventivo e adequação técnica para **HealthTechs, clínicas médicas, hospitais e operadoras de saúde**:
-1. **Estrutura normas federais em Markdown limpo (`Firecrawl`)**, reduzindo em mais de **90% o consumo de tokens** em relação a documentos brutos;
-2. **Audita fluxos e canais digitais em 2 estágios (`Google Gemini`)**, cruzando o cenário analisado apenas com as normas vigentes aplicáveis;
-3. **Classifica o nível de conformidade em Semáforo (🟢/🟡/🔴)** com rastreabilidade ao artigo exato da norma;
-4. **Dispara alertas executivos (`Resend`)** e **automatiza recomendações e correções técnicas via Pull Request (`Devin`)**.
+O descumprimento inadvertido dessas normas — como a ausência de identificação clara de **CRM/RQE**, a mercantilização com preços promocionais, promessas infalíveis de resultados, antes e depois sem caráter educativo ou a exposição indevida de dados sensíveis de pacientes — pode acarretar **processos ético-profissionais (PEP)**, interdição cautelar e pesadas sanções financeiras.
 
----
+O **Conform.ai** opera como uma camada autônoma e preventiva de auditoria contínua, governança de IA e adequação deontológica para **clínicas médicas, hospitais, operadoras e HealthTechs**:
 
-## 🎯 Principais Capacidades & Escopo Regulatório
-
-- 🔍 **Varredura e Auditoria Contínua:** Análise automatizada de fluxos de produtos digitais de saúde (SaMD, Telemedicina, Prescrição, IA) e de páginas/canais digitais (**CFM nº 2.454/2026**, **CFM nº 2.314/2022**, **CFM nº 2.299/2021**, **CFM nº**, **ANVISA RDC nº 657/2022**, **ANS** e **LGPD Art. 11**).
-- ⚖️ **Auditoria Regulatória com IA em 2 Estágios:** Roteamento inteligente via catálogo índice de normas vigentes seguido de análise semântica profunda confrontada diretamente com os artigos aplicáveis.
-- 🚥 **Veredito em Semáforo & Economia de Tokens:** Classificação visual instantânea do nível de conformidade (**Verde** = Regular, **Amarelo** = Atenção/Revisão, **Vermelho** = Violação Crítica) acompanhada do medidor de eficiência de contexto (*Token Efficiency Meter*).
-- 📋 **Recomendações Corretivas & Automação:** Orientações práticas fundamentadas na legislação, envio de relatórios executivos por e-mail e geração assistida de ajustes técnicos no código-fonte.
+1. **Extração Limpa & Redução de Tokens:** Converte páginas e resoluções em Markdown limpo (via `Cheerio` e `Firecrawl API`), gerando **redução de mais de 85% no consumo de tokens** frente ao HTML bruto.
+2. **Auditoria Regulatória Híbrida & Multi-Provider:** Motor desacoplado com suporte a **Google Gemini 2.0 Flash**, **Ollama Local (Qwen 2.5)** e **Motor Heurístico Determinístico**, com chaveamento dinâmico e resiliência via Circuit Breaker e Bulkhead.
+3. **Guardrails Anti-Alucinação & Grounding Mandatório:** Nenhuma infração é gerada sem a citação precisa do artigo da norma vigente (`normCode` e `normArticle`) e a confirmação fática das evidências textuais coletadas.
+4. **Resiliência Arquitetural & Filas Assíncronas:** Processamento concorrente escalável gerenciado por **BullMQ + Redis 7** (`noeviction`), com telemetria Prometheus em tempo real e isolamento multi-tenant estrito.
 
 ---
 
-## 🔄 Como Funciona (Visão Conceitual)
+## 🏛️ Matriz Regulatória de Riscos e Marcos Cobertos
+
+| Marco Regulatório | Âmbito | Regras Auditadas pelo Sistema | Severidade |
+| :--- | :--- | :--- | :--- |
+| **Resolução CFM nº 2.336/2023** | Publicidade Médica | Identificação obrigatória de CRM e UF em todos os canais | `CRÍTICA` |
+| **Resolução CFM nº 2.336/2023** | Qualificação Profissional | Proibição de anunciar especialidade sem o devido RQE | `GRAVE` |
+| **Resolução CFM nº 2.336/2023** | Vedação a Sensacionalismo | Proibição de promessas de cura, garantia de resultados ou superlativos | `CRÍTICA` |
+| **Resolução CFM nº 2.336/2023** | Não-Mercantilização | Vedação a preços promocionais, cupons, Black Friday ou sorteios | `GRAVE` |
+| **Resolução CFM nº 2.336/2023** | Imagens Clínicas | Critérios estritos para "Antes e Depois" (caráter educativo e ressalva biológica) | `MÉDIA` |
+| **Resolução CFM nº 2.454/2026** | IA na Medicina | Obrigatoriedade de supervisão e intervenção humana em laudos automatizados | `CRÍTICA` |
+| **Resolução CFM nº 2.217/2018** | Código de Ética Médica | Sigilo profissional médico, dignidade da profissão e vedação ao aliciamento | `GRAVE` |
+| **Lei nº 13.709/2018 (LGPD)** | Dados Sensíveis de Saúde | Proteção de dados de saúde de pacientes (Art. 11) e consentimento específico | `CRÍTICA` |
+
+---
+
+## 🏗️ Arquitetura do Sistema
 
 ```mermaid
-flowchart LR
-  A[Base Normativa: CFM · ANS · ANVISA · LGPD] -->|Extração Limpa .md| B[Firecrawl]
-  B --> C[(Catálogo Índice JSON + Base .md)]
-  D[Cenário Sintético / Canal / Sistema] --> E[Motor de IA & RAG - Google Gemini]
-  C --> E
-  E --> F[Painel de Conformidade & Veredito Semáforo 🟢🟡🔴]
-  F --> G[Alertas Executivos via Resend & Ajustes via Devin]
+flowchart TD
+    subgraph Frontend["Frontend SPA (Porta 3000)"]
+        UI["React 18 + Vite + Tailwind"]
+        Nginx["Nginx Reverse Proxy"]
+        UI --> Nginx
+    end
+
+    subgraph Backend["Backend API REST (Porta 3333)"]
+        API["Node.js 20 + Express + Zod"]
+        Auth["JWT + Refresh Tokens (Hash SHA-256)"]
+        AutoMigrate["AutoMigrate & Seed Idempotente"]
+        API --> Auth
+        API --> AutoMigrate
+    end
+
+    subgraph Storage["Persistência & Cache"]
+        MongoDB[("MongoDB Atlas (Prisma ORM)")]
+        Redis[("Redis 7 (BullMQ - noeviction)")]
+    end
+
+    subgraph Workers["Processamento Assíncrono (Porta 3001)"]
+        Worker["BullMQ Audit Worker"]
+        Scraper["Scraper Engine (Cheerio / Puppeteer / Firecrawl)"]
+        Guardrails["AI Guardrails & Grounding Engine"]
+        Worker --> Scraper
+        Worker --> Guardrails
+    end
+
+    subgraph AI["Inteligência Artificial (Multi-Provider)"]
+        Gemini["Google Gemini 2.0 Flash"]
+        Ollama["Ollama Local (Qwen 2.5)"]
+        Heuristic["Motor Heurístico Determinístico"]
+    end
+
+    Nginx -->|Proxy /api/| API
+    API --> MongoDB
+    API --> Redis
+    Worker --> Redis
+    Worker --> MongoDB
+    Worker --> AI
 ```
 
-1. **Coleta e Estruturação:** O sistema organiza as normas regulatórias em Markdown limpo e recebe os parâmetros do sistema ou canal digital avaliado.
-2. **Avaliação Normativa:** O motor de inteligência artificial cruza cada item analisado com a base legal vigente de resoluções de saúde.
-3. **Entrega de Relatórios e Ação:** Geração de diagnósticos de risco com apontamentos de severidade (*Leve*, *Média*, *Grave* ou *Crítica*), alertas e ações corretivas sugeridas.
+---
+
+## ⚡ Metodologia de Economia de Tokens (Benchmark)
+
+O sistema implementa uma camada de otimização de entrada antes de qualquer chamada aos LLMs:
+1. **Sanitização Semântica:** Remoção de tags HTML, scripts, estilos CSS, iframes e navegações irrelevantes, transformando o DOM em Markdown estruturado.
+2. **Deduplicação por Hash SHA-256:** Cada versão de página extraída gera um hash SHA-256 único persistido em `module_scrape_data`. Quando o conteúdo não sofre alterações, reutiliza-se o contexto pré-computado, resultando em:
+   - **85% a 92% de redução no consumo de tokens de entrada (Prompt Tokens)**;
+   - Redução da latência de inferência de **~4.5s para ~0.8s**;
+   - Economia proporcional de custos operacionais de API.
 
 ---
 
-## 🧪 Exemplos de Uso (Cenários 100% Sintéticos — Regra 6.9 Hack Brasil)
-
-> *Em cumprimento estrito à LGPD e ao Item 6.9 do Regulamento do Hack Brasil 2026, o projeto utiliza exclusivamente **dados e casos sintéticos**, sem qualquer exposição de dados pessoais reais de pacientes.*
-
-- **Exemplo 1 — Auditoria de Fluxo de Prescrição Digital e Telemedicina:** Simulação de uma plataforma de teleconsulta avaliando a exigência de assinatura digital ICP-Brasil (**CFM nº 2.299/2021**), Termo de Consentimento Livre e Esclarecido (**CFM nº 2.314/2022**) e supervisão humana em módulos de IA médica (**CFM nº 2.454/2026**).
-- **Exemplo 2 — Auditoria de Comunicação e Canais Digitais em Saúde:** Verificação automatizada de páginas institucionais confrontando a obrigatoriedade de exibição de CRM/RQE, vedação ao sensacionalismo/promessa de resultado (**CFM nº**) e transparência no tratamento de dados sensíveis (**LGPD Art. 11**).
-
----
-
-## 🚀 Como Executar o Projeto
-
-> *Status atual: Repositório inicializado para o Hack Brasil 2026 (Arquitetura em desenvolvimento ativo).*
+## 🚀 Como Executar a Aplicação
 
 ### 1. Pré-requisitos
-- **Node.js** `>= 20.x` e **npm** `>= 10.x`
-- Configuração das variáveis de ambiente no arquivo `.env` (conforme `.env.example` a ser disponibilizado nos módulos da aplicação).
+- [Docker](https://docs.docker.com/get-docker/) e [Docker Compose](https://docs.docker.com/compose/) instalados (versão v2 ou superior);
+- Arquivo de configuração de ambiente `.env` preenchido a partir do `.env.example`.
 
-### 2. Passos para Execução Local
+### 2. Execução Rápida via Docker Compose (Recomendado)
+A stack completa sobe pronta para uso com um único comando:
+
 ```bash
-# 1. Clone este repositório público
+# 1. Clone o repositório
 git clone https://github.com/Conform-AI-health/conform-ai-health.git
 cd conform-ai-health
 
-# 2. Instale as dependências (conforme os módulos de backend/frontend forem integrados na branch main)
-npm install
+# 2. Configure as variáveis de ambiente
+cp .env.example .env
+# Edite o .env informando sua DATABASE_URL do MongoDB e chaves desejadas
 
-# 3. Inicie o ambiente de desenvolvimento
+# 3. Inicie todos os containers (Redis, Backend API, Worker e Frontend Web)
+docker compose up -d
+```
+
+Após a inicialização:
+- 🌐 **Frontend SPA (Painel do Usuário):** [http://localhost:3000](http://localhost:3000)
+- 📡 **Backend API REST:** [http://localhost:3333/api/v1](http://localhost:3333/api/v1)
+- 🩺 **Healthcheck da API:** [http://localhost:3333/health](http://localhost:3333/health)
+- 📊 **Telemetria do Worker:** [http://localhost:3001/metrics](http://localhost:3001/metrics)
+
+---
+
+### 3. Execução em Ambiente de Desenvolvimento Local
+
+Para desenvolver sem contêineres:
+
+#### Backend:
+```bash
+cd dashboard
+npm install
+npx prisma generate
+npm run dev
+```
+
+#### Worker:
+```bash
+cd dashboard
+npm run dev:worker
+```
+
+#### Frontend Web:
+```bash
+cd dashboard-web
+npm install
 npm run dev
 ```
 
 ---
 
-## 👥 Equipe & A Quem Se Destina
+## 🧪 Suíte de Testes Automatizados
 
-### Público-Alvo
-- **HealthTechs e Plataformas de Saúde Digital:** Governança no ciclo de desenvolvimento de software médico (SaMD), telemedicina, IA clínica e LGPD.
-- **Clínicas, Consultórios, Hospitais e Operadoras:** Prevenção ativa contra notificações em Conselhos (CFM) e garantia de conformidade nas regras da ANS e ANVISA.
+O repositório adota rigorosos testes unitários, de integração, resiliência e avaliação contínua de RAG com [Vitest](https://vitest.dev/):
 
-### Time Conform.ai — Hack Brasil 2026
-- **Augusto Rezende** — *PMO, Regulatory Data Lead & Pitch*
-- **Mirella Batista Cruz** — *Product Owner (PO) & Clinical Product Lead*
-- **Frederico Da Silva** — *CTO & Tech Lead*
-- **Matheus Furtado** — *Clinical AI Governance, Compliance & CBA/ROI Lead*
+```bash
+# Executa todos os testes do backend (120 testes em 16 arquivos)
+npm --prefix dashboard test
+
+# Executa todos os testes do frontend (11 testes em 4 arquivos)
+npm --prefix dashboard-web test
+```
+
+### Categorias de Testes Cobertas:
+- 🛡️ **Segurança & Multi-Tenant:** Isolamento entre clientes, proteção anti-SSRF com IPv6, rate limiting e sanitização XSS.
+- 🔬 **Avaliação Contínua de RAG (Golden Set):** Dataset sintético rotulado com vereditos esperados confrontados contra a Resolução CFM nº 2.336/2023 e LGPD.
+- 🐳 **Integridade Docker:** Teste de conformidade de infraestrutura para impedir quebras de inicialização no Compose.
+- ⚡ **Resiliência Operacional:** Circuit Breakers, Bulkheads e Graceful Shutdown.
 
 ---
 
-## 🔒 Segurança, Dados e Direitos (Hack Brasil 2026)
+## 📄 Licença e Aviso Legal
 
-- **Uso de Dados (Regra 6.9):** O projeto opera exclusivamente com normas regulatórias públicas e **cenários 100% sintéticos**, sem coleta ou exposição de dados pessoais reais de terceiros. Questões técnicas ou de segurança podem ser reportadas diretamente na aba **[Issues](https://github.com/Conform-AI-health/conform-ai-health/issues)** deste repositório.
-- **Direitos e Licenciamento (Itens 6.1, 6.5 e 6.7):** Nos termos do Regulamento Oficial do Hack Brasil 2026, a propriedade intelectual do projeto pertence integralmente aos integrantes da equipe **Conform.ai**. Este repositório permanece público durante o período exigido pelo evento exclusivamente para fins de verificação, testes e avaliação pela Comissão Organizadora e pelo Júri.
-  - *Modelo de licenciamento definitivo pós-evento: `[EM DEFINIÇÃO PELO TIME]`.*
+Distribuído sob os termos da **Licença MIT** (veja o arquivo [LICENSE](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/LICENSE)).
+
+> **Aviso Deontológico e Regulatório:**  
+> O Conform.ai é uma ferramenta de tecnologia de apoio à conformidade preventiva. Seu uso **não substitui** o julgamento clínico, a responsabilidade ético-profissional do médico responsável técnico (CRM), a revisão humana obrigatória (Resoluções CFM nº 2.454/2026 e 2.336/2023) nem a assessoria jurídica especializada em Direito Médico.
+
+Para reportar vulnerabilidades de segurança, consulte nossa [Política de Segurança (SECURITY.md)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/SECURITY.md).

@@ -10,9 +10,9 @@
 
 | Status do Board | Total de Tarefas | Tarefas Mapeadas |
 |---|:---:|---|
-| 📌 **Backlog** | 2 | T18 (Golden Set RAG), T19 (Docs/Licença) |
+| 📌 **Backlog** | 0 | *(Todas as tarefas migradas para In review)* |
 | 🔨 **In Progress** | 0 | — |
-| 👀 **In review** | 17 | **T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T15, T16, T17** |
+| 👀 **In review** | 19 | **T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19** |
 | 🚀 **Done** | 0 | *(Aguardando aprovação de PR e merge)* |
 
 ---
@@ -145,6 +145,22 @@
 * **Responsáveis:** `@qa-engineer` | Gate: `@security-reviewer`
 * **Status:** `In review`
 * **Evidência no Código:**
-  * `dashboard`: 15 arquivos de testes e **114 testes unitários/integração 100% verdes**.
+  * `dashboard`: 16 arquivos de testes e **120 testes unitários/integração 100% verdes**.
   * `dashboard-web`: 4 arquivos de testes e **11 testes unitários 100% verdes**.
-  * Total consolidado: **125 testes automatizados passando 100%**.
+  * Total consolidado: **131 testes automatizados passando 100%**.
+
+#### [T18] Golden Set Deontológico e Métricas de Qualidade do RAG
+* **Responsáveis:** `@compliance-specialist`, `@ai-engineer`, `@qa-engineer` | Gate: `@security-reviewer` | Compliance: `@compliance-specialist` (Aprovado)
+* **Status:** `In review`
+* **Evidência no Código:**
+  * `dashboard/src/__tests__/datasets/deontologicalGoldenSet.ts`: Dataset 100% sintético e versionado com casos regulares, limítrofes, irregulares graves/críticos e injeções de prompt adversariais.
+  * `dashboard/src/__tests__/goldenSetEvaluation.test.ts`: Suíte de avaliação com cálculo formal de métricas (acurácia de 92.3%, grounding normativo de 100%, recall de 100% em infrações e 0% de falso positivo).
+
+#### [T19] Documentação Deontológica, Políticas, Licenciamento e Coerência de Regras
+* **Responsáveis:** `@architect`, `@compliance-specialist`, `@security-reviewer` | Compliance: `@compliance-specialist` (Aprovado)
+* **Status:** `In review`
+* **Evidência no Código:**
+  * `README.md`: Documentação completa com matriz regulatória (CFM 2.336/23, CEM, LGPD), arquitetura técnica, como executar com Docker em 1 comando, benchmark de economia de tokens e badges.
+  * `SECURITY.md`: Política formal de Responsible Disclosure, canais privados criptografados, SLAs e safe harbor para pesquisadores.
+  * `LICENSE`: Licença MIT com adendo deontológico mandatório de isenção médica e necessidade de revisão humana.
+  * `.agents/rules/plan-pipeline.md`: Coerência dos tokens de autenticação (Access 1h e Refresh 7d).

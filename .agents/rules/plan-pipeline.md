@@ -43,7 +43,7 @@ flowchart TD
 
 - **Agentes Participantes:**
   - `@architect` (`.agents/agents/architect.md` | Skill: `architecture-review`): Desenho de arquitetura, contratos de saída estruturados (`StructuredAuditContract`), padrões de resiliência (**Circuit Breaker** e **Bulkhead**), e modelos de dados Prisma/MongoDB.
-  - `@backend-specialist` (`.agents/agents/backend-specialist.md` | Skill: `backend-engineer`): Endpoints REST Express, paginação (`skip`/`take`), validação Zod, autenticação com refresh token de 1h, e workers BullMQ.
+  - `@backend-specialist` (`.agents/agents/backend-specialist.md` | Skill: `backend-engineer`): Endpoints REST Express, paginação (`skip`/`take`), validação Zod, autenticação robusta (Access Token de 1h e Refresh Token rotativo de 7d), e workers BullMQ.
   - `@frontend-specialist` (`.agents/agents/frontend-specialist.md` | Skill: `frontend-engineer`): Telas React 18, Vite, componentes Tailwind CSS, dashboards de telemetria analítica (latência P95, custos USD/BRL, taxas de falhas), estados reativos e RBAC na UI.
   - `@ai-engineer` (`.agents/agents/ai-engineer.md` | Skills: `rag-engineering` e `prompt-engineering`): Integração com LLMs (Gemini, Ollama), **Guardrails Anti-Alucinação** (normativo e fático), contratos estruturados, chunking semântico e filtragem de resoluções revogadas.
 - **Ações:**
