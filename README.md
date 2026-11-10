@@ -2,11 +2,11 @@
 
 > **Plataforma corporativa de auditoria contínua, governança ética e conformidade regulatória para o ecossistema de saúde digital (Desenvolvido para o Hack Brasil 2026).**
 
-[![Docker Compose](https://img.shields.io/badge/Docker_Compose-v2-blue?logo=docker)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/docker-compose.yml)
-[![Node.js](https://img.shields.io/badge/Node.js-20.18-green?logo=node.js)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/dashboard/package.json)
-[![React](https://img.shields.io/badge/React-18-cyan?logo=react)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/dashboard-web/package.json)
-[![Tests](https://img.shields.io/badge/Tests-131%20Passed-brightgreen)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/dashboard)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/LICENSE)
+[![Docker Compose](https://img.shields.io/badge/Docker_Compose-v2-blue?logo=docker)](docker-compose.yml)
+[![Node.js](https://img.shields.io/badge/Node.js-20.18-green?logo=node.js)](dashboard/package.json)
+[![React](https://img.shields.io/badge/React-18-cyan?logo=react)](dashboard-web/package.json)
+[![Tests](https://img.shields.io/badge/Tests-131%20Passed-brightgreen)](dashboard/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
@@ -177,9 +177,9 @@ npm --prefix dashboard-web test
 
 ## 📄 Licença e Aviso Legal
 
-Distribuído sob os termos da **Licença MIT** (veja o arquivo [LICENSE](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/LICENSE)).
+Distribuído sob os termos da **Licença MIT** (veja o arquivo [LICENSE](LICENSE)).
 
 > **Aviso Deontológico e Regulatório:**  
 > O Conform.ai é uma ferramenta de tecnologia de apoio à conformidade preventiva. Seu uso **não substitui** o julgamento clínico, a responsabilidade ético-profissional do médico responsável técnico (CRM), a revisão humana obrigatória (Resoluções CFM nº 2.454/2026 e 2.336/2023) nem a assessoria jurídica especializada em Direito Médico.
 
-Para reportar vulnerabilidades de segurança, consulte nossa [Política de Segurança (SECURITY.md)](file:///c:/Users/frede/OneDrive/Documentos/conform-ai-health/SECURITY.md).
+Para reportar vulnerabilidades de segurança, consulte nossa [Política de Segurança (SECURITY.md)](SECURITY.md).
