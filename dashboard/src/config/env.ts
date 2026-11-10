@@ -121,5 +121,5 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
-export { envSchema };
+export { envSchema, KNOWN_INSECURE_SECRETS };
 
