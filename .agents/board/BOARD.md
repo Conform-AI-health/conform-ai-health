@@ -145,9 +145,9 @@
 * **Responsáveis:** `@qa-engineer` | Gate: `@security-reviewer`
 * **Status:** `In review`
 * **Evidência no Código:**
-  * `dashboard`: 16 arquivos de testes e **120 testes unitários/integração 100% verdes**.
+  * `dashboard`: 17 arquivos de testes e **138 testes unitários/integração 100% verdes** (incluindo `securityAndAiCorrections.test.ts`).
   * `dashboard-web`: 4 arquivos de testes e **11 testes unitários 100% verdes**.
-  * Total consolidado: **131 testes automatizados passando 100%**.
+  * Total consolidado: **149 testes automatizados passando 100%**.
 
 #### [T18] Golden Set Deontológico e Métricas de Qualidade do RAG
 * **Responsáveis:** `@compliance-specialist`, `@ai-engineer`, `@qa-engineer` | Gate: `@security-reviewer` | Compliance: `@compliance-specialist` (Aprovado)
@@ -164,3 +164,18 @@
   * `SECURITY.md`: Política formal de Responsible Disclosure, canais privados criptografados, SLAs e safe harbor para pesquisadores.
   * `LICENSE`: Licença MIT com adendo deontológico mandatório de isenção médica e necessidade de revisão humana.
   * `.agents/rules/plan-pipeline.md`: Coerência dos tokens de autenticação (Access 1h e Refresh 7d).
+
+---
+
+### 🛡️ Rodada Complementar de Correções Técnicas — Security, AI Governance & Data Integrity (P0)
+
+| ID | Prioridade | Escopo Técnico | Arquivos Auditados e Corrigidos | Status de Execução | Testes Associados |
+|:---:|:---:|---|---|:---:|:---:|
+| **T01** | P0 | Healthcheck e readiness do Worker: diferenciação de liveness/readiness, HTTP 503 para DEGRADED/DOWN quando sem capacidade de processar, verificação de Redis e pausa. | `dashboard/src/worker.ts`, `docker-compose.yml` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T01) |
+| **T02** | P0 | Proteção de `/metrics`: `MONITORING_API_KEY` obrigatória em produção, bloqueio estrito de query string (`?key=`), autenticação exclusiva por headers (`Authorization: Bearer` ou `X-API-Key`) e comparação segura `timingSafeCompare`. | `dashboard/src/worker.ts`, `dashboard/src/config/env.ts`, `docker-compose.yml` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T02) |
+| **T03** | P0 | Bootstrap e provisionamento seguro: remoção de catch silencioso no boot da API, eliminação de comando destrutivo de exclusão de usuários na autocura e preservação idempotente de credenciais administrativas. | `dashboard/src/index.ts`, `dashboard/src/shared/autoMigrate.ts` | ✅ Concluído | `authAndResilience.test.ts` |
+| **T04** | P0 (Bloqueador) | Integridade da extração de conteúdo: remoção total de fallback que fabricava Markdown sintético alegando serviços médicos sem dados reais, adoção de erro explícito `EXTRACTION_FAILED` e laudos incompletos com status `FAILED`. | `dashboard/src/services/firecrawlService.ts`, `dashboard/src/services/auditExecutionService.ts` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T04) |
+| **T05** | P0 | Proteção SSRF mandatória em todos os fluxos de extração externa: validação assíncrona anti-SSRF com resolução de DNS antes do envio para Firecrawl API e motores de scraping. | `dashboard/src/services/firecrawlService.ts`, `dashboard/src/shared/security.ts` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T05) |
+| **T06** | P0 | Contratos de confiança, grounding e alucinação: eliminação de premissas falsas de `100%` e `NONE` em motores heurísticos ou sem verificação; suporte a `null` e `NOT_EVALUATED` quando não calculado. | `dashboard/src/shared/reconciliationTypes.ts`, `dashboard/src/services/ai/heuristicProvider.ts`, `dashboard/src/shared/aiGuardrails.ts` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T06) |
+| **T07** | P0 | AI Guardrails e neutralização de injeções de prompt: neutralização de tags delimitadoras (`</document_to_audit>`) e tags de controle de sistema no pré-processamento. | `dashboard/src/shared/aiGuardrails.ts`, `dashboard/src/services/ai/geminiProvider.ts`, `dashboard/src/services/ai/ollamaProvider.ts` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T07) |
+| **T08** | P0 | Resolução estruturada e canônica de normas: identificadores canônicos (`authority`, `type`, `number`, `year`, `isRevoked`) e expurgo definitivo de normas revogadas da imputação deontológica. | `dashboard/src/services/normsResolver.ts` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T08) |

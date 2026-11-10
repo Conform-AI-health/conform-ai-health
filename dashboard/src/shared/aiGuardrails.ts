@@ -19,8 +19,8 @@ export interface HallucinationIncident {
 }
 
 export interface GuardrailsReport {
-  groundingScore: number; // 0 a 100
-  hallucinationRisk: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH';
+  groundingScore: number | null; // 0 a 100, ou null se não avaliado
+  hallucinationRisk: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'NOT_EVALUATED';
   interceptedIncidents: HallucinationIncident[];
   passedChecks: string[];
   sanitizedOutput: ReconciliationOutput;
@@ -60,6 +60,17 @@ export class AIGuardrails {
         flags.push(`Padrão suspeito detectado: ${pattern.source}`);
         sanitized = sanitized.replace(pattern, '[CONTEÚDO_NEUTRALIZADO_PELO_GUARDRAILS]');
       }
+    }
+
+    // T07: Neutralização de tags delimitadoras e sequências que tentam quebrar blocos do prompt
+    if (/<\/?document_to_audit.*?>/i.test(sanitized)) {
+      flags.push('Tentativa de quebra de delimitador <document_to_audit> detectada.');
+      sanitized = sanitized.replace(/<\/?document_to_audit.*?>/gi, '[TAG_DELIMITADORA_NEUTRALIZADA]');
+    }
+
+    if (/<\/?(system|user|assistant|instruction|prompt|guidelines).*?>/i.test(sanitized)) {
+      flags.push('Tentativa de injeção de tags de controle do modelo detectada.');
+      sanitized = sanitized.replace(/<\/?(system|user|assistant|instruction|prompt|guidelines).*?>/gi, '[TAG_SISTEMA_NEUTRALIZADA]');
     }
 
     // Remove caracteres de controle ASCII que causam jailbreak de tokenizers
@@ -406,14 +417,18 @@ export class AIGuardrails {
       recalculatedSummary = `${rawOutput.summary} [Guardrails Anti-Alucinação: ${interceptedIncidents.length} alucinação(ões) expurgada(s)].`;
     }
 
-    // 3. Cálculo de Índices de Confiabilidade
+    // 3. Cálculo de Índices de Confiabilidade e Grounding (T06)
     const totalClaimed = Math.max(1, rawOutput.violations.length);
     const validCount = validViolations.length;
-    const groundingRatio = rawOutput.violations.length === 0 ? 1.0 : validCount / totalClaimed;
-    const groundingScore = Math.round(groundingRatio * 100);
+    let groundingScore: number | null = rawOutput.violations.length === 0 ? 100 : Math.round((validCount / totalClaimed) * 100);
 
-    let hallucinationRisk: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' = 'NONE';
-    if (interceptedIncidents.length === 0) {
+    let hallucinationRisk: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'NOT_EVALUATED' = 'NONE';
+
+    // Se o conteúdo auditado for insuficiente (< 50 caracteres), não há ancoragem fática possível
+    if (cleanMarkdown.length < 50) {
+      groundingScore = null;
+      hallucinationRisk = 'HIGH';
+    } else if (interceptedIncidents.length === 0) {
       hallucinationRisk = 'NONE';
     } else if (interceptedIncidents.length === 1 && validCount > 0) {
       hallucinationRisk = 'LOW';

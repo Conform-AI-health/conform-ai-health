@@ -46,6 +46,7 @@ out
 !dashboard-web/.env.example
 
 # IDE files
+*.zip
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json

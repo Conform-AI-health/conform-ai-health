@@ -5,8 +5,10 @@ import { env } from '../config/env.js';
 import { ScraperService } from './scraperService.js';
 import { CircuitBreaker } from '../shared/circuitBreaker.js';
 import { Bulkhead } from '../shared/bulkhead.js';
+import { validateSafeUrlAsync } from '../shared/security.js';
 
 export interface FirecrawlScrapeResult {
+  status: 'SUCCESS' | 'FAILED' | 'EXTRACTION_INCOMPLETE';
   markdown: string;
   rawContent: string;
   contentHash: string;
@@ -14,7 +16,9 @@ export interface FirecrawlScrapeResult {
   moduleId?: string;
   source: 'FIRECRAWL_API' | 'FIRECRAWL_FALLBACK_ENGINE';
   createdAt: Date;
+  extractedAt: string;
   savedRecordId?: string;
+  error?: string;
 }
 
 export class FirecrawlService {
@@ -35,15 +39,23 @@ export class FirecrawlService {
   });
 
   /**
-   * Executa a extração exclusiva de URL via API do Firecrawl com conversão para Markdown,
-   * cálculo de integridade criptográfica SHA-256 e persistência no MongoDB (module_scrape_data).
+   * Executa a extração exclusiva de URL com validação anti-SSRF rigorosa (T05),
+   * conversão para Markdown limpo e integridade SHA-256 (T04).
+   * JAMAIS fabrica conteúdo fictício ou sintético se a extração falhar.
    */
   public static async scrape(url: string, moduleId?: string, clientId?: string): Promise<FirecrawlScrapeResult> {
+    // 1. T05: Proteção anti-SSRF mandatória antes de qualquer chamada de rede externa
+    const ssrfCheck = await validateSafeUrlAsync(url);
+    if (!ssrfCheck.safe) {
+      throw new Error(`[SSRF Bloqueado] Destino de extração rejeitado por segurança: ${ssrfCheck.reason}`);
+    }
+
     const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || (env as any).FIRECRAWL_API_KEY;
     let markdown = '';
     let source: 'FIRECRAWL_API' | 'FIRECRAWL_FALLBACK_ENGINE' = 'FIRECRAWL_FALLBACK_ENGINE';
+    let lastError: string | null = null;
 
-    // 1. Scraping Exclusivo via Firecrawl API com proteção de Circuit Breaker e Bulkhead
+    // 2. Scraping via Firecrawl API com proteção de Circuit Breaker e Bulkhead
     if (firecrawlApiKey && firecrawlApiKey !== 'mock-key' && !firecrawlApiKey.startsWith('mock')) {
       try {
         console.log(`🔥 [FirecrawlService] Disparando scraping via Firecrawl API para: ${url}`);
@@ -72,29 +84,41 @@ export class FirecrawlService {
           console.log(`✅ [FirecrawlService] Conteúdo retornado com sucesso via Firecrawl API (${markdown.length} caracteres)`);
         }
       } catch (err: any) {
+        lastError = `Firecrawl API: ${err.message}`;
         console.warn(`⚠️ [FirecrawlService] Erro na chamada à API do Firecrawl (${err.message}). Ativando fallback de conversão para Markdown.`);
       }
     }
 
-    // 2. Fallback resiliente de conversão para Markdown caso a chave não esteja ativa ou offline
+    // 3. Fallback resiliente de conversão para Markdown caso a chave não esteja ativa ou ocorra falha
     if (!markdown || markdown.trim().length === 0) {
       console.log(`ℹ️ [FirecrawlService] Processando extração limpa para Markdown via motor nativo para: ${url}`);
       try {
         const scrapeResult = await ScraperService.scrape(url, 'CHEERIO');
-        markdown = scrapeResult.cleanMarkdown;
+        if (scrapeResult && scrapeResult.cleanMarkdown && scrapeResult.cleanMarkdown.trim().length > 0) {
+          markdown = scrapeResult.cleanMarkdown.trim();
+        } else {
+          lastError = lastError ? `${lastError} | Cheerio: Conteúdo limpo retornado vazio` : 'Cheerio: Conteúdo limpo retornado vazio';
+        }
       } catch (fallbackErr: any) {
-        // Fallback estruturado de contingência
-        markdown = `# Conteúdo Extraído de ${url}\n\n*Página capturada pelo motor de extração em ${new Date().toISOString()}*\n\nWebsite com serviços médicos e clínicos auditados pela plataforma ConformIA.`;
+        lastError = lastError ? `${lastError} | Cheerio: ${fallbackErr.message}` : `Cheerio: ${fallbackErr.message}`;
       }
     }
 
-    // 3. Geração de Hash Criptográfico SHA-256 de Integridade
-    const contentHash = crypto.createHash('sha256').update(markdown, 'utf8').digest('hex');
+    // T04: BLOQUEADOR DE INTEGRIDADE
+    // Se todos os mecanismos de extração falharem ou o conteúdo for vazio, NUNCA inventar dados fictícios
+    if (!markdown || markdown.trim().length === 0) {
+      const errorMsg = `[EXTRACTION_FAILED] Falha irrecuperável na extração de conteúdo da URL (${url}). Motivo: ${lastError || 'Nenhum conteúdo fático obtido'}. É expressamente proibido gerar laudo sobre conteúdo sintético ou inexistente.`;
+      console.error(`❌ [FirecrawlService] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
 
+    // 4. Geração de Hash Criptográfico SHA-256 de Integridade do Conteúdo Real Obtido
+    const contentHash = crypto.createHash('sha256').update(markdown, 'utf8').digest('hex');
     const now = new Date();
+    const extractedAt = now.toISOString();
     let savedRecordId: string | undefined;
 
-    // 4. Persistência dos Dados Brutos no MongoDB
+    // 5. Persistência dos Dados Brutos no MongoDB
     if (moduleId) {
       try {
         const savedData = await prisma.moduleScrapeData.create({
@@ -139,6 +163,7 @@ export class FirecrawlService {
     }
 
     return {
+      status: 'SUCCESS',
       markdown,
       rawContent: markdown,
       contentHash,
@@ -146,6 +171,7 @@ export class FirecrawlService {
       moduleId,
       source,
       createdAt: now,
+      extractedAt,
       savedRecordId,
     };
   }

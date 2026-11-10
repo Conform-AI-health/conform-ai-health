@@ -110,6 +110,22 @@ const envSchema = z
           path: ['CORS_ORIGIN'],
         });
       }
+
+      // 4. Proteção Mandatória de Métricas Operacionais em Produção (T02)
+      if (!data.MONITORING_API_KEY || data.MONITORING_API_KEY.length < 16) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Em produção, MONITORING_API_KEY é obrigatória e deve possuir no mínimo 16 caracteres criptográficos.',
+          path: ['MONITORING_API_KEY'],
+        });
+      }
+      if (data.MONITORING_API_KEY && KNOWN_INSECURE_SECRETS.includes(data.MONITORING_API_KEY)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Em produção é proibido utilizar MONITORING_API_KEY padrão ou previsível.',
+          path: ['MONITORING_API_KEY'],
+        });
+      }
     }
   });
 

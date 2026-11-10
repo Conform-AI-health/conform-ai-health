@@ -75,6 +75,11 @@ export class AuditExecutionService {
       // 2 & 3. Scraping Exclusivo via Firecrawl + Hash SHA-256 + MongoDB
       const firecrawlResult = await FirecrawlService.scrape(targetUrl, agentModuleId, clientId);
 
+      // T04: Validação estrita de integridade do conteúdo extraído
+      if (!firecrawlResult || !firecrawlResult.markdown || firecrawlResult.markdown.trim().length === 0) {
+        throw new Error('Conteúdo extraído vazio ou inexistente. Auditoria deontológica abortada para evitar geração de laudo inconsequente.');
+      }
+
       await prisma.systemLog.create({
         data: {
           level: 'INFO',
@@ -282,6 +287,8 @@ export class AuditExecutionService {
         data: {
           status: 'FAILED',
           summary: `Falha técnica durante a execução da auditoria: ${error.message}`,
+          score: 0,
+          requiresHumanReview: true,
         },
       }).catch(() => {});
 

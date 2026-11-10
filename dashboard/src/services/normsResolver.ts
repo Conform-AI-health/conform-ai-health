@@ -3,6 +3,38 @@ import path from 'path';
 import { prisma } from '../config/prisma.js';
 import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
 
+export interface CanonicalNormIdentifier {
+  authority: 'CFM' | 'ANS' | 'ANVISA' | 'LGPD' | 'LEI_FEDERAL' | 'OUTRO';
+  type: 'RESOLUCAO' | 'LEI' | 'DECRETO' | 'PORTARIA' | 'INSTRUCAO_NORMATIVA';
+  number: string;
+  year?: number;
+  article?: string;
+  isRevoked: boolean;
+}
+
+export function parseCanonicalIdentifier(codeOrTitle: string, tags: string[] = []): CanonicalNormIdentifier {
+  const text = `${codeOrTitle} ${tags.join(' ')}`.toUpperCase();
+  let authority: CanonicalNormIdentifier['authority'] = 'OUTRO';
+  if (text.includes('CFM')) authority = 'CFM';
+  else if (text.includes('ANS')) authority = 'ANS';
+  else if (text.includes('ANVISA')) authority = 'ANVISA';
+  else if (text.includes('LGPD') || text.includes('13.709') || text.includes('13709')) authority = 'LGPD';
+  else if (text.includes('LEI')) authority = 'LEI_FEDERAL';
+
+  let type: CanonicalNormIdentifier['type'] = 'RESOLUCAO';
+  if (text.includes('LEI')) type = 'LEI';
+  else if (text.includes('DECRETO')) type = 'DECRETO';
+  else if (text.includes('PORTARIA')) type = 'PORTARIA';
+
+  const numMatch = codeOrTitle.match(/(?:N[ºo°]?\s*|RES(?:OLUÇÃO)?\.?\s*|LEI\s*)?([0-9]{1,5}(?:\.[0-9]{3})?)(?:\/|-)?([0-9]{2,4})?/i);
+  const number = numMatch ? numMatch[1].replace('.', '') : '0';
+  const year = numMatch && numMatch[2] ? (numMatch[2].length === 2 ? 2000 + parseInt(numMatch[2], 10) : parseInt(numMatch[2], 10)) : undefined;
+
+  const isRevoked = text.includes('REVOGAD');
+
+  return { authority, type, number, year, isRevoked };
+}
+
 export interface ResolvedNorm {
   id: string;
   normCode: string;
@@ -12,6 +44,7 @@ export interface ResolvedNorm {
   tags: string[];
   article?: string;
   severityDefault?: string;
+  canonical?: CanonicalNormIdentifier;
 }
 
 export class NormsResolver {
@@ -67,6 +100,7 @@ export class NormsResolver {
           title: item.title,
           content: item.cleanMarkdown,
           tags: item.tags,
+          canonical: parseCanonicalIdentifier(item.title, item.tags),
         });
       }
     } catch (err: any) {
@@ -99,6 +133,7 @@ export class NormsResolver {
           content: `### ${chunk.normCode} - ${chunk.article}: ${chunk.title}\n\n**Dispositivo:** ${chunk.content}\n\n**Orientação Corretiva:** ${chunk.correctiveGuidance}`,
           tags: [chunk.source.toUpperCase(), ...chunk.keywords],
           severityDefault: chunk.severityDefault,
+          canonical: parseCanonicalIdentifier(chunk.normCode, [chunk.source, ...chunk.keywords]),
         });
       }
     }
@@ -139,6 +174,7 @@ export class NormsResolver {
                   title: fileName,
                   content: fileContent,
                   tags: cleanTags,
+                  canonical: parseCanonicalIdentifier(fileName, cleanTags),
                 });
               }
             }

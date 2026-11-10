@@ -108,6 +108,7 @@ describe('🐳 Integridade e Resiliência da Infraestrutura Docker Compose & Con
       CORS_ORIGIN: 'http://localhost:3000,http://127.0.0.1:3000',
       ADMIN_EMAIL: 'admin@conform.ai',
       ADMIN_PASSWORD: 'ConformIA_Admin@2026_SecureKey!',
+      MONITORING_API_KEY: 'super-secret-telemetry-key-2026',
     };
 
     const parseResult = envSchema.safeParse(simulatedProductionEnv);

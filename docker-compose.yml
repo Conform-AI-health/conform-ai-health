@@ -67,6 +67,7 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000,http://127.0.0.1:3000}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@conform.ai}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD é obrigatória}
+      - MONITORING_API_KEY=${MONITORING_API_KEY:?MONITORING_API_KEY é obrigatória}
     depends_on:
       redis:
         condition: service_healthy
@@ -125,6 +126,7 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000,http://127.0.0.1:3000}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@conform.ai}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD é obrigatória}
+      - MONITORING_API_KEY=${MONITORING_API_KEY:?MONITORING_API_KEY é obrigatória}
     depends_on:
       redis:
         condition: service_healthy

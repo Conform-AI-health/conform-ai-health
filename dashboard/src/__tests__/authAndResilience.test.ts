@@ -560,6 +560,7 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
         CORS_ORIGIN: 'https://app.conformia.med.br,https://admin.conformia.med.br',
         ADMIN_EMAIL: 'admin.prod@conformia.med.br',
         ADMIN_PASSWORD: 'SuperSecureProdAdminPassword2026!#',
+        MONITORING_API_KEY: 'crypto-secure-monitoring-key-2026-prod',
       };
 
       const result = envSchema.safeParse(validProdEnv);

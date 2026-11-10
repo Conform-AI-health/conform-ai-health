@@ -198,8 +198,8 @@ export class HeuristicProvider implements IAIProvider {
       totalTokens: 0,
       sourcesUsed,
       aiModelUsed: 'heuristic:regex-heuristic-v1',
-      groundingScore: 100,
-      hallucinationRisk: 'NONE',
+      groundingScore: null,
+      hallucinationRisk: 'NOT_EVALUATED',
       guardrailsApplied: false,
       hallucinationsInterceptedCount: 0,
     });

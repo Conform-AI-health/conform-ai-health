@@ -24,22 +24,10 @@ export async function runAutoMigrateAndSeed() {
       }
     }
 
-    // Auto-recuperação resiliente para documentos corrompidos ou legados do MongoDB
+    // T03: Consulta segura do usuário administrador sem exclusão automática em caso de erro de leitura
     let user = null;
-    try {
-      if (adminEmail) {
-        user = await prisma.user.findUnique({ where: { email: adminEmail } });
-      }
-    } catch {
-      console.log('⚠️ [Seed] Detectado usuário com tipos legados incompatíveis no Mongo. Limpando registro corrompido...');
-      try {
-        await prisma.$runCommandRaw({
-          delete: 'users',
-          deletes: [{ q: { email: adminEmail }, limit: 0 }],
-        });
-      } catch {
-        // Continua
-      }
+    if (adminEmail) {
+      user = await prisma.user.findUnique({ where: { email: adminEmail } });
     }
 
     if (!user && adminEmail && adminPassword) {
@@ -55,8 +43,8 @@ export async function runAutoMigrateAndSeed() {
       });
       console.log(`✅ [Seed] Novo usuário administrador provisionado com sucesso: ${adminEmail}`);
     } else if (user) {
-      // T01: NUNCA sobrescrever senha ou dados de administrador existente no boot
-      console.log(`ℹ️ [Seed] Administrador existente detectado (${adminEmail}). Preservando credenciais e senha atuais.`);
+      // T01 & T03: Preservar credenciais e configurações existentes do administrador
+      console.log(`ℹ️ [Seed] Administrador existente detectado (${adminEmail}). Preservando credenciais e configurações atuais.`);
     }
 
     // 2. Módulos de Agente: Cadastro estritamente manual pelo usuário (seeds automáticos removidos conforme governança)
