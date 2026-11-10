@@ -197,13 +197,17 @@ export class AIGuardrails {
       'sem indicação',
       'sem registro',
       'sem divulgação',
-      'sem',
+      'sem rqe',
+      'sem crm',
       'não informado',
       'falta de',
     ];
     const isAbsenceClaim = absenceKeywords.some((w) => cleanEvidence.includes(w));
+    const hasCrmOrRqeAbsence =
+      (cleanEvidence.includes('crm') || cleanEvidence.includes('rqe')) &&
+      (isAbsenceClaim || /\b(sem|não|ausência|ausente|falta)\b/i.test(cleanEvidence));
 
-    if (isAbsenceClaim) {
+    if (hasCrmOrRqeAbsence) {
       if (cleanEvidence.includes('crm')) {
         if (extractedEntities && Array.isArray(extractedEntities.crms) && extractedEntities.crms.length === 0) {
           return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de ausência de CRM confirmada por varredura.' };
@@ -217,7 +221,9 @@ export class AIGuardrails {
         }
         return { isGrounded: false, matchRatio: 0, reason: 'Alegação de ausência de RQE não confirmada pelas entidades extraídas.' };
       }
+    }
 
+    if (isAbsenceClaim) {
       // Alegações de ausência genéricas sem comprovação determinística são rejeitadas
       return {
         isGrounded: false,
