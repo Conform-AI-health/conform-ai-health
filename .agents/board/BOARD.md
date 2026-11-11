@@ -12,7 +12,7 @@
 |---|:---:|---|
 | 📌 **Backlog** | 0 | *(Todas as tarefas migradas para In review)* |
 | 🔨 **In Progress** | 0 | — |
-| 👀 **In review** | 19 | **T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19** |
+| 👀 **In review** | 26 | **T01 a T19 (Sprint 0/1) + C01 a C07 (Complementares)** |
 | 🚀 **Done** | 0 | *(Aguardando aprovação de PR e merge)* |
 
 ---
@@ -179,3 +179,18 @@
 | **T06** | P0 | Contratos de confiança, grounding e alucinação: eliminação de premissas falsas de `100%` e `NONE` em motores heurísticos ou sem verificação; suporte a `null` e `NOT_EVALUATED` quando não calculado. | `dashboard/src/shared/reconciliationTypes.ts`, `dashboard/src/services/ai/heuristicProvider.ts`, `dashboard/src/shared/aiGuardrails.ts` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T06) |
 | **T07** | P0 | AI Guardrails e neutralização de injeções de prompt: neutralização de tags delimitadoras (`</document_to_audit>`) e tags de controle de sistema no pré-processamento. | `dashboard/src/shared/aiGuardrails.ts`, `dashboard/src/services/ai/geminiProvider.ts`, `dashboard/src/services/ai/ollamaProvider.ts` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T07) |
 | **T08** | P0 | Resolução estruturada e canônica de normas: identificadores canônicos (`authority`, `type`, `number`, `year`, `isRevoked`) e expurgo definitivo de normas revogadas da imputação deontológica. | `dashboard/src/services/normsResolver.ts` | ✅ Concluído | `securityAndAiCorrections.test.ts` (T08) |
+
+---
+
+### 🛡️ Rodada de Correções Complementares — Confiança, Extração, Autocura, SSRF & Governança (C01 a C07)
+
+| ID | Prioridade | Escopo Técnico | Arquivos Auditados e Corrigidos | Status de Execução | Testes Associados |
+|:---:|:---:|---|---|:---:|:---:|
+| **C01** | P0 | **Contrato de Confiança da IA**: Eliminação de premissas de grounding=100 e hallucinationRisk=NONE; preservação estrita de `null` e `NOT_EVALUATED`; `source_version` sem presunção de 2023; vedação de evidências textuais fabricadas (`null` quando ausente); veredito `INCONCLUSIVO` mandatório se não houver fundamentação avaliada. | `dashboard/src/shared/aiStructuredContract.ts`, `dashboard/src/services/auditExecutionService.ts`, `dashboard/prisma/schema.prisma` | ✅ Concluído | `complementaryCorrections.test.ts` (C01) |
+| **C02** | P0 | **Persistência e Integridade de Extração**: Exceção crítica `[PERSISTENCE_FAILED]` lançada em caso de falha no banco de dados ao salvar `moduleScrapeData`; remoção de swallow silencioso de erros; status polimórficos de extração (`EXTRACTION_SUCCESS`, `EXTRACTION_PERSISTED`). | `dashboard/src/services/firecrawlService.ts` | ✅ Concluído | `complementaryCorrections.test.ts` (C02) |
+| **C03** | P1 | **Bootstrap e Autocura**: Modularização em etapas independentes (`runDatabaseMigrations`, `runInitialSeed`, `runDataIntegrityCheck`); remoção de catches silenciosos; eliminação de injeção de URL fictícia `https://conform-ia.med.br` e fim do vínculo forçado de laudos a cliente arbitrário. | `dashboard/src/shared/autoMigrate.ts` | ✅ Concluído | `authAndResilience.test.ts` |
+| **C04** | P1 | **Blindagem contra Prompt Injection**: Sanitização multilíngue (PT/EN) no `AIGuardrails.sanitizeInputPrompt`; normalização Unicode NFKC; eliminação de tokens de template LLM (`<|im_start|>`, `[INST]`); isolamento criptográfico via `generateSecureAuditBlock` com Nonce randômico dinâmico em Gemini e Ollama. | `dashboard/src/shared/aiGuardrails.ts`, `dashboard/src/services/ai/geminiProvider.ts`, `dashboard/src/services/ai/ollamaProvider.ts` | ✅ Concluído | `complementaryCorrections.test.ts` (C04) |
+| **C05** | P1 | **Governança e Vigência Normativa**: Metadados estruturados de vigência (`publishedAt`, `effectiveDate`, `officialGazette`, `isRevoked`, `replacedByNormCode`) em todo o catálogo; registro explícito da revogação da Res. CFM 1.974/11; snapshots auditáveis SHA-256 (`createNormsSnapshot`) persistidos em `AuditReport.normSnapshots`. | `dashboard/src/data/normsCatalog.ts`, `dashboard/src/services/normsResolver.ts`, `dashboard/src/services/auditExecutionService.ts` | ✅ Concluído | `complementaryCorrections.test.ts` (C05), `ragQuality.test.ts` |
+| **C06** | P1 | **Segurança da Autenticação Frontend**: Remoção total do `conformia_refresh_token` do `localStorage` no frontend; refresh token em memória estrita anti-XSS (`inMemoryRefreshToken`); suporte a cookies HttpOnly, Secure e SameSite=Strict; header anti-CSRF `X-Requested-With`; fila mutex *single-flight*; sincronização via `BroadcastChannel`. | `dashboard-web/src/services/api.ts`, `dashboard-web/src/context/AuthContext.tsx`, `dashboard/src/controllers/authController.ts` | ✅ Concluído | `axiosInterceptor.test.ts`, `authAndResilience.test.ts` |
+| **C07** | P1 | **Blindagem Estrita contra SSRF & DNS Rebinding**: Normalização e bloqueio de variantes numéricas de IP (decimal inteiro `2130706433`, hexadecimal `0x7f000001`, octal `0177.0.0.1`, dotted abreviado, IPv6 com colchetes `[::1]`); decodificação de percent-encoding; agentes HTTP com `secureLookup` interceptando resolução de sockets contra ataques DNS Rebinding TOCTOU; validação prévia assíncrona em Puppeteer, Cheerio, Firecrawl e MCP. | `dashboard/src/shared/security.ts`, `dashboard/src/services/scraperService.ts` | ✅ Concluído | `complementaryCorrections.test.ts` (C07), `taggingAndContext.test.ts` |
+

@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api } from '../services/api';
+import {
+  api,
+  getInMemoryRefreshToken,
+  setInMemoryRefreshToken,
+  clearInMemoryRefreshToken,
+} from '../services/api';
 
 export type UserRole = 'ADMIN' | 'AUDITOR' | 'CLIENT' | 'VIEWER';
 
@@ -32,32 +37,48 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
+    if (typeof localStorage === 'undefined') return null;
     const savedUser = localStorage.getItem('conformia_user');
     return savedUser ? JSON.parse(savedUser) : null;
   });
+
   const [token, setToken] = useState<string | null>(() => {
+    if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem('conformia_token');
   });
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const login = (newToken: string, newUser: User, refreshToken?: string) => {
-    localStorage.setItem('conformia_token', newToken);
-    localStorage.setItem('conformia_user', JSON.stringify(newUser));
-    if (refreshToken) {
-      localStorage.setItem('conformia_refresh_token', refreshToken);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('conformia_token', newToken);
+      localStorage.setItem('conformia_user', JSON.stringify(newUser));
+      // Garante que o refresh token NUNCA seja armazenado em localStorage (C06 - SEC)
+      localStorage.removeItem('conformia_refresh_token');
     }
+
+    if (refreshToken) {
+      setInMemoryRefreshToken(refreshToken);
+    }
+
     setToken(newToken);
     setUser(newUser);
   };
 
   const logout = () => {
-    const refreshToken = localStorage.getItem('conformia_refresh_token');
-    if (refreshToken) {
-      api.post('/auth/logout', { refreshToken }).catch(() => {});
+    const refreshToken = getInMemoryRefreshToken();
+
+    // Notifica backend para invalidar refresh token e limpar cookies HttpOnly
+    api.post('/auth/logout', refreshToken ? { refreshToken } : {}).catch(() => {});
+
+    clearInMemoryRefreshToken();
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('conformia_token');
+      localStorage.removeItem('conformia_refresh_token');
+      localStorage.removeItem('conformia_user');
     }
-    localStorage.removeItem('conformia_token');
-    localStorage.removeItem('conformia_refresh_token');
-    localStorage.removeItem('conformia_user');
+
     setToken(null);
     setUser(null);
   };
@@ -68,7 +89,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const res = await api.get('/auth/me');
         if (res.data?.user) {
           setUser(res.data.user);
-          localStorage.setItem('conformia_user', JSON.stringify(res.data.user));
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('conformia_user', JSON.stringify(res.data.user));
+          }
         }
       }
     } catch (err) {
@@ -78,22 +101,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const checkAuth = async () => {
-      const savedToken = localStorage.getItem('conformia_token');
+      const savedToken = typeof localStorage !== 'undefined' ? localStorage.getItem('conformia_token') : null;
       if (savedToken) {
         try {
           const res = await api.get('/auth/me');
           if (res.data?.user) {
             setUser(res.data.user);
-            localStorage.setItem('conformia_user', JSON.stringify(res.data.user));
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem('conformia_user', JSON.stringify(res.data.user));
+            }
           }
         } catch (err) {
           logout();
+        }
+      } else {
+        // Tenta silenciosamente renovar sessão ativa via cookie HttpOnly (C06)
+        try {
+          const refreshRes = await api.post('/auth/refresh', {});
+          if (refreshRes.data?.token && refreshRes.data?.user) {
+            login(refreshRes.data.token, refreshRes.data.user, refreshRes.data.refreshToken);
+          }
+        } catch {
+          // Sessão não existente ou expirada
         }
       }
       setIsLoading(false);
     };
 
     checkAuth();
+
+    // Sincronização entre múltiplas abas via BroadcastChannel (C06)
+    let channel: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        channel = new BroadcastChannel('conformia_auth_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'LOGOUT') {
+            clearInMemoryRefreshToken();
+            setToken(null);
+            setUser(null);
+            if (typeof localStorage !== 'undefined') {
+              localStorage.removeItem('conformia_token');
+              localStorage.removeItem('conformia_user');
+            }
+          }
+        };
+      } catch {
+        // Falha tolerável de suporte a broadcast
+      }
+    }
+
+    return () => {
+      if (channel) {
+        channel.close();
+      }
+    };
   }, []);
 
   return (
@@ -110,4 +172,3 @@ export const useAuth = () => {
   }
   return context;
 };
-

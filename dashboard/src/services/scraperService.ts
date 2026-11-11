@@ -948,11 +948,11 @@ export class ScraperService {
   }
 
   /**
-   * Extração com Puppeteer Headless (Páginas SPA, React/Vue/Angular) com blindagem anti-SSRF (T02)
+   * Extração com Puppeteer Headless (Páginas SPA, React/Vue/Angular) com blindagem anti-SSRF (T02/C07)
    */
   private static async scrapeWithPuppeteer(url: string): Promise<ScrapeResult> {
-    // 1. Verificação SSRF síncrona pré-navegação
-    const targetCheck = validateSafeUrl(url);
+    // 1. Verificação SSRF assíncrona pré-navegação com proteção DNS Rebinding
+    const targetCheck = await validateSafeUrlAsync(url);
     if (!targetCheck.safe) {
       throw new Error(`SSRF bloqueado: ${targetCheck.reason}`);
     }
@@ -1014,9 +1014,14 @@ export class ScraperService {
   }
 
   /**
-   * Extração via Firecrawl API (quando configurada chave) ou fallback
+   * Extração via Firecrawl API (quando configurada chave) ou fallback (C07)
    */
   private static async scrapeWithFirecrawl(url: string): Promise<ScrapeResult> {
+    const targetCheck = await validateSafeUrlAsync(url);
+    if (!targetCheck.safe) {
+      throw new Error(`SSRF bloqueado: ${targetCheck.reason}`);
+    }
+
     if (!env.FIRECRAWL_API_KEY) {
       console.info('[Firecrawl] Chave não configurada, executando Cheerio otimizado.');
       return await this.scrapeWithCheerio(url);
@@ -1047,9 +1052,21 @@ export class ScraperService {
   }
 
   /**
-   * Extração via Protocolo MCP (Model Context Protocol)
+   * Extração via Protocolo MCP (Model Context Protocol) com validação anti-SSRF (C07)
    */
   private static async scrapeWithMcp(url: string): Promise<ScrapeResult> {
+    const targetCheck = await validateSafeUrlAsync(url);
+    if (!targetCheck.safe) {
+      throw new Error(`SSRF bloqueado: ${targetCheck.reason}`);
+    }
+
+    if (env.MCP_SERVER_URL) {
+      const mcpCheck = validateSafeUrl(env.MCP_SERVER_URL);
+      if (!mcpCheck.safe) {
+        throw new Error(`SSRF bloqueado no servidor MCP: ${mcpCheck.reason}`);
+      }
+    }
+
     try {
       const response = await axios.post(
         `${env.MCP_SERVER_URL}/tools/fetch_page`,

@@ -12,7 +12,7 @@ export const violationSchema = z.object({
 });
 
 export const reconciliationOutputSchema = z.object({
-  verdict: z.enum(['CONFORME', 'PARCIALMENTE_CONFORME', 'NAO_CONFORME']).describe('Veredito semáforo final'),
+  verdict: z.enum(['CONFORME', 'PARCIALMENTE_CONFORME', 'NAO_CONFORME', 'INCONCLUSIVO']).describe('Veredito semáforo final'),
   score: z.number().min(0).max(100).describe('Pontuação de risco ou conformidade de 0 a 100'),
   summary: z.string().describe('Síntese diagnóstica da auditoria deontológica'),
   violations: z.array(violationSchema).describe('Lista de violações normativas identificadas'),

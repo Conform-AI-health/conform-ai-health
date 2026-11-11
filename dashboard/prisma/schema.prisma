@@ -49,6 +49,7 @@ enum Verdict {
   CONFORME
   PARCIALMENTE_CONFORME
   NAO_CONFORME
+  INCONCLUSIVO
 }
 
 model User {
@@ -163,10 +164,11 @@ model AuditReport {
   riskLevel       String?        @default("LOW")
   confidence      Float?         @default(1.0)
   structuredContract String?     // JSON serializado do Contrato Estruturado de Alta Confiabilidade
-  groundingScore  Int?           @default(100)
-  hallucinationRisk String?      @default("NONE")
+  groundingScore  Int?
+  hallucinationRisk String?      @default("NOT_EVALUATED")
   guardrailsApplied Boolean?     @default(false)
   requiresHumanReview Boolean?   @default(false)
+  normSnapshots   String?        // Snapshot JSON das normas com vigência no momento da auditoria (C05)
   violations      Violation[]
   createdAt       DateTime?      @default(now())
   updatedAt       DateTime?      @updatedAt

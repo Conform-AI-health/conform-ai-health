@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { prisma } from '../config/prisma.js';
 import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
 
@@ -190,6 +191,29 @@ export class NormsResolver {
     return result;
   }
 
+  /**
+   * C05: Gera um snapshot estruturado das normas vigentes aplicadas na auditoria.
+   * Preserva rastreabilidade inalterável das versões, publicações e integridade SHA-256.
+   */
+  public static createNormsSnapshot(norms: ResolvedNorm[]): string {
+    const snapshotItems = norms.map((n) => ({
+      id: n.id,
+      normCode: n.normCode,
+      source: n.source,
+      article: n.article || null,
+      canonical: n.canonical || null,
+      contentLength: n.content?.length || 0,
+      contentHash: crypto.createHash('sha256').update(n.content || '', 'utf8').digest('hex'),
+      tags: n.tags,
+    }));
+
+    return JSON.stringify({
+      snapshotGeneratedAt: new Date().toISOString(),
+      totalNormsCount: snapshotItems.length,
+      norms: snapshotItems,
+    });
+  }
+
   private static scanMarkdownFiles(dir: string): string[] {
     let results: string[] = [];
     try {
@@ -208,3 +232,6 @@ export class NormsResolver {
     return results;
   }
 }
+
+export const createNormsSnapshot = NormsResolver.createNormsSnapshot.bind(NormsResolver);
+

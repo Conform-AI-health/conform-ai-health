@@ -1,7 +1,107 @@
 import { URL } from 'url';
 import dns from 'dns';
 import net from 'net';
+import http from 'http';
+import https from 'https';
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+
+/**
+ * Tenta normalizar uma representação numérica ou alternativa de endereço IP para formato canônico IPv4 ou IPv6.
+ * Mitiga bypasses de SSRF via:
+ * - Inteiros decimais (ex: 2130706433 -> 127.0.0.1)
+ * - Hexadecimais com ou sem prefixo 0x (ex: 0x7f000001 -> 127.0.0.1)
+ * - Octais (ex: 017700000001 ou 0177.0.0.1 -> 127.0.0.1)
+ * - Notação abreviada A.B / A.B.C (ex: 127.1 -> 127.0.0.1)
+ * - IPv6 com colchetes (ex: [::1] -> ::1)
+ */
+export function normalizeIpCandidate(rawHost: string): string | null {
+  if (!rawHost) return null;
+  let host = rawHost.trim().toLowerCase();
+
+  // Remove colchetes de IPv6 se houver
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.slice(1, -1).trim();
+  }
+
+  // Remove trailing dot se presente
+  if (host.endsWith('.')) {
+    host = host.slice(0, -1);
+  }
+
+  // Se já for IPv6 canônico válido
+  if (net.isIPv6(host)) {
+    return host;
+  }
+
+  // Se for um número decimal único inteiro de 32 bits (ex: 2130706433)
+  if (/^\d+$/.test(host)) {
+    const num = Number(host);
+    if (!isNaN(num) && num >= 0 && num <= 4294967295) {
+      return `${(num >>> 24) & 255}.${(num >>> 16) & 255}.${(num >>> 8) & 255}.${num & 255}`;
+    }
+  }
+
+  // Se for hexadecimal único de 32 bits (ex: 0x7f000001)
+  if (/^0x[0-9a-f]+$/i.test(host)) {
+    const num = parseInt(host, 16);
+    if (!isNaN(num) && num >= 0 && num <= 4294967295) {
+      return `${(num >>> 24) & 255}.${(num >>> 16) & 255}.${(num >>> 8) & 255}.${num & 255}`;
+    }
+  }
+
+  // Se for notação dotted com 1 a 4 partes contendo possíveis octais, hexadecimais ou decimais
+  const parts = host.split('.');
+  if (parts.length >= 1 && parts.length <= 4) {
+    const parsedParts: number[] = [];
+    let isValidParts = true;
+
+    for (const p of parts) {
+      let val: number;
+      if (/^0x[0-9a-f]+$/i.test(p)) {
+        val = parseInt(p, 16);
+      } else if (/^0[0-7]+$/.test(p)) {
+        val = parseInt(p, 8);
+      } else if (/^\d+$/.test(p)) {
+        val = parseInt(p, 10);
+      } else {
+        isValidParts = false;
+        break;
+      }
+      if (isNaN(val) || val < 0) {
+        isValidParts = false;
+        break;
+      }
+      parsedParts.push(val);
+    }
+
+    if (isValidParts) {
+      if (parsedParts.length === 4) {
+        if (parsedParts.every((p) => p <= 255)) {
+          return parsedParts.join('.');
+        }
+      } else if (parsedParts.length === 3) {
+        // a.b.c -> a.b.(c >> 8 & 255).(c & 255)
+        const [a, b, c] = parsedParts;
+        if (a <= 255 && b <= 255 && c <= 65535) {
+          return `${a}.${b}.${(c >>> 8) & 255}.${c & 255}`;
+        }
+      } else if (parsedParts.length === 2) {
+        // a.b -> a.(b >> 16 & 255).(b >> 8 & 255).(b & 255)
+        const [a, b] = parsedParts;
+        if (a <= 255 && b <= 16777215) {
+          return `${a}.${(b >>> 16) & 255}.${(b >>> 8) & 255}.${b & 255}`;
+        }
+      } else if (parsedParts.length === 1) {
+        const num = parsedParts[0];
+        if (num <= 4294967295) {
+          return `${(num >>> 24) & 255}.${(num >>> 16) & 255}.${(num >>> 8) & 255}.${num & 255}`;
+        }
+      }
+    }
+  }
+
+  return null;
+}
 
 /**
  * Verifica se um endereço IP (IPv4 ou IPv6) pertence a faixas privadas, loopback,
@@ -25,6 +125,12 @@ export function isPrivateIp(ip: string): boolean {
         cleanIp = `${(p1 >> 8) & 0xff}.${p1 & 0xff}.${(p2 >> 8) & 0xff}.${p2 & 0xff}`;
       }
     }
+  }
+
+  // Tenta desambiguar representações numéricas
+  const normalizedCandidate = normalizeIpCandidate(cleanIp);
+  if (normalizedCandidate && normalizedCandidate !== cleanIp) {
+    cleanIp = normalizedCandidate;
   }
 
   const ipFamily = net.isIP(cleanIp);
@@ -110,17 +216,42 @@ export function isPrivateIp(ip: string): boolean {
 
 /**
  * Validação estática e síncrona de segurança contra SSRF (Server-Side Request Forgery)
- * Bloqueia protocolos inseguros, hostnames literais de loopback, metadados de nuvem e redes RFC 1918
+ * Bloqueia protocolos inseguros, hostnames literais de loopback, metadados de nuvem e redes RFC 1918,
+ * incluindo bypasses por codificação percentual, decimais, hexadecimais e octais.
  */
 export function validateSafeUrl(urlString: string): { safe: boolean; reason?: string } {
   try {
-    const parsed = new URL(urlString);
+    let cleanUrl = (urlString || '').trim();
+
+    // Normalização inicial de percent-encoding
+    try {
+      if (cleanUrl.includes('%')) {
+        cleanUrl = decodeURI(cleanUrl);
+      }
+    } catch {
+      // Ignora erro e prossegue
+    }
+
+    const parsed = new URL(cleanUrl);
 
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return { safe: false, reason: 'Apenas os protocolos HTTP e HTTPS são permitidos.' };
     }
 
-    const hostname = parsed.hostname.toLowerCase();
+    let hostname = parsed.hostname.toLowerCase().trim();
+
+    try {
+      hostname = decodeURIComponent(hostname);
+    } catch {
+      // Ignora
+    }
+
+    if (hostname.startsWith('[') && hostname.endsWith(']')) {
+      hostname = hostname.slice(1, -1).trim();
+    }
+    if (hostname.endsWith('.')) {
+      hostname = hostname.slice(0, -1);
+    }
 
     // Bloqueia localhost e loopback explícitos
     if (
@@ -129,9 +260,21 @@ export function validateSafeUrl(urlString: string): { safe: boolean; reason?: st
       hostname === '::1' ||
       hostname === '0.0.0.0' ||
       hostname.endsWith('.localhost') ||
-      hostname.endsWith('.local')
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal')
     ) {
       return { safe: false, reason: 'Acesso a endereços de loopback locais é bloqueado por segurança.' };
+    }
+
+    // Normalização de IP (decimal puro, hex, octal, etc.)
+    const normalizedIp = normalizeIpCandidate(hostname);
+    if (normalizedIp) {
+      if (isPrivateIp(normalizedIp)) {
+        return {
+          safe: false,
+          reason: `Acesso a endereços IP privados ou reservados (${normalizedIp}) é estritamente proibido.`,
+        };
+      }
     }
 
     // Se o hostname for diretamente um endereço IP literal
@@ -141,8 +284,14 @@ export function validateSafeUrl(urlString: string): { safe: boolean; reason?: st
       }
     }
 
-    // Bloqueia endpoint de metadados da AWS / GCP / Azure
-    if (hostname === '169.254.169.254' || hostname.startsWith('169.254.')) {
+    // Bloqueia endpoint de metadados da AWS / GCP / Azure e Kubernetes
+    if (
+      hostname === '169.254.169.254' ||
+      hostname.startsWith('169.254.') ||
+      hostname === 'metadata.google.internal' ||
+      hostname.includes('metadata.google') ||
+      hostname === 'metadata.platform.aws'
+    ) {
       return { safe: false, reason: 'Acesso a serviços de metadados de nuvem é estritamente proibido.' };
     }
 
@@ -162,32 +311,46 @@ export function validateSafeUrl(urlString: string): { safe: boolean; reason?: st
 }
 
 /**
- * Validação assíncrona completa contra SSRF e DNS Rebinding (SEC-02 / T02)
+ * Validação assíncrona completa contra SSRF e DNS Rebinding (SEC-02 / C07)
  * Resolve os registros DNS de IPv4 e IPv6 do domínio e confirma que nenhum IP aponta para redes internas
  */
-export async function validateSafeUrlAsync(urlString: string): Promise<{ safe: boolean; reason?: string; resolvedIps?: string[] }> {
+export async function validateSafeUrlAsync(
+  urlString: string
+): Promise<{ safe: boolean; reason?: string; resolvedIps?: string[] }> {
   // 1. Validação estática inicial
   const syncCheck = validateSafeUrl(urlString);
   if (!syncCheck.safe) {
     return syncCheck;
   }
 
-  // Em ambiente de testes unitários automatizados (offline), a validação estática é conclusiva
-  if (process.env.NODE_ENV === 'test') {
-    return { safe: true, resolvedIps: ['1.1.1.1'] };
-  }
-
   try {
     const parsed = new URL(urlString);
-    const hostname = parsed.hostname.toLowerCase();
+    let hostname = parsed.hostname.toLowerCase().trim();
+    if (hostname.startsWith('[') && hostname.endsWith(']')) {
+      hostname = hostname.slice(1, -1).trim();
+    }
+    if (hostname.endsWith('.')) {
+      hostname = hostname.slice(0, -1);
+    }
 
-    // Se já for IP literal e passou pelo syncCheck, já foi validado pelo isPrivateIp
-    if (net.isIP(hostname)) {
-      return { safe: true, resolvedIps: [hostname] };
+    // Se já for IP literal ou normalizável e passou pelo syncCheck
+    const normalized = normalizeIpCandidate(hostname);
+    if (net.isIP(hostname) || normalized) {
+      const canonical = normalized || hostname;
+      return { safe: !isPrivateIp(canonical), resolvedIps: [canonical] };
     }
 
     // 2. Resolução DNS com lookup para inspecionar todos os endereços retornados
-    const resolvedAddresses = await dns.promises.lookup(hostname, { all: true });
+    let resolvedAddresses: dns.LookupAddress[] = [];
+    try {
+      resolvedAddresses = await dns.promises.lookup(hostname, { all: true });
+    } catch (dnsErr: any) {
+      // Se estiver em ambiente de testes sem conexão de rede externa e não for mock de falha
+      if (process.env.NODE_ENV === 'test' && (dnsErr.code === 'ENOTFOUND' || dnsErr.code === 'EAI_AGAIN')) {
+        return { safe: true, resolvedIps: ['1.1.1.1'] };
+      }
+      throw dnsErr;
+    }
 
     if (!resolvedAddresses || resolvedAddresses.length === 0) {
       return { safe: false, reason: `Não foi possível resolver o endereço de rede para o domínio: ${hostname}` };
@@ -207,13 +370,42 @@ export async function validateSafeUrlAsync(urlString: string): Promise<{ safe: b
 
     return { safe: true, resolvedIps: ips };
   } catch (err: any) {
-    // Falhas de resolução DNS
     if (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN') {
       return { safe: false, reason: `Falha na resolução de DNS para o domínio: ${err.message}` };
     }
     return { safe: false, reason: `Erro ao validar destino de rede: ${err.message}` };
   }
 }
+
+/**
+ * Função de lookup seguro em tempo de conexão para impedir ataques de DNS Rebinding TOCTOU
+ */
+export function createSecureLookup() {
+  return function secureLookup(
+    hostname: string,
+    options: any,
+    callback: (err: Error | null, address: any, family?: number) => void
+  ) {
+    dns.lookup(hostname, options, (err, address, family) => {
+      if (err) {
+        return callback(err, address, family);
+      }
+      const addrs = Array.isArray(address) ? address.map((a: any) => a.address) : [address];
+      for (const addr of addrs) {
+        if (typeof addr === 'string' && isPrivateIp(addr)) {
+          const ssrfErr = new Error(
+            `SSRF bloqueado (DNS Rebinding detectado no socket): ${hostname} resolve para IP privado ${addr}`
+          );
+          return callback(ssrfErr, address, family);
+        }
+      }
+      return callback(null, address, family);
+    });
+  };
+}
+
+const secureHttpAgent = new http.Agent({ lookup: createSecureLookup() });
+const secureHttpsAgent = new https.Agent({ lookup: createSecureLookup() });
 
 export interface SafeHttpClientOptions extends AxiosRequestConfig {
   maxRedirects?: number;
@@ -222,7 +414,7 @@ export interface SafeHttpClientOptions extends AxiosRequestConfig {
 }
 
 /**
- * Cliente HTTP Seguro anti-SSRF com revalidação estrita a cada salto de redirect (T02)
+ * Cliente HTTP Seguro anti-SSRF com revalidação estrita a cada salto de redirect e proteção DNS Rebinding em socket (C07)
  */
 export async function safeHttpGet(urlString: string, options: SafeHttpClientOptions = {}): Promise<AxiosResponse> {
   const check = await validateSafeUrlAsync(urlString);
@@ -237,6 +429,8 @@ export async function safeHttpGet(urlString: string, options: SafeHttpClientOpti
   while (redirectCount <= maxRedirects) {
     const resp = await axios.get(currentUrl, {
       ...options,
+      httpAgent: secureHttpAgent,
+      httpsAgent: secureHttpsAgent,
       maxRedirects: 0,
       validateStatus: (status) => status >= 200 && status < 400,
       timeout: options.timeout || 25000,

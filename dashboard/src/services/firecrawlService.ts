@@ -8,7 +8,7 @@ import { Bulkhead } from '../shared/bulkhead.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 
 export interface FirecrawlScrapeResult {
-  status: 'SUCCESS' | 'FAILED' | 'EXTRACTION_INCOMPLETE';
+  status: 'EXTRACTION_SUCCESS' | 'EXTRACTION_PERSISTED' | 'FAILED' | 'EXTRACTION_INCOMPLETE' | 'SUCCESS';
   markdown: string;
   rawContent: string;
   contentHash: string;
@@ -117,8 +117,9 @@ export class FirecrawlService {
     const now = new Date();
     const extractedAt = now.toISOString();
     let savedRecordId: string | undefined;
+    let extractionStatus: 'EXTRACTION_SUCCESS' | 'EXTRACTION_PERSISTED' = 'EXTRACTION_SUCCESS';
 
-    // 5. Persistência dos Dados Brutos no MongoDB
+    // 5. C02: Persistência Obrigatória dos Dados Brutos no MongoDB quando moduleId for informado
     if (moduleId) {
       try {
         const savedData = await prisma.moduleScrapeData.create({
@@ -131,9 +132,12 @@ export class FirecrawlService {
           },
         });
         savedRecordId = savedData.id;
+        extractionStatus = 'EXTRACTION_PERSISTED';
         console.log(`💾 [FirecrawlService] Dados persistidos em 'module_scrape_data' com ID: ${savedData.id} | Hash: ${contentHash}`);
       } catch (dbErr: any) {
-        console.warn(`⚠️ [FirecrawlService] Não foi possível salvar em 'module_scrape_data': ${dbErr.message}`);
+        const errorMsg = `[PERSISTENCE_FAILED] Falha ao persistir dados brutos de extração para o módulo (${moduleId}): ${dbErr.message}`;
+        console.error(`❌ [FirecrawlService] ${errorMsg}`);
+        throw new Error(errorMsg);
       }
     }
 
@@ -157,13 +161,13 @@ export class FirecrawlService {
             createdAt: now,
           },
         });
-      } catch {
-        // Silencioso se clientId não existir
+      } catch (clientErr: any) {
+        console.warn(`⚠️ [FirecrawlService] Aviso ao espelhar em 'client_scraped_data': ${clientErr.message}`);
       }
     }
 
     return {
-      status: 'SUCCESS',
+      status: extractionStatus,
       markdown,
       rawContent: markdown,
       contentHash,
