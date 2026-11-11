@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 import { ExtractionMode } from '@prisma/client';
 import { env } from '../config/env.js';
 import { safeHttpGet, validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
+import { startSafeScrapingProxy } from '../shared/safeScrapingProxy.js';
 
 export interface ScrapeResult {
   url: string;
@@ -959,9 +960,11 @@ export class ScraperService {
 
     // Importação dinâmica para evitar travar se puppeteer não estiver em ambiente headless restrito
     let browser: any = null;
+    let safeProxy: Awaited<ReturnType<typeof startSafeScrapingProxy>> | null = null;
     try {
       const puppeteerModule = await import('puppeteer');
       const puppeteer = puppeteerModule.default || puppeteerModule;
+      safeProxy = await startSafeScrapingProxy();
 
       browser = await puppeteer.launch({
         headless: true,
@@ -971,6 +974,9 @@ export class ScraperService {
           '--disable-dev-shm-usage',
           '--disable-gpu',
           '--disable-extensions',
+          `--proxy-server=http://127.0.0.1:${safeProxy.port}`,
+          '--proxy-bypass-list=<-loopback>',
+          '--disable-quic',
         ],
       });
 
@@ -983,28 +989,29 @@ export class ScraperService {
       // Otimização e Segurança anti-SSRF: intercepta e valida todas as requisições subjacentes
       await page.setRequestInterception(true);
       page.on('request', (req: any) => {
-        const reqUrl = req.url();
-        const urlCheck = validateSafeUrl(reqUrl);
-        if (!urlCheck.safe) {
-          req.abort();
-          return;
-        }
-
-        const resourceType = req.resourceType();
-        if (['font', 'media'].includes(resourceType)) {
-          req.abort();
-        } else {
-          req.continue();
-        }
+        void (async () => {
+          const reqUrl = req.url();
+          const urlCheck = await validateSafeUrlAsync(reqUrl);
+          if (!urlCheck.safe || ['font', 'media'].includes(req.resourceType())) {
+            await req.abort();
+            return;
+          }
+          await req.continue();
+        })().catch((error) => {
+          console.warn(`[Puppeteer] Requisição bloqueada após falha de validação: ${error.message}`);
+          void req.abort();
+        });
       });
 
       await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 });
       const rawHtml = await page.content();
       await browser.close();
+      await safeProxy.close();
 
       return this.processHtml(url, rawHtml, 'PUPPETEER');
     } catch (err: any) {
       if (browser) await browser.close();
+      if (safeProxy) await safeProxy.close();
       if (err.message && err.message.includes('SSRF bloqueado')) {
         throw err;
       }
@@ -1275,4 +1282,3 @@ export class ScraperService {
     return tags;
   }
 }
-

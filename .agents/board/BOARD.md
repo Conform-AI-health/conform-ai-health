@@ -12,7 +12,7 @@
 |---|:---:|---|
 | 📌 **Backlog** | 0 | *(Todas as tarefas migradas para Code Review)* |
 | 🔨 **In Progress** | 0 | — |
-| 👀 **Code Review** | 26 | **T01 a T19 (Sprint 0/1) + C01 a C07 (Complementares)** |
+| 👀 **Code Review** | 27 | **T01 a T19 (Sprint 0/1) + C01 a C08 (Complementares & Hardening)** |
 | 🚀 **Done** | 0 | *(Aguardando aprovação de PR e merge)* |
 
 ---
@@ -226,6 +226,16 @@
   * `dashboard/src/services/scraperService.ts`: Validação prévia assíncrona com `validateSafeUrlAsync(url)` integrada aos fluxos de Puppeteer, Firecrawl e Protocolo MCP.
 * **Critério de Aceite:** `complementaryCorrections.test.ts` (C07) aprovado com bloqueio de variantes numéricas e metadados.
 
+#### [C08] Proxy Seguro anti-SSRF para Puppeteer, Hardening de Rede Docker e Pinning de Actions CI/CD
+* **Responsáveis:** `@backend-specialist`, `@devops-engineer` | Gate: `@security-reviewer` | Compliance: `@compliance-specialist` (Aprovado)
+* **Status:** `Code Review`
+* **Evidência no Código:**
+  * `dashboard/src/shared/safeScrapingProxy.ts`: Proxy local efêmero HTTP/HTTPS (`startSafeScrapingProxy`) com resolução de DNS pré-conexão e validação estrita anti-SSRF de destinos (`validateSafeUrl`, `isPrivateIp`), suportando tunelamento seguro via `CONNECT`.
+  * `dashboard/src/services/scraperService.ts`: Integração com flags de inicialização do Puppeteer (`--proxy-server`, `--proxy-bypass-list=<-loopback>`, `--disable-quic`) e interceptador assíncrono para garantir que nenhum sub-recurso acesse redes internas ou metadados de nuvem.
+  * `docker-compose.yml`: Restrição de binding das portas públicas (`API_PORT` e `WEB_PORT`) explicitamente a `127.0.0.1`, impedindo exposição não autenticada fora de reverse proxy TLS.
+  * `.github/workflows/ci-deploy.yml`: Fixação de ações de terceiros (`appleboy/scp-action`, `appleboy/ssh-action`) por commit SHA imutável para mitigação de Supply Chain Attacks.
+* **Critério de Aceite:** `safeScrapingProxy.test.ts` 100% aprovado; `docker-compose --env-file .env.example config` válido; `tsc --noEmit` aprovado.
+
 ---
 
 ### 🛡️ Rodada Complementar de Correções Técnicas — Security, AI Governance & Data Integrity (P0)
@@ -254,4 +264,5 @@
 | **C05** | P1 | **Governança e Vigência Normativa**: Metadados estruturados de vigência (`publishedAt`, `effectiveDate`, `officialGazette`, `isRevoked`, `replacedByNormCode`) em todo o catálogo; registro explícito da revogação da Res. CFM 1.974/11; snapshots auditáveis SHA-256 (`createNormsSnapshot`) persistidos em `AuditReport.normSnapshots`. | `dashboard/src/data/normsCatalog.ts`, `dashboard/src/services/normsResolver.ts`, `dashboard/src/services/auditExecutionService.ts` | ✅ Concluído | `complementaryCorrections.test.ts` (C05), `ragQuality.test.ts` |
 | **C06** | P1 | **Segurança da Autenticação Frontend**: Remoção total do `conformia_refresh_token` do `localStorage` no frontend; refresh token em memória estrita anti-XSS (`inMemoryRefreshToken`); suporte a cookies HttpOnly, Secure e SameSite=Strict; header anti-CSRF `X-Requested-With`; fila mutex *single-flight*; sincronização via `BroadcastChannel`. | `dashboard-web/src/services/api.ts`, `dashboard-web/src/context/AuthContext.tsx`, `dashboard/src/controllers/authController.ts` | ✅ Concluído | `axiosInterceptor.test.ts`, `authAndResilience.test.ts` |
 | **C07** | P1 | **Blindagem Estrita contra SSRF & DNS Rebinding**: Normalização e bloqueio de variantes numéricas de IP (decimal inteiro `2130706433`, hexadecimal `0x7f000001`, octal `0177.0.0.1`, dotted abreviado, IPv6 com colchetes `[::1]`); decodificação de percent-encoding; agentes HTTP com `secureLookup` interceptando resolução de sockets contra ataques DNS Rebinding TOCTOU; validação prévia assíncrona em Puppeteer, Cheerio, Firecrawl e MCP. | `dashboard/src/shared/security.ts`, `dashboard/src/services/scraperService.ts` | ✅ Concluído | `complementaryCorrections.test.ts` (C07), `taggingAndContext.test.ts` |
+| **C08** | P1 | **Proxy Seguro anti-SSRF para Puppeteer, Hardening de Rede Docker & Pinning de CI/CD**: Proxy local efêmero (`startSafeScrapingProxy`) com validação anti-SSRF em nível de socket e túnel CONNECT; injeção de flags anti-bypass no Puppeteer; bind estrito das portas em `127.0.0.1` no Docker Compose; pinning de commit SHAs no GitHub Actions CI/CD contra ataques de supply chain. | `dashboard/src/shared/safeScrapingProxy.ts`, `dashboard/src/services/scraperService.ts`, `docker-compose.yml`, `.github/workflows/ci-deploy.yml` | ✅ Concluído | `safeScrapingProxy.test.ts`, `dockerIntegrity.test.ts` |
 
