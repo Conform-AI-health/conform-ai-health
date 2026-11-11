@@ -29,7 +29,7 @@ flowchart TD
 ## 📋 Estágio 1: Agente de Product Owner Regulatória & Requisitos de Negócio
 - **Agente Responsável:** `@compliance-specialist` *(apoio técnico de `@software-architect`)*
 - **Ações Obrigatórias:**
-  1. Analisar a demanda do usuário sob a ótica das resoluções normativas em saúde (**CFM nº 2.336/2023**, **LGPD Art. 11**, **ANS RN 509** e **ANVISA RDC 727**).
+  1. Analisar a demanda do usuário sob a ótica do Catálogo Normativo Ativo e das Resoluções e Leis vigentes aplicáveis ao escopo selecionado (incluindo marcos de proteção de dados, conselhos profissionais de saúde, ANVISA, ANS e diretrizes deontológicas pertinentes).
   2. Mapear o escopo e decompor em **Épicos** claros e **Histórias de Usuário (User Stories)** no formato:
      - *Como [perfil], quero [ação] para que [benefício de conformidade/negócio].*
   3. Definir **Critérios de Aceitação Deontológica e Funcional** objetivos e mensuráveis.

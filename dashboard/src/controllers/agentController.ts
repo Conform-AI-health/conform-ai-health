@@ -13,14 +13,14 @@ const createAgentSchema = z.object({
   name: z.string().min(2, 'Nome do Módulo é obrigatório'),
   targetUrl: z.string().min(3, 'URL Alvo é obrigatória').optional().nullable(),
   description: z.string().min(2, 'Descrição e Escopo (Skill da IA) é obrigatório').optional().default('Auditor Deontológico de Saúde'),
-  tags: z.array(z.string()).optional().default(['cfm']),
+  tags: z.array(z.string()).optional().default([]),
   code: z.string().optional().nullable().or(z.literal('')),
-  category: z.string().optional().default('DEONTOLOGIA_MEDICA'),
+  category: z.string().optional().default('DEONTOLOGIA_SAUDE'),
   extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).optional().default('FIRECRAWL'),
   targetNorms: z.array(z.string()).optional().default([]),
   systemPrompt: z.string().optional(),
   clientId: z.string().optional().nullable(),
-  regulatoryFramework: z.string().optional().default('CFM (Resolução 2.336/2023)'),
+  regulatoryFramework: z.string().optional().default('Deontologia e Conformidade em Saúde'),
   cronSchedule: z
     .string()
     .optional()

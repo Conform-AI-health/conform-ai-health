@@ -81,7 +81,9 @@ export class ReconciliationEngine {
         });
         if (agent) {
           // Resolução dinâmica de normas no banco de dados através das tags do agente
-          const agentTags = agent.tags && agent.tags.length > 0 ? agent.tags : ['CFM'];
+          const agentTags = agent.tags && agent.tags.length > 0
+            ? agent.tags
+            : (agent.regulatoryFramework ? [agent.regulatoryFramework] : []);
           const dbNorms = await NormsResolver.resolveByTags(agentTags);
 
           let activeNorms: NormChunk[] = dbNorms
@@ -118,12 +120,27 @@ export class ReconciliationEngine {
               ? agent.description.trim()
               : `Auditor Deontológico em Saúde especialista em conformidade com as resoluções vigentes de ${agentTags.join(', ')}.`;
 
-          const systemPrompt = `Você é o agente especialista "${agent.name}" (${agent.code || 'MODULO'}).
+          const normasVigentesDoEscopo = activeNorms
+            .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
+            .join('\n');
+
+          const defaultPromptTemplate = `Você é o agente especialista "${agent.name}" (${agent.code || 'MODULO'}).
 Skill Comportamental e Escopo do Agente: ${agentSkill}.
 Tags Regulatórias: ${agentTags.join(', ')}.
 Marco Regulatório Auditado: ${agent.regulatoryFramework || 'Conformidade e Deontologia em Saúde'}.
 Sua missão é realizar auditoria deontológica rigorosa confrontando o conteúdo do website com o rol integral de normas associadas.
-DIRETRIZ DE VIGÊNCIA REGULATÓRIA: Normas, resoluções ou artigos revogados não possuem vigência jurídica e JAMAIS devem ser considerados como infração na auditoria deontológica imediata.`;
+DIRETRIZ DE VIGÊNCIA REGULATÓRIA: Normas, resoluções ou artigos revogados não possuem vigência jurídica e JAMAIS devem ser considerados como infração na auditoria deontológica imediata.
+
+CATÁLOGO NORMATIVO VIGENTE DO ESCOPO:
+{normasVigentesDoEscopo}`;
+
+          const rawPrompt = agent.systemPrompt && agent.systemPrompt.trim().length > 0
+            ? agent.systemPrompt.trim()
+            : defaultPromptTemplate;
+
+          const systemPrompt = rawPrompt.includes('{normasVigentesDoEscopo}')
+            ? rawPrompt.replace(/\{normasVigentesDoEscopo\}/g, normasVigentesDoEscopo)
+            : `${rawPrompt}\n\nCATÁLOGO NORMATIVO VIGENTE DO ESCOPO:\n${normasVigentesDoEscopo}`;
 
           return {
             id: agent.id,
@@ -171,11 +188,19 @@ DIRETRIZ DE VIGÊNCIA REGULATÓRIA: Normas, resoluções ou artigos revogados n�
       // Fallback seguro
     }
 
+    const fallbackNormsText = NORMS_CATALOG
+      .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
+      .join('\n');
+
     return {
       name: 'Auditor Deontológico ConformIA',
       systemPrompt: `Você é o Auditor Deontológico em Saúde da ConformIA.
-Sua missão é auditar o conteúdo de materiais médicos e confrontá-los com as normas regulatórias e deontológicas vigentes.`,
-      targetNorms: ['CFM', 'LGPD', 'ANS', 'ANVISA'],
+Sua missão é auditar o conteúdo de materiais e confrontá-los com o Catálogo Normativo Ativo e as diretrizes vigentes aplicáveis ao escopo selecionado.
+DIRETRIZ DE VIGÊNCIA REGULATÓRIA: Normas ou artigos revogados não possuem vigência jurídica.
+
+CATÁLOGO NORMATIVO VIGENTE DO ESCOPO:
+${fallbackNormsText}`,
+      targetNorms: [],
       activeNorms: [...NORMS_CATALOG],
     };
   }

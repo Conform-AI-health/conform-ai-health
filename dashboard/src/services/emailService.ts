@@ -74,7 +74,7 @@ export class EmailService {
           <p>Caso não tenha solicitado esta alteração, ignore este e-mail. Seus dados continuam protegidos sob a LGPD e nossos protocolos de segurança médica.</p>
 
           <div class="footer">
-            Conform.AI Health • Governança Ética e Regulatória em Saúde (Res. CFM nº 2.336/2023)<br>
+            Conform.AI Health • Governança Ética e Regulatória em Saúde (Catálogo Normativo Ativo)<br>
             Mensagem automatizada gerada em conformidade com o Art. 46 da LGPD.
           </div>
         </div>
@@ -175,7 +175,7 @@ export class EmailService {
             </tr>
             <tr>
               <td class="meta-label">Marcos Regulatórios:</td>
-              <td class="meta-value">Res. CFM nº 2.336/23, LGPD Saúde, ANVISA</td>
+              <td class="meta-value">Catálogo Normativo Ativo &amp; Deontologia em Saúde</td>
             </tr>
           </table>
 

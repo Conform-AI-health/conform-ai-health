@@ -257,14 +257,14 @@ export const DashboardPage: React.FC = () => {
                   <span>Auditoria Preventiva Contínua</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Dispare varreduras imediatas em websites ou contas de Instagram para prevenir multas do CFM.
+                  Dispare varreduras imediatas em websites ou canais digitais para prevenir não conformidades deontológicas e regulatórias.
                 </p>
 
                 <div className="mt-5 space-y-3">
                   <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-xs">
-                    <span className="text-slate-300 font-semibold block mb-0.5">Res. CFM 2.336/2023:</span>
+                    <span className="text-slate-300 font-semibold block mb-0.5">Catálogo Deontológico em Saúde:</span>
                     <span className="text-slate-400 text-[11px]">
-                      Auditoria de antes e depois educativo, identificação de responsável técnico e ausência de promoções.
+                      Auditoria de material educativo, identificação de responsável técnico e ausência de práticas mercantis vedadas.
                     </span>
                   </div>
 

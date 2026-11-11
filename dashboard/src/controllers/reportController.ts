@@ -123,12 +123,15 @@ export class ReportController {
 
       const structured = AIStructuredContractAdapter.toStructuredContract(
         {
-          verdict: report.verdict,
+          verdict: (report.verdict === 'INCONCLUSIVO' ? 'PARCIALMENTE_CONFORME' : report.verdict) as
+            | 'CONFORME'
+            | 'PARCIALMENTE_CONFORME'
+            | 'NAO_CONFORME',
           score: report.score ?? 0,
           summary: report.summary || 'Laudo de conformidade deontológica.',
           violations: report.violations.map((v) => ({
             normArticle: v.normArticle || 'Artigo Geral',
-            normCode: v.normCode || 'CFM 2.336/2023',
+            normCode: v.normCode || 'Normativo Vigente',
             severity: v.severity,
             detectedText: v.detectedText || 'Evidência identificada',
             correctiveAdvice: v.correctiveAdvice || 'Adequar comunicação.',

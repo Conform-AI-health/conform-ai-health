@@ -98,14 +98,14 @@ model AgentModule {
   description         String?
   version             String              @default("1.0.0")
   enabled             Boolean             @default(true)
-  category            String              @default("DEONTOLOGIA_MEDICA")
+  category            String              @default("DEONTOLOGIA_SAUDE")
   rulesCount          Int                 @default(0)
   extractionMode      ExtractionMode      @default(CHEERIO)
-  tags                String[]            @default(["CFM"])
+  tags                String[]            @default([])
   targetNorms         String[]            @default([])
   systemPrompt        String?
   clientId            String?             @db.ObjectId
-  regulatoryFramework String?             @default("CFM (Resolução 2.336/2023)")
+  regulatoryFramework String?             @default("Deontologia e Conformidade em Saúde")
   cronSchedule        String?             @default("0 */6 * * *")
   targetUrl           String?
   scrapeData          ModuleScrapeData[]

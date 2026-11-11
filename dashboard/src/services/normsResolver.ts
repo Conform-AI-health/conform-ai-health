@@ -20,30 +20,30 @@ export class NormsResolver {
    * Consulta a collection de normas oficiais ('scraped_pages') no MongoDB correspondentes às tags do módulo.
    * Recupera todos os registros correspondentes com seu conteúdo integral.
    */
-  public static async resolveByTags(tags: string[]): Promise<ResolvedNorm[]> {
-    if (!tags || tags.length === 0) {
-      // Se nenhuma tag informada, default para CFM
-      tags = ['CFM'];
-    }
-
-    const cleanTags = tags.map((t) => t.trim().toLowerCase()).filter(Boolean);
+  public static async resolveByTags(tags?: string[]): Promise<ResolvedNorm[]> {
+    const hasFilter = Boolean(tags && tags.length > 0);
+    const cleanTags = (tags || []).map((t) => t.trim().toLowerCase()).filter(Boolean);
     const searchTags = [
-      ...tags.map((t) => t.trim().toUpperCase()),
+      ...(tags || []).map((t) => t.trim().toUpperCase()),
       ...cleanTags,
     ];
 
-    console.log(`🔍 [NormsResolver] Consultando normas no banco de dados para as tags: ${JSON.stringify(tags)}`);
+    console.log(`🔍 [NormsResolver] Consultando normas no banco de dados para as tags: ${hasFilter ? JSON.stringify(tags) : 'Todas as normas ativas'}`);
 
     const resolved: Map<string, ResolvedNorm> = new Map();
 
     // 1. Consulta no MongoDB na collection de normas oficiais ('scraped_pages')
     try {
       const dbNorms = await prisma.scrapedPage.findMany({
-        where: {
-          tags: {
-            hasSome: searchTags,
-          },
-        },
+        ...(hasFilter
+          ? {
+              where: {
+                tags: {
+                  hasSome: searchTags,
+                },
+              },
+            }
+          : {}),
       });
 
       console.log(`📚 [NormsResolver] ${dbNorms.length} normas recuperadas da collection 'scraped_pages' no banco.`);
@@ -82,12 +82,14 @@ export class NormsResolver {
         continue;
       }
 
-      const matches = cleanTags.some(
-        (t) =>
-          chunk.source.toLowerCase() === t ||
-          chunk.normCode.toLowerCase().includes(t) ||
-          chunk.keywords.some((k) => k.toLowerCase().includes(t))
-      );
+      const matches =
+        !hasFilter ||
+        cleanTags.some(
+          (t) =>
+            chunk.source.toLowerCase() === t ||
+            chunk.normCode.toLowerCase().includes(t) ||
+            chunk.keywords.some((k) => k.toLowerCase().includes(t))
+        );
 
       if (matches && !resolved.has(chunk.id)) {
         resolved.set(chunk.id, {
@@ -116,9 +118,11 @@ export class NormsResolver {
           const files = this.scanMarkdownFiles(dir);
           for (const filePath of files) {
             const fileName = path.basename(filePath).toLowerCase();
-            const matchesTag = cleanTags.some(
-              (t) => fileName.includes(t) || filePath.toLowerCase().includes(path.sep + t)
-            );
+            const matchesTag =
+              !hasFilter ||
+              cleanTags.some(
+                (t) => fileName.includes(t) || filePath.toLowerCase().includes(path.sep + t)
+              );
             if (matchesTag) {
               const fileContent = fs.readFileSync(filePath, 'utf-8');
               const isFileRevogado =

@@ -32,13 +32,13 @@ describe('Frontend - Identidade Visual & Estrutura de Navegação (Conform.AI)',
 
   it('deve validar os marcos regulatórios exibidos no cabeçalho operacional', () => {
     const activeFrameworks = [
-      'Res. CFM nº 2.336/23',
-      'LGPD Art. 11',
-      'ANVISA RDC 727',
+      'Catálogo Normativo Ativo',
+      'Multiescopo Regulatório',
+      'Vigência Dinâmica',
     ];
 
-    expect(activeFrameworks).toContain('Res. CFM nº 2.336/23');
-    expect(activeFrameworks).toContain('LGPD Art. 11');
-    expect(activeFrameworks).toContain('ANVISA RDC 727');
+    expect(activeFrameworks).toContain('Catálogo Normativo Ativo');
+    expect(activeFrameworks).toContain('Multiescopo Regulatório');
+    expect(activeFrameworks).toContain('Vigência Dinâmica');
   });
 });

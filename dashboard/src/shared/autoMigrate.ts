@@ -85,13 +85,13 @@ export async function runAutoMigrateAndSeed() {
     await prisma.agentDefinition.upsert({
       where: { name: 'CFM_DEONTOLOGY_AUDITOR_V1' },
       update: {
-        systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista na Resolução CFM nº...',
-        targetNorm: 'Resolução CFM nº, ANS RN 509 e LGPD Art. 11',
+        systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista em normas e resoluções vigentes de saúde.',
+        targetNorm: 'Catálogo Normativo Ativo e Resoluções Vigentes',
       },
       create: {
         name: 'CFM_DEONTOLOGY_AUDITOR_V1',
-        systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista na Resolução CFM nº...',
-        targetNorm: 'Resolução CFM nº, ANS RN 509 e LGPD Art. 11',
+        systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista em normas e resoluções vigentes de saúde.',
+        targetNorm: 'Catálogo Normativo Ativo e Resoluções Vigentes',
         defaultMode: 'CHEERIO',
         temperature: 0.1,
       },
@@ -111,7 +111,7 @@ export async function runAutoMigrateAndSeed() {
             isDefault: true,
             temperature: 0.2,
             maxTokens: 2048,
-            description: 'Modelo multimodal de alta velocidade e precisão para auditoria da Res. CFM 2.336/2023.',
+            description: 'Modelo multimodal de alta velocidade e precisão para auditoria do Catálogo Normativo Dinâmico em Saúde.',
           },
           {
             name: 'Ollama Local (Qwen 2.5)',
@@ -146,7 +146,7 @@ export async function runAutoMigrateAndSeed() {
         data: {
           name: 'Google Gemini 3.5 Flash',
           modelId: 'gemini-3.5-flash',
-          description: 'Modelo multimodal de alta velocidade e precisão para auditoria da Res. CFM 2.336/2023.',
+          description: 'Modelo multimodal de alta velocidade e precisão para auditoria do Catálogo Normativo Dinâmico em Saúde.',
         },
       });
     }

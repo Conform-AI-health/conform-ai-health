@@ -63,7 +63,7 @@ export class ModelController {
               isDefault: true,
               temperature: 0.2,
               maxTokens: 2048,
-              description: 'Modelo multimodal de alta velocidade e precisão para auditoria da Res. CFM 2.336/2023.',
+              description: 'Modelo multimodal de alta velocidade e precisão para auditoria do Catálogo Normativo Dinâmico em Saúde.',
             },
             {
               name: 'Ollama Local (Qwen 2.5)',

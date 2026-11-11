@@ -29,9 +29,9 @@ flowchart TD
 ## 📋 Estágio 1: Product Owner Regulatória & Backlog (@compliance-specialist)
 - **Agente Responsável:** `@compliance-specialist` (Skill: `compliance-specialist`)
 - **Ações:**
-  1. Analisar os requisitos do usuário e decompor o escopo em **Épicos** e **Histórias de Usuário** (*Como... quero... para...*).
-  2. Mapear aderência regulatória: Resoluções do CFM (2.336/2023, 2.314/2022), ANS, ANVISA e LGPD Art. 11.
-  3. Definir critérios de aceitação funcionais e deontológicos.
+  1. Analisar a demanda do usuário sob a ótica do Catálogo Normativo Ativo e das Resoluções e Leis vigentes aplicáveis ao escopo selecionado (incluindo marcos de proteção de dados, conselhos profissionais de saúde, ANVISA, ANS e diretrizes deontológicas pertinentes).
+  2. Decompor o escopo em **Épicos** claros e **Histórias de Usuário** (*Como... quero... para...*).
+  3. Definir critérios de aceitação funcionais e deontológicos objetivos e mensuráveis.
   4. **GitHub Issue:** Criar formalmente a Issue/Draft no GitHub (`Conform-AI-health/conform-ai-health`).
 - **Ação no GitHub Projects Board:**
   - Adicionar o item ao board [Conform.AI - Backlog & Roadmap](https://github.com/orgs/Conform-AI-health/projects/3/views/1) e posicionar na coluna **`Backlog`**.
