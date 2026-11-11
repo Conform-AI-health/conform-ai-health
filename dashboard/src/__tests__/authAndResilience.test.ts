@@ -183,6 +183,7 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
       const res: any = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),
+        setHeader: vi.fn(),
       };
 
       await AuthController.login(req, res);
@@ -191,8 +192,9 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
       const responseData = res.json.mock.calls[0][0];
 
       expect(responseData).toHaveProperty('token');
-      expect(responseData).toHaveProperty('refreshToken');
       expect(responseData.user.email).toBe('auditor@conformia.med.br');
+      // T30: Refresh token emitido estritamente via cookie seguro HttpOnly
+      expect(res.setHeader).toHaveBeenCalledWith('Set-Cookie', expect.arrayContaining([expect.stringContaining('conformia_refresh_token=')]));
 
       // Verifica expiração do JWT Access Token (1h = 3600s)
       const decodedAccess: any = jwt.decode(responseData.token);
@@ -237,6 +239,7 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
       const res: any = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),
+        setHeader: vi.fn(),
       };
 
       await AuthController.refreshToken(req, res);
@@ -245,7 +248,8 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
       const responseData = res.json.mock.calls[0][0];
 
       expect(responseData).toHaveProperty('token');
-      expect(responseData).toHaveProperty('refreshToken');
+      // T30: Refresh token rotacionado emitido estritamente no cookie seguro
+      expect(res.setHeader).toHaveBeenCalledWith('Set-Cookie', expect.arrayContaining([expect.stringContaining('conformia_refresh_token=')]));
 
       // Valida que o token foi rotacionado
       expect(prisma.user.update).toHaveBeenCalledWith(

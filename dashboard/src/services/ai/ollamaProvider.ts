@@ -4,6 +4,7 @@ import { CircuitBreaker } from '../../shared/circuitBreaker.js';
 import { AIGuardrails } from '../../shared/aiGuardrails.js';
 import { ScrapeResult } from '../scraperService.js';
 import { AgentContext, ReconciliationOutput, reconciliationOutputSchema } from '../../shared/reconciliationTypes.js';
+import { safeHttpPostJson } from '../../shared/security.js';
 import { IAIProvider, AIProviderHealth, AIProviderType } from './aiProvider.interface.js';
 
 export class OllamaProvider implements IAIProvider {
@@ -67,7 +68,7 @@ Retorne APENAS um JSON válido no formato:
 }
 `;
 
-      const response = await axios.post(
+      const response = await safeHttpPostJson(
         `${ollamaUrl}/api/generate`,
         {
           model,
@@ -120,7 +121,7 @@ Retorne APENAS um JSON válido no formato:
       'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica da Resolução CFM 2.336/2023.';
 
     try {
-      const response = await axios.post(
+      const response = await safeHttpPostJson(
         `${ollamaUrl}/api/generate`,
         {
           model,

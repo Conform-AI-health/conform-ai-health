@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { getPaginationParams, buildPaginatedResponse } from '../shared/pagination.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
-import { validateSafeUrl } from '../shared/security.js';
+import { validateSafeUrlAsync, isAllowedLocalhostBaseUrl } from '../shared/security.js';
+import { encryptModelApiKey, maskApiKey } from '../shared/encryption.js';
 
 const createModelSchema = z.object({
   name: z.string().min(2, 'Nome do modelo é obrigatório'),
@@ -97,10 +98,10 @@ export class ModelController {
         });
       }
 
-      // Mascaramento de chave de API para segurança (OWASP)
+      // Mascaramento de chave de API para segurança (OWASP / T32)
       const sanitizedModels = models.map((m) => ({
         ...m,
-        apiKey: m.apiKey && m.apiKey.length > 4 ? `••••••••${m.apiKey.slice(-4)}` : m.apiKey ? '••••••••' : null,
+        apiKey: maskApiKey(m.apiKey),
       }));
 
       res.status(200).json(buildPaginatedResponse(sanitizedModels, total, { page, limit, skip }));
@@ -124,7 +125,7 @@ export class ModelController {
 
       res.status(200).json({
         ...model,
-        apiKey: model.apiKey && model.apiKey.length > 4 ? `••••••••${model.apiKey.slice(-4)}` : null,
+        apiKey: maskApiKey(model.apiKey),
       });
     } catch (error) {
       next(error);
@@ -138,15 +139,18 @@ export class ModelController {
     try {
       const data = createModelSchema.parse(req.body);
 
-      // Validação anti-SSRF em URLs de inferência customizadas (T10 / SEC-P1)
+      // Validação anti-SSRF em URLs de inferência customizadas (T26 / SEC-P1)
       if (data.baseUrl && data.baseUrl.trim().length > 0) {
-        const check = validateSafeUrl(data.baseUrl.trim());
-        if (!check.safe && !data.baseUrl.includes('localhost') && !data.baseUrl.includes('127.0.0.1')) {
-          res.status(400).json({
-            error: `URL base de inferência rejeitada por segurança: ${check.reason}`,
-            code: 'SSRF_INVALID_BASE_URL',
-          });
-          return;
+        const isLoopback = isAllowedLocalhostBaseUrl(data.baseUrl.trim());
+        if (!isLoopback) {
+          const check = await validateSafeUrlAsync(data.baseUrl.trim());
+          if (!check.safe) {
+            res.status(400).json({
+              error: `URL base de inferência rejeitada por segurança: ${check.reason}`,
+              code: 'SSRF_INVALID_BASE_URL',
+            });
+            return;
+          }
         }
       }
 
@@ -158,13 +162,16 @@ export class ModelController {
         });
       }
 
+      // T32: Cifragem em repouso da apiKey com AES-256-GCM
+      const encryptedApiKey = encryptModelApiKey(data.apiKey);
+
       const model = await prisma.aiModelConfig.create({
         data: {
           name: data.name,
           provider: data.provider,
           modelId: data.modelId,
           baseUrl: data.baseUrl || null,
-          apiKey: data.apiKey || null,
+          apiKey: encryptedApiKey,
           temperature: data.temperature,
           maxTokens: data.maxTokens,
           description: data.description,
@@ -175,7 +182,7 @@ export class ModelController {
 
       if (model.isActive) {
         ReconciliationEngine.setActiveProvider(model.provider as any);
-      ReconciliationEngine.invalidateModelCache();
+        ReconciliationEngine.invalidateModelCache();
       }
 
       await prisma.systemLog.create({
@@ -186,7 +193,10 @@ export class ModelController {
         },
       });
 
-      res.status(201).json(model);
+      res.status(201).json({
+        ...model,
+        apiKey: maskApiKey(model.apiKey),
+      });
     } catch (error) {
       next(error);
     }
@@ -207,13 +217,16 @@ export class ModelController {
       }
 
       if (data.baseUrl && data.baseUrl.trim().length > 0) {
-        const check = validateSafeUrl(data.baseUrl.trim());
-        if (!check.safe && !data.baseUrl.includes('localhost') && !data.baseUrl.includes('127.0.0.1')) {
-          res.status(400).json({
-            error: `URL base de inferência rejeitada por segurança: ${check.reason}`,
-            code: 'SSRF_INVALID_BASE_URL',
-          });
-          return;
+        const isLoopback = isAllowedLocalhostBaseUrl(data.baseUrl.trim());
+        if (!isLoopback) {
+          const check = await validateSafeUrlAsync(data.baseUrl.trim());
+          if (!check.safe) {
+            res.status(400).json({
+              error: `URL base de inferência rejeitada por segurança: ${check.reason}`,
+              code: 'SSRF_INVALID_BASE_URL',
+            });
+            return;
+          }
         }
       }
 
@@ -224,10 +237,13 @@ export class ModelController {
         });
       }
 
-      // Se não enviou apiKey, preserva a existente (evita sobrescrever com máscara)
+      // Se não enviou apiKey ou enviou máscara, preserva a existente.
+      // Se enviou nova apiKey, cifra em repouso com AES-256-GCM (T32)
       const updateData: any = { ...data };
       if (data.apiKey && data.apiKey.includes('••••')) {
         delete updateData.apiKey;
+      } else if (data.apiKey !== undefined) {
+        updateData.apiKey = encryptModelApiKey(data.apiKey);
       }
 
       const updated = await prisma.aiModelConfig.update({
@@ -240,7 +256,10 @@ export class ModelController {
       }
       ReconciliationEngine.invalidateModelCache();
 
-      res.status(200).json(updated);
+      res.status(200).json({
+        ...updated,
+        apiKey: maskApiKey(updated.apiKey),
+      });
     } catch (error) {
       next(error);
     }

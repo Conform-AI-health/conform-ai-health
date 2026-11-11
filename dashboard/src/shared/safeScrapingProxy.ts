@@ -108,6 +108,14 @@ async function proxyHttpsConnect(
     return;
   }
 
+  // T28: Restringe portas do túnel CONNECT estritamente para portas HTTPS seguras (443, 8443)
+  const targetPort = Number(targetUrl.port) || 443;
+  const ALLOWED_CONNECT_PORTS = [443, 8443];
+  if (!ALLOWED_CONNECT_PORTS.includes(targetPort)) {
+    clientSocket.end('HTTP/1.1 403 Forbidden: Port not allowed for CONNECT\r\n\r\n');
+    return;
+  }
+
   let target: ResolvedTarget;
   try {
     target = await resolvePublicTarget(targetUrl);
@@ -119,7 +127,7 @@ async function proxyHttpsConnect(
   const upstream = net.connect({
     host: target.address,
     family: target.family,
-    port: Number(targetUrl.port) || 443,
+    port: targetPort,
   });
 
   upstream.setTimeout(15000, () => upstream.destroy(new Error('Upstream connection timed out')));

@@ -104,8 +104,41 @@ export function normalizeIpCandidate(rawHost: string): string | null {
 }
 
 /**
+ * T28: BlockList nativa do Node.js de alta performance para contenção estrita de sub-redes privadas e reservadas.
+ */
+const privateBlockList = new net.BlockList();
+
+// IPv4 Privadas, Reservadas, Loopback e CGNAT
+privateBlockList.addSubnet('0.0.0.0', 8, 'ipv4');       // Current network ("this host")
+privateBlockList.addSubnet('10.0.0.0', 8, 'ipv4');      // RFC 1918
+privateBlockList.addSubnet('100.64.0.0', 10, 'ipv4');   // RFC 6598 CGNAT
+privateBlockList.addSubnet('127.0.0.0', 8, 'ipv4');     // RFC 1122 Loopback
+privateBlockList.addSubnet('169.254.0.0', 16, 'ipv4');  // RFC 3927 Link-Local (Cloud Metadata 169.254.169.254)
+privateBlockList.addSubnet('172.16.0.0', 12, 'ipv4');   // RFC 1918
+privateBlockList.addSubnet('192.0.0.0', 24, 'ipv4');    // IETF Protocol Assignments (T28)
+privateBlockList.addSubnet('192.0.2.0', 24, 'ipv4');    // RFC 5737 TEST-NET-1
+privateBlockList.addSubnet('192.88.99.0', 24, 'ipv4');  // RFC 7526 6to4 Anycast Relay
+privateBlockList.addSubnet('192.168.0.0', 16, 'ipv4');  // RFC 1918
+privateBlockList.addSubnet('198.18.0.0', 15, 'ipv4');   // RFC 2544 Network Interconnect Benchmark
+privateBlockList.addSubnet('198.51.100.0', 24, 'ipv4'); // RFC 5737 TEST-NET-2
+privateBlockList.addSubnet('203.0.113.0', 24, 'ipv4');  // RFC 5737 TEST-NET-3
+privateBlockList.addSubnet('224.0.0.0', 4, 'ipv4');     // RFC 1112 Multicast
+privateBlockList.addSubnet('240.0.0.0', 4, 'ipv4');     // RFC 1112 Reserved
+privateBlockList.addAddress('255.255.255.255', 'ipv4'); // Broadcast
+
+// IPv6 Privadas, Reservadas, Loopback e Tradução
+privateBlockList.addAddress('::', 'ipv6');              // Unspecified
+privateBlockList.addAddress('::1', 'ipv6');             // Loopback
+privateBlockList.addSubnet('64:ff9b::', 96, 'ipv6');   // RFC 6052 IPv4/IPv6 Translation
+privateBlockList.addSubnet('2001:db8::', 32, 'ipv6');  // RFC 3849 Documentation
+privateBlockList.addSubnet('2002::', 16, 'ipv6');      // RFC 3056 6to4
+privateBlockList.addSubnet('fc00::', 7, 'ipv6');       // RFC 4193 Unique Local Address (ULA)
+privateBlockList.addSubnet('fe80::', 10, 'ipv6');      // RFC 4291 Link-Local
+privateBlockList.addSubnet('ff00::', 8, 'ipv6');       // RFC 4291 Multicast
+
+/**
  * Verifica se um endereço IP (IPv4 ou IPv6) pertence a faixas privadas, loopback,
- * link-local ou reservadas (RFC 1918, RFC 3927, RFC 6598, RFC 4193, RFC 3056, etc.)
+ * link-local ou reservadas utilizando a API nativa net.BlockList (T28 / RFC 1918 / RFC 3927).
  */
 export function isPrivateIp(ip: string): boolean {
   if (!ip) return true;
@@ -138,76 +171,48 @@ export function isPrivateIp(ip: string): boolean {
     return true; // Inválido -> considera não seguro
   }
 
+  const familyType = ipFamily === 4 ? 'ipv4' : 'ipv6';
+
+  // Consulta prioritária via net.BlockList compilada
+  try {
+    if (privateBlockList.check(cleanIp, familyType)) {
+      return true;
+    }
+  } catch {
+    return true;
+  }
+
+  // Fallbacks complementares
   if (ipFamily === 4) {
     const parts = cleanIp.split('.').map(Number);
     if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) {
       return true;
     }
-
     const [a, b] = parts;
-
-    // Loopback 127.0.0.0/8 e endereço "este host" 0.0.0.0/8
-    if (a === 127 || a === 0) return true;
-
-    // RFC 1918: 10.0.0.0/8
-    if (a === 10) return true;
-
-    // RFC 1918: 172.16.0.0/12 (172.16.0.0 - 172.31.255.255)
+    if (a === 127 || a === 0 || a === 10) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
-
-    // RFC 1918: 192.168.0.0/16
     if (a === 192 && b === 168) return true;
-
-    // RFC 3927 Link-Local / Cloud Metadata: 169.254.0.0/16 (inclui 169.254.169.254)
     if (a === 169 && b === 254) return true;
-
-    // RFC 6598 CGNAT: 100.64.0.0/10 (100.64.0.0 - 100.127.255.255)
     if (a === 100 && b >= 64 && b <= 127) return true;
-
-    // IETF Protocol Assignments: 192.0.0.0/24
     if (a === 192 && b === 0) return true;
-
-    // Test-Net RFC 5737: 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24
-    if (a === 192 && b === 0 && parts[2] === 2) return true;
-    if (a === 198 && b === 51 && parts[2] === 100) return true;
-    if (a === 203 && b === 0 && parts[2] === 113) return true;
-
-    // Multicast & Broadcast: 224.0.0.0/4 e 255.255.255.255
     if (a >= 224) return true;
-
     return false;
   }
 
   if (ipFamily === 6) {
-    // Loopback ::1 ou endereço não especificado ::
     if (cleanIp === '::1' || cleanIp === '::' || cleanIp === '0000:0000:0000:0000:0000:0000:0000:0001') {
       return true;
     }
-
-    // Link-local: fe80::/10 (fe8, fe9, fea, feb)
     if (/^fe[89ab]/i.test(cleanIp)) return true;
-
-    // Unique Local Addresses (ULA): fc00::/7 (fc e fd)
     if (/^f[cd]/i.test(cleanIp)) return true;
-
-    // IPv6 Multicast: ff00::/8
     if (/^ff/i.test(cleanIp)) return true;
-
-    // 6to4: 2002::/16
     if (cleanIp.startsWith('2002:')) return true;
-
-    // IPv4/IPv6 Translation (RFC 6052): 64:ff9b::/96
     if (cleanIp.startsWith('64:ff9b:')) return true;
-
-    // Documentação (RFC 3849): 2001:db8::/32
     if (cleanIp.startsWith('2001:db8:') || cleanIp.startsWith('2001:0db8:')) return true;
-
-    // IPv4-compatible IPv6: ::0.0.0.0 - ::255.255.255.255
     if (cleanIp.startsWith('::') && cleanIp.includes('.')) {
       const ipv4Part = cleanIp.replace('::', '');
       return isPrivateIp(ipv4Part);
     }
-
     return false;
   }
 
@@ -462,4 +467,54 @@ export async function safeHttpGet(urlString: string, options: SafeHttpClientOpti
   }
 
   throw new Error('Falha ao processar requisição HTTP segura.');
+}
+
+/**
+ * T26: Valida se uma URL base aponta estritamente para host de loopback (localhost/127.0.0.1/[::1])
+ * sem permitir desvios maliciosos como "localhost.evil.com" ou credenciais embutidas.
+ */
+export function isAllowedLocalhostBaseUrl(rawUrl: string): boolean {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
+    if (parsed.username || parsed.password) {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * T26: Cliente HTTP seguro para chamadas POST da IA (ex: Ollama) protegido contra SSRF e timeout estrito
+ */
+export async function safeHttpPostJson<T = any>(
+  urlString: string,
+  payload: any,
+  options: { timeout?: number; headers?: Record<string, string> } = {}
+): Promise<{ data: T; status: number }> {
+  const isLocal = isAllowedLocalhostBaseUrl(urlString);
+  if (!isLocal) {
+    const check = await validateSafeUrlAsync(urlString);
+    if (!check.safe) {
+      throw new Error(`SSRF bloqueado em chamada de IA: ${check.reason}`);
+    }
+  }
+
+  const resp = await axios.post<T>(urlString, payload, {
+    httpAgent: isLocal ? undefined : secureHttpAgent,
+    httpsAgent: isLocal ? undefined : secureHttpsAgent,
+    timeout: options.timeout || 30000,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+  return { data: resp.data, status: resp.status };
 }

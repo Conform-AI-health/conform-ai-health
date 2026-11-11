@@ -31,7 +31,13 @@ export function parseCanonicalIdentifier(codeOrTitle: string, tags: string[] = [
   const number = numMatch ? numMatch[1].replace('.', '') : '0';
   const year = numMatch && numMatch[2] ? (numMatch[2].length === 2 ? 2000 + parseInt(numMatch[2], 10) : parseInt(numMatch[2], 10)) : undefined;
 
-  const isRevoked = text.includes('REVOGAD');
+  // T31: Vigência canônica fundamentada em identificação formal de normas extintas ou tags explícitas de metadados
+  const isExplicitlyRevokedTag = tags.some((t) => {
+    const upper = t.trim().toUpperCase();
+    return upper === 'REVOGADO' || upper === 'REVOGADA' || upper === 'STATUS:REVOGADA';
+  });
+  const isKnownRevokedNorm = authority === 'CFM' && number === '1974' && (!year || year === 2011);
+  const isRevoked = isExplicitlyRevokedTag || isKnownRevokedNorm;
 
   return { authority, type, number, year, isRevoked };
 }
@@ -56,8 +62,9 @@ export class NormsResolver {
    */
   public static async resolveByTags(tags: string[]): Promise<ResolvedNorm[]> {
     if (!tags || tags.length === 0) {
-      // Se nenhuma tag informada, default para CFM
-      tags = ['CFM'];
+      // T31: Sem tags informadas, não assume arbitrariamente CFM; retorna array vazio para integridade do escopo
+      console.log('🔍 [NormsResolver] Nenhuma tag informada. Escopo regulatório mantido neutro/vazio.');
+      return [];
     }
 
     const cleanTags = tags.map((t) => t.trim().toLowerCase()).filter(Boolean);
@@ -110,9 +117,8 @@ export class NormsResolver {
 
     // 2. Consulta complementar no Catálogo Oficial de Normas (NORMS_CATALOG)
     for (const chunk of NORMS_CATALOG) {
-      const isChunkRevogado =
-        chunk.keywords.some((k) => k.toLowerCase().includes('revogad')) ||
-        chunk.title.toLowerCase().includes('revogad');
+      // T31: Vigência fundamentada em metadados formais (validity.isRevoked), eliminando heurísticas frágeis de substring
+      const isChunkRevogado = chunk.validity?.isRevoked === true || chunk.id.includes('REVOGADA');
       if (isChunkRevogado) {
         continue;
       }

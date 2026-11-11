@@ -3,6 +3,7 @@ import { prisma } from '../../config/prisma.js';
 import { Bulkhead } from '../../shared/bulkhead.js';
 import { ScrapeResult } from '../scraperService.js';
 import { AgentContext, ReconciliationOutput } from '../../shared/reconciliationTypes.js';
+import { decryptModelApiKey } from '../../shared/encryption.js';
 import { IAIProvider, AIProviderType, AIProviderHealth } from './aiProvider.interface.js';
 import { GeminiProvider } from './geminiProvider.js';
 import { OllamaProvider } from './ollamaProvider.js';
@@ -85,7 +86,7 @@ export class AIProviderFactory {
           provider: activeFromDb.provider as AIProviderType,
           modelId: activeFromDb.modelId,
           baseUrl: activeFromDb.baseUrl || env.OLLAMA_BASE_URL,
-          apiKey: activeFromDb.apiKey || env.GEMINI_API_KEY,
+          apiKey: decryptModelApiKey(activeFromDb.apiKey) || env.GEMINI_API_KEY,
           temperature: activeFromDb.temperature ?? 0.2,
           maxTokens: activeFromDb.maxTokens ?? 2048,
         };
@@ -189,6 +190,9 @@ export class AIProviderFactory {
     let activeModel: any = null;
     if (targetModelId) {
       activeModel = await prisma.aiModelConfig.findUnique({ where: { id: targetModelId } }).catch(() => null);
+      if (activeModel?.apiKey) {
+        activeModel.apiKey = decryptModelApiKey(activeModel.apiKey) || activeModel.apiKey;
+      }
     }
     if (!activeModel) {
       activeModel = await this.getActiveModelConfig();

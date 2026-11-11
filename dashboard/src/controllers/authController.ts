@@ -246,7 +246,7 @@ export class AuthController {
         data: { refreshToken: refreshTokenHash },
       });
 
-      // Emite cookie seguro HttpOnly anti-XSS para o refresh token (C06)
+      // Emite cookie seguro HttpOnly anti-XSS para o refresh token (C06 / T30)
       const isProd = env.NODE_ENV === 'production';
       if (typeof res.setHeader === 'function') {
         res.setHeader('Set-Cookie', [
@@ -256,9 +256,9 @@ export class AuthController {
         ]);
       }
 
+      // T30: Refresh token transita EXCLUSIVAMENTE via cookie seguro HttpOnly, jamais no JSON
       res.status(200).json({
         token,
-        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -312,6 +312,24 @@ export class AuthController {
   public static async refreshToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const cookies = AuthController.parseCookies(req.headers.cookie);
+      const isCookieSource = Boolean(cookies['conformia_refresh_token']);
+
+      // T30: Validação de segurança anti-CSRF quando a requisição se fundamenta em cookies automáticos do browser
+      if (isCookieSource) {
+        const xRequestedWith = req.headers['x-requested-with'];
+        const origin = req.headers['origin'];
+        const allowedOrigins = (env.CORS_ORIGIN || '').split(',').map((o) => o.trim()).filter(Boolean);
+        const isAllowedOrigin = origin && (allowedOrigins.includes(origin) || env.NODE_ENV !== 'production');
+
+        if (!xRequestedWith && !isAllowedOrigin) {
+          res.status(403).json({
+            error: 'Requisição de renovação de sessão rejeitada por segurança anti-CSRF (cabeçalho X-Requested-With ausente).',
+            code: 'CSRF_HEADER_MISSING',
+          });
+          return;
+        }
+      }
+
       const tokenInput =
         req.body?.refreshToken || req.headers['x-refresh-token'] || cookies['conformia_refresh_token'];
       const { refreshToken } = refreshTokenSchema.parse({ refreshToken: tokenInput });
@@ -359,7 +377,7 @@ export class AuthController {
         data: { refreshToken: newRefreshTokenHash },
       });
 
-      // Rotação do cookie HttpOnly anti-XSS (C06)
+      // Rotação do cookie HttpOnly anti-XSS (C06 / T30)
       const isProd = env.NODE_ENV === 'production';
       if (typeof res.setHeader === 'function') {
         res.setHeader('Set-Cookie', [
@@ -369,9 +387,9 @@ export class AuthController {
         ]);
       }
 
+      // T30: Retorna estritamente o access token; o refresh token transita exclusivamente no cookie seguro
       res.status(200).json({
         token: newTokens.token,
-        refreshToken: newTokens.refreshToken,
       });
     } catch (error) {
       if (typeof next === 'function') {

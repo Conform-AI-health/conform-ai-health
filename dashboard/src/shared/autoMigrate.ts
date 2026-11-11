@@ -48,11 +48,12 @@ export async function runDatabaseMigrations(): Promise<void> {
     console.log(`🛡️ [Migration] ${clientsWithoutDates.length} Cliente(s) legados sanitizados com timestamps válidos.`);
   }
 
-  // 1.3 Higienização da coleção 'scraped_pages': deve conter exclusivamente normas regulatórias oficiais
+  // 1.3 Verificação de conformidade da coleção 'scraped_pages' (T27)
+  // Operações de exclusão destrutiva foram desacopladas do boot e migradas para o script CLI com --dry-run e backup (npm run db:cleanup).
   const allClients = await prisma.client.findMany({ select: { websiteUrl: true } });
   const clinicUrls = allClients.map((c) => c.websiteUrl).filter(Boolean) as string[];
 
-  const deletedClinicPages = await prisma.scrapedPage.deleteMany({
+  const countClinicPages = await prisma.scrapedPage.count({
     where: {
       OR: [
         ...(clinicUrls.length > 0 ? [{ url: { in: clinicUrls } }] : []),
@@ -61,8 +62,8 @@ export async function runDatabaseMigrations(): Promise<void> {
     },
   });
 
-  if (deletedClinicPages && deletedClinicPages.count > 0) {
-    console.log(`🛡️ [Migration] ${deletedClinicPages.count} página(s) de clínica indevidas removidas do repositório de normas.`);
+  if (countClinicPages > 0) {
+    console.log(`ℹ️ [Migration:T27] ${countClinicPages} página(s) de clínica detectadas na coleção de normas. Execute 'npm run db:cleanup' para higienização manual com backup.`);
   }
 
   // C03: NUNCA associar laudos antigos a clientes arbitrários nem injetar URLs fictícias (ex: https://conform-ia.med.br).
