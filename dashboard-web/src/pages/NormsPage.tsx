@@ -53,7 +53,7 @@ export const NormsPage: React.FC = () => {
             <span>Catálogo Normativo & Deontologia em Saúde</span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Artigos e diretrizes estruturadas: Resolução CFM nº, ANS RN 509/395, ANVISA e LGPD Art. 11.
+            Artigos e diretrizes estruturadas: Catálogo normativo ativo, resoluções vigentes de conselhos profissionais, ANVISA, ANS e marcos de proteção de dados.
           </p>
         </div>
 

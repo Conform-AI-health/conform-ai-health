@@ -155,12 +155,12 @@ export const MainLayout: React.FC = () => {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-xs text-slate-300 font-medium">
               <Stethoscope className="h-4 w-4 text-cyan-400 shrink-0" />
-              <span className="text-slate-400">Vigilância Deontológica Ativa:</span>
-              <span className="px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-800/60 text-cyan-300 font-mono text-[11px]">Res. CFM nº 2.336/23</span>
+              <span className="text-slate-400">Vigilância Deontológica:</span>
+              <span className="px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-800/60 text-cyan-300 font-mono text-[11px]">Catálogo Normativo Ativo</span>
               <span className="text-slate-600 hidden sm:inline">•</span>
-              <span className="px-2 py-0.5 rounded-md bg-purple-950/60 border border-purple-800/60 text-purple-300 font-mono text-[11px] hidden sm:inline">LGPD Art. 11</span>
+              <span className="px-2 py-0.5 rounded-md bg-purple-950/60 border border-purple-800/60 text-purple-300 font-mono text-[11px] hidden sm:inline">Multiescopo Regulatório</span>
               <span className="text-slate-600 hidden md:inline">•</span>
-              <span className="px-2 py-0.5 rounded-md bg-blue-950/60 border border-blue-800/60 text-blue-300 font-mono text-[11px] hidden md:inline">ANVISA RDC 727</span>
+              <span className="px-2 py-0.5 rounded-md bg-blue-950/60 border border-blue-800/60 text-blue-300 font-mono text-[11px] hidden md:inline">Vigência Dinâmica</span>
             </div>
           </div>
 

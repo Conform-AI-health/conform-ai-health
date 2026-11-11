@@ -212,7 +212,7 @@ export class HeuristicProvider implements IAIProvider {
       model: 'regex-heuristic-v1',
       status: 'ONLINE',
       latencyMs: Date.now() - startTime,
-      response: `Motor Heurístico Deontológico Operacional: Catálogo CFM 2.336/2023 e LGPD ativo em memória (${customPrompt || 'Pronto'}).`,
+      response: `Motor Heurístico Deontológico Operacional: Catálogo Normativo Ativo em memória (${customPrompt || 'Pronto'}).`,
       testedAt: new Date().toISOString(),
     };
   }

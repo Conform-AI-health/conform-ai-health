@@ -41,8 +41,12 @@ export class OllamaProvider implements IAIProvider {
       );
       const groundingInstructions = AIGuardrails.buildGroundingPromptInstructions(agentContext.activeNorms);
 
+      const resolvedSystemPrompt = agentContext.systemPrompt.includes('{normasVigentesDoEscopo}')
+        ? agentContext.systemPrompt.replace(/\{normasVigentesDoEscopo\}/g, relevantNorms)
+        : agentContext.systemPrompt;
+
       const prompt = `
-${agentContext.systemPrompt}
+${resolvedSystemPrompt}
 
 ${groundingInstructions}
 
@@ -118,7 +122,7 @@ Retorne APENAS um JSON válido no formato:
     const model = targetModel?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b';
     const prompt =
       customPrompt ||
-      'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica da Resolução CFM 2.336/2023.';
+      'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica com base no catálogo normativo dinâmico.';
 
     try {
       const response = await safeHttpPostJson(

@@ -577,7 +577,7 @@ export const AgentsPage: React.FC = () => {
             <span>Módulos de Agente & Governança de IA</span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Gestão de módulos deontológicos (CFM 2.336/23, LGPD) e controle de modelos de linguagem persistidos no MongoDB.
+            Gestão de módulos deontológicos (Catálogo Normativo Ativo) e controle de modelos de linguagem persistidos no MongoDB.
           </p>
         </div>
 

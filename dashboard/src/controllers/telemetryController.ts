@@ -158,8 +158,8 @@ export class TelemetryController {
         moduleId: m.id,
         agentName: m.name,
         version: m.version,
-        framework: m.regulatoryFramework || 'CFM (Resolução 2.336/2023)',
-        promptSnippet: m.systemPrompt ? `${m.systemPrompt.substring(0, 120)}...` : 'Prompt Padrão de Deontologia Médica',
+        framework: m.regulatoryFramework || 'Deontologia e Conformidade em Saúde',
+        promptSnippet: m.systemPrompt ? `${m.systemPrompt.substring(0, 120)}...` : 'Prompt Padrão de Deontologia em Saúde',
         tags: m.tags,
         updatedAt: m.updatedAt,
       }));

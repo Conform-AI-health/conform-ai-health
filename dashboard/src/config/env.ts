@@ -39,7 +39,7 @@ const envSchema = z
         : z.string().min(16, 'JWT_REFRESH_SECRET must have at least 16 characters'),
     JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
     RESEND_API_KEY: z.string().optional().default(''),
-    EMAIL_FROM: z.string().default('Conform.AI <onboarding@resend.dev>'),
+    EMAIL_FROM: z.string().default(process.env.EMAIL_FROM || process.env.RESEND_FROM || 'Conform.AI <onboarding@resend.dev>'),
     FRONTEND_URL: z.string().default('http://localhost:5173'),
     AI_PROVIDER: z.enum(['gemini', 'ollama', 'heuristic']).default('gemini'),
     GEMINI_API_KEY: z.string().optional().default(''),

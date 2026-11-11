@@ -24,6 +24,9 @@ export class EmailService {
   private static resendClient: Resend | null = null;
 
   private static getClient(): Resend | null {
+    if (env.NODE_ENV === 'test') {
+      return this.resendClient;
+    }
     if (!this.resendClient && env.RESEND_API_KEY && env.RESEND_API_KEY.trim().length > 0) {
       this.resendClient = new Resend(env.RESEND_API_KEY);
     }
@@ -37,7 +40,7 @@ export class EmailService {
     to: string,
     resetToken: string,
     userName = 'Usuário'
-  ): Promise<{ success: boolean; messageId?: string; mocked?: boolean }> {
+  ): Promise<{ success: boolean; messageId?: string; mocked?: boolean; error?: string }> {
     const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${encodeURIComponent(resetToken)}`;
     const client = this.getClient();
     const safeUserName = escapeHtml(userName);
@@ -85,7 +88,7 @@ export class EmailService {
           <p>Caso não tenha solicitado esta alteração, ignore este e-mail. Seus dados continuam protegidos sob a LGPD e nossos protocolos de segurança médica.</p>
 
           <div class="footer">
-            Conform.AI Health • Governança Ética e Regulatória em Saúde (Res. CFM nº 2.336/2023)<br>
+            Conform.AI Health • Governança Ética e Regulatória em Saúde (Catálogo Normativo Ativo)<br>
             Mensagem automatizada gerada em conformidade com o Art. 46 da LGPD.
           </div>
         </div>
@@ -93,9 +96,13 @@ export class EmailService {
       </html>
     `;
 
-    if (!client || env.NODE_ENV === 'test') {
-      console.log(`📧 [EmailService:MOCK] Link de recuperação para ${to}: ${resetUrl}`);
-      return { success: true, mocked: true };
+    if (!client) {
+      if (env.NODE_ENV === 'test') {
+        console.log(`📧 [EmailService:MOCK] Link de recuperação para ${to}: ${resetUrl}`);
+        return { success: true, mocked: true };
+      }
+      console.warn(`⚠️ [EmailService] RESEND_API_KEY ausente. E-mail de redefinição não enviado para ${to}`);
+      return { success: false, mocked: true, error: 'Chave RESEND_API_KEY não configurada no ambiente.' };
     }
 
     try {
@@ -106,11 +113,39 @@ export class EmailService {
         html: htmlContent,
       });
 
-      console.log(`📧 [EmailService] E-mail de redefinição enviado via Resend para ${to} | ID: ${response.data?.id}`);
-      return { success: true, messageId: response.data?.id };
+      if (response.error) {
+        // Fallback resiliente: se o domínio próprio não foi verificado no Resend, tenta onboarding@resend.dev
+        if (
+          response.error.message?.toLowerCase().includes('domain is not verified') &&
+          !env.EMAIL_FROM.includes('onboarding@resend.dev')
+        ) {
+          console.warn(`⚠️ [EmailService] Domínio em '${env.EMAIL_FROM}' não está verificado no Resend. Tentando fallback para 'Conform.AI <onboarding@resend.dev>'...`);
+          const fallbackRes = await client.emails.send({
+            from: 'Conform.AI <onboarding@resend.dev>',
+            to: [to],
+            subject: '🔒 Conform.AI — Redefinição de Senha Segura (Válido por 1h)',
+            html: htmlContent,
+          });
+
+          if (!fallbackRes.error && fallbackRes.data?.id) {
+            console.log(`📧 [EmailService] E-mail de redefinição enviado via fallback (onboarding@resend.dev) para ${to} | ID: ${fallbackRes.data.id}`);
+            return { success: true, messageId: fallbackRes.data.id };
+          }
+        }
+
+        console.error(`❌ [EmailService] Resend API retornou erro para ${to}:`, response.error);
+        return { success: false, error: response.error.message || JSON.stringify(response.error) };
+      }
+
+      if (!response.data?.id) {
+        return { success: false, error: 'ID da mensagem não retornado pela Resend API.' };
+      }
+
+      console.log(`📧 [EmailService] E-mail de redefinição enviado via Resend para ${to} | ID: ${response.data.id}`);
+      return { success: true, messageId: response.data.id };
     } catch (err: any) {
       console.error(`❌ [EmailService] Erro ao enviar e-mail via Resend para ${to}:`, err.message);
-      return { success: false };
+      return { success: false, error: err.message };
     }
   }
 
@@ -128,7 +163,6 @@ export class EmailService {
       console.warn(`⚠️ [EmailService] Envio de laudo ignorado: ${errorMsg}.`);
       return { success: false, error: errorMsg };
     }
-
     const reportUrl = `${env.FRONTEND_URL}/reports`;
     const client = this.getClient();
 
@@ -198,7 +232,7 @@ export class EmailService {
             </tr>
             <tr>
               <td class="meta-label">Marcos Regulatórios:</td>
-              <td class="meta-value">Res. CFM nº 2.336/23, LGPD Saúde, ANVISA</td>
+              <td class="meta-value">Catálogo Normativo Ativo &amp; Deontologia em Saúde</td>
             </tr>
           </table>
 
@@ -217,9 +251,13 @@ export class EmailService {
       </html>
     `;
 
-    if (!client || env.NODE_ENV === 'test') {
-      console.log(`📧 [EmailService:MOCK] Notificação de laudo para ${to} (Score: ${report.score}%, Veredito: ${report.verdict})`);
-      return { success: true, mocked: true, messageId: `mock-msg-${Date.now()}` };
+    if (!client) {
+      if (env.NODE_ENV === 'test') {
+        console.log(`📧 [EmailService:MOCK] Notificação de laudo para ${to} (Score: ${report.score}%, Veredito: ${report.verdict})`);
+        return { success: true, mocked: true, messageId: `mock-msg-${Date.now()}` };
+      }
+      console.warn(`⚠️ [EmailService] RESEND_API_KEY ausente. Notificação de laudo não enviada para ${to}`);
+      return { success: false, mocked: true, error: 'Chave RESEND_API_KEY não configurada no ambiente. E-mail real não enviado.' };
     }
 
     try {
@@ -230,14 +268,36 @@ export class EmailService {
         html: htmlContent,
       });
 
-      if ((response as any).error) {
-        const resendErr = (response as any).error.message || 'Erro retornado pela API do Resend';
-        console.error(`❌ [EmailService] Resend API retornou erro para ${to}:`, resendErr);
-        return { success: false, error: resendErr };
+      if (response.error) {
+        // Fallback resiliente: se o domínio próprio não foi verificado no Resend, tenta onboarding@resend.dev
+        if (
+          response.error.message?.toLowerCase().includes('domain is not verified') &&
+          !env.EMAIL_FROM.includes('onboarding@resend.dev')
+        ) {
+          console.warn(`⚠️ [EmailService] Domínio em '${env.EMAIL_FROM}' não está verificado no Resend. Tentando fallback para 'Conform.AI <onboarding@resend.dev>'...`);
+          const fallbackRes = await client.emails.send({
+            from: 'Conform.AI <onboarding@resend.dev>',
+            to: [to],
+            subject: `⚖️ Conform.AI — Laudo Deontológico Concluído [${report.verdict}] (${clientName})`,
+            html: htmlContent,
+          });
+
+          if (!fallbackRes.error && fallbackRes.data?.id) {
+            console.log(`📧 [EmailService] Notificação de laudo enviada com sucesso via fallback (onboarding@resend.dev) para ${to} | ID: ${fallbackRes.data.id}`);
+            return { success: true, messageId: fallbackRes.data.id };
+          }
+        }
+
+        console.error(`❌ [EmailService] Resend API retornou erro para ${to}:`, response.error);
+        return { success: false, error: response.error.message || JSON.stringify(response.error) };
       }
 
-      console.log(`📧 [EmailService] Notificação de laudo enviada via Resend para ${to} | ID: ${response.data?.id}`);
-      return { success: true, messageId: response.data?.id };
+      if (!response.data?.id) {
+        return { success: false, error: 'ID da mensagem não retornado pela Resend API.' };
+      }
+
+      console.log(`📧 [EmailService] Notificação de laudo enviada via Resend para ${to} | ID: ${response.data.id}`);
+      return { success: true, messageId: response.data.id };
     } catch (err: any) {
       console.error(`❌ [EmailService] Erro ao enviar laudo via Resend para ${to}:`, err.message);
       return { success: false, error: err.message || 'Falha de conexão com provedor de e-mail' };

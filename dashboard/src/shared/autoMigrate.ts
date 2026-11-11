@@ -66,7 +66,7 @@ export async function runDatabaseMigrations(): Promise<void> {
     console.log(`ℹ️ [Migration:T27] ${countClinicPages} página(s) de clínica detectadas na coleção de normas. Execute 'npm run db:cleanup' para higienização manual com backup.`);
   }
 
-  // C03: NUNCA associar laudos antigos a clientes arbitrários nem injetar URLs fictícias (ex: https://conform-ia.med.br).
+  // C03: NUNCA associar laudos antigos a clientes arbitrários nem injetar URLs fictícias.
   // Laudos históricos preservam sua fidelidade fática integral.
 }
 
@@ -140,17 +140,17 @@ export async function runInitialSeed(): Promise<void> {
     console.log(`✅ [Seed] Repositório de normas inicializado com ${NORMS_CATALOG.length} resoluções.`);
   }
 
-  // 2.3 Definição do Agente Deontológico Padrão
+  // 2.3 Definição do Agente Deontológico Padrão (Desacoplamento Normativo Dinâmico)
   await prisma.agentDefinition.upsert({
     where: { name: 'CFM_DEONTOLOGY_AUDITOR_V1' },
     update: {
-      systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista na Resolução CFM nº 2.336/2023, ANS e LGPD.',
-      targetNorm: 'Resolução CFM nº 2.336/2023, ANS RN 509 e LGPD Art. 11',
+      systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista em normas e resoluções vigentes de saúde.',
+      targetNorm: 'Catálogo Normativo Ativo e Resoluções Vigentes',
     },
     create: {
       name: 'CFM_DEONTOLOGY_AUDITOR_V1',
-      systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista na Resolução CFM nº 2.336/2023, ANS e LGPD.',
-      targetNorm: 'Resolução CFM nº 2.336/2023, ANS RN 509 e LGPD Art. 11',
+      systemPrompt: 'Você é o Auditor Deontológico da ConformIA, especialista em normas e resoluções vigentes de saúde.',
+      targetNorm: 'Catálogo Normativo Ativo e Resoluções Vigentes',
       defaultMode: 'CHEERIO',
       temperature: 0.1,
     },
@@ -170,7 +170,7 @@ export async function runInitialSeed(): Promise<void> {
           isDefault: true,
           temperature: 0.2,
           maxTokens: 2048,
-          description: 'Modelo multimodal de alta velocidade e precisão para auditoria da Res. CFM 2.336/2023.',
+          description: 'Modelo multimodal de alta velocidade e precisão para auditoria do Catálogo Normativo Dinâmico em Saúde.',
         },
         {
           name: 'Ollama Local (Qwen 2.5)',
@@ -205,7 +205,7 @@ export async function runInitialSeed(): Promise<void> {
       data: {
         name: 'Google Gemini 3.5 Flash',
         modelId: 'gemini-3.5-flash',
-        description: 'Modelo multimodal de alta velocidade e precisão para auditoria da Res. CFM 2.336/2023.',
+        description: 'Modelo multimodal de alta velocidade e precisão para auditoria do Catálogo Normativo Dinâmico em Saúde.',
       },
     });
   }

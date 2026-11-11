@@ -47,13 +47,20 @@ export class GeminiProvider implements IAIProvider {
       );
       const groundingInstructions = AIGuardrails.buildGroundingPromptInstructions(agentContext.activeNorms);
 
-      const systemInstruction = `${agentContext.systemPrompt}\n\n${groundingInstructions}`;
-
       const relevantNorms = agentContext.activeNorms
         .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
         .join('\n');
 
-      const prompt = `
+      const resolvedSystemPrompt = agentContext.systemPrompt.includes('{normasVigentesDoEscopo}')
+        ? agentContext.systemPrompt.replace(/\{normasVigentesDoEscopo\}/g, relevantNorms)
+        : agentContext.systemPrompt;
+
+      const systemInstruction = `${resolvedSystemPrompt}\n\n${groundingInstructions}`;
+
+      const prompt = `CONTEÚDO AUDITADO:
+Título: ${scrape.title}
+URL: ${scrape.url}
+
 ${secureAudit.secureBlock}
 
 NORMAS VINCULADAS AO AGENTE:
@@ -142,7 +149,7 @@ Retorne o resultado estritamente em formato JSON estruturado conforme o seguinte
 
     const prompt =
       customPrompt ||
-      'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica da Resolução CFM 2.336/2023.';
+      'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica com base no catálogo normativo dinâmico.';
 
     if (!apiKey || apiKey === 'mock-key-for-tests-and-dev') {
       return {

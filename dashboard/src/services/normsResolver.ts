@@ -60,7 +60,7 @@ export class NormsResolver {
    * Consulta a collection de normas oficiais ('scraped_pages') no MongoDB correspondentes às tags do módulo.
    * Recupera todos os registros correspondentes com seu conteúdo integral.
    */
-  public static async resolveByTags(tags: string[]): Promise<ResolvedNorm[]> {
+  public static async resolveByTags(tags?: string[]): Promise<ResolvedNorm[]> {
     if (!tags || tags.length === 0) {
       // T31: Sem tags informadas, não assume arbitrariamente CFM; retorna array vazio para integridade do escopo
       console.log('🔍 [NormsResolver] Nenhuma tag informada. Escopo regulatório mantido neutro/vazio.');
