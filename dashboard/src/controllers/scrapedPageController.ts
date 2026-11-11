@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { ScraperService } from '../services/scraperService.js';
+import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 import { validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
 
 const scrapeInputSchema = z.object({
@@ -37,18 +38,21 @@ export class ScrapedPageController {
 
       const isBatch = scrapeResults.length > 1;
 
-      // 3. Persistência de CADA documento individualmente no MongoDB (scraped_pages)
+      // 3. Persistência de CADA documento individualmente no MongoDB (scraped_pages) com reparo de acentos
       const savedDocs = [];
       for (const item of scrapeResults) {
         const effectiveTags = Array.from(
           new Set([...(customTags || []), ...item.detectedTags])
         );
 
+        const sanitizedTitle = TextEncodingSanitizer.sanitizeAndRepairText(item.title);
+        const sanitizedCleanMarkdown = TextEncodingSanitizer.sanitizeAndRepairText(item.cleanMarkdown);
+
         const doc = await prisma.scrapedPage.upsert({
           where: { url: item.url },
           update: {
-            title: item.title,
-            cleanMarkdown: item.cleanMarkdown,
+            title: sanitizedTitle,
+            cleanMarkdown: sanitizedCleanMarkdown,
             rawLength: item.rawHtmlLength,
             tokensCount: item.tokensEstimatedClean,
             tags: effectiveTags,
@@ -56,8 +60,8 @@ export class ScrapedPageController {
           },
           create: {
             url: item.url,
-            title: item.title,
-            cleanMarkdown: item.cleanMarkdown,
+            title: sanitizedTitle,
+            cleanMarkdown: sanitizedCleanMarkdown,
             rawLength: item.rawHtmlLength,
             tokensCount: item.tokensEstimatedClean,
             tags: effectiveTags,
@@ -300,11 +304,14 @@ export class ScrapedPageController {
 
       const virtualUrl = `upload://${encodeURIComponent(filename.replace(/\s+/g, '_'))}`;
 
+      const sanitizedTitle = TextEncodingSanitizer.sanitizeAndRepairText(title);
+      const sanitizedCleanMarkdown = TextEncodingSanitizer.sanitizeAndRepairText(cleanMarkdown);
+
       const savedDoc = await prisma.scrapedPage.upsert({
         where: { url: virtualUrl },
         update: {
-          title,
-          cleanMarkdown,
+          title: sanitizedTitle,
+          cleanMarkdown: sanitizedCleanMarkdown,
           rawLength: buffer.length,
           tokensCount: tokensEstimatedClean,
           tags: effectiveTags,
@@ -312,8 +319,8 @@ export class ScrapedPageController {
         },
         create: {
           url: virtualUrl,
-          title,
-          cleanMarkdown,
+          title: sanitizedTitle,
+          cleanMarkdown: sanitizedCleanMarkdown,
           rawLength: buffer.length,
           tokensCount: tokensEstimatedClean,
           tags: effectiveTags,

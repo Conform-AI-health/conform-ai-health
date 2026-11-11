@@ -6,6 +6,7 @@ import { ScraperService } from './scraperService.js';
 import { CircuitBreaker } from '../shared/circuitBreaker.js';
 import { Bulkhead } from '../shared/bulkhead.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
+import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 
 export interface FirecrawlScrapeResult {
   status: 'EXTRACTION_SUCCESS' | 'EXTRACTION_PERSISTED' | 'FAILED' | 'EXTRACTION_INCOMPLETE' | 'SUCCESS';
@@ -111,6 +112,9 @@ export class FirecrawlService {
       console.error(`❌ [FirecrawlService] ${errorMsg}`);
       throw new Error(errorMsg);
     }
+
+    // Normalização e Reparo de Acentuação e Encoding (Anti-Mojibake)
+    markdown = TextEncodingSanitizer.sanitizeAndRepairText(markdown);
 
     // 4. Geração de Hash Criptográfico SHA-256 de Integridade do Conteúdo Real Obtido
     const contentHash = crypto.createHash('sha256').update(markdown, 'utf8').digest('hex');

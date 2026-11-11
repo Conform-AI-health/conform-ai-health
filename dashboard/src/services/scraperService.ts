@@ -4,6 +4,7 @@ import { ExtractionMode } from '@prisma/client';
 import { env } from '../config/env.js';
 import { safeHttpGet, validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
 import { startSafeScrapingProxy } from '../shared/safeScrapingProxy.js';
+import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 
 export interface ScrapeResult {
   url: string;
@@ -335,12 +336,15 @@ export class ScraperService {
     const tokensSavedPercentage =
       tokensEstimatedRaw > 0 ? Math.round((tokensSaved / tokensEstimatedRaw) * 100) : 0;
 
+    const sanitizedTitle = TextEncodingSanitizer.sanitizeAndRepairText(pdfTitle);
+    const sanitizedCleanMarkdown = TextEncodingSanitizer.sanitizeAndRepairText(cleanMarkdown);
+
     return {
       url,
       mode: 'CHEERIO' as ExtractionMode,
-      title: pdfTitle,
+      title: sanitizedTitle,
       rawHtmlLength: buffer.length,
-      cleanMarkdown,
+      cleanMarkdown: sanitizedCleanMarkdown,
       tokensEstimatedRaw,
       tokensEstimatedClean,
       tokensSavedPercentage,
@@ -932,18 +936,7 @@ export class ScraperService {
     }
 
     const buf = Buffer.from(response.data);
-    const peek = buf.subarray(0, 1500).toString('ascii').toLowerCase();
-    let rawHtml = '';
-    if (
-      peek.includes('iso-8859-1') ||
-      peek.includes('windows-1252') ||
-      contentType.includes('iso-8859-1') ||
-      contentType.includes('windows-1252')
-    ) {
-      rawHtml = new TextDecoder('latin1').decode(buf);
-    } else {
-      rawHtml = new TextDecoder('utf-8').decode(buf);
-    }
+    const rawHtml = TextEncodingSanitizer.decodeBufferWithAutoEncoding(buf, contentType);
 
     return this.processHtml(url, rawHtml, 'CHEERIO');
   }
@@ -1157,12 +1150,16 @@ export class ScraperService {
     // 6. Detecção e Auto-Tagging Regulatória (CFM, LGPD, ANVISA, ANS)
     const detectedTags = this.detectRegulatoryTags(cleanMarkdown, rawHtml);
 
+    // 7. Sanitização e Reparo Universal de Acentuação e Encoding (Anti-Mojibake)
+    const sanitizedTitle = TextEncodingSanitizer.sanitizeAndRepairText(title);
+    const sanitizedCleanMarkdown = TextEncodingSanitizer.sanitizeAndRepairText(cleanMarkdown);
+
     return {
       url,
       mode,
-      title,
+      title: sanitizedTitle,
       rawHtmlLength: rawHtml.length,
-      cleanMarkdown,
+      cleanMarkdown: sanitizedCleanMarkdown,
       tokensEstimatedRaw,
       tokensEstimatedClean,
       tokensSavedPercentage,

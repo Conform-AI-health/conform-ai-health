@@ -3,6 +3,7 @@ import Firecrawl from '@mendable/firecrawl-js';
 import { prisma } from '../config/prisma.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { AIGuardrails } from '../shared/aiGuardrails.js';
+import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 import { EmailService } from './emailService.js';
 
 /**
@@ -217,7 +218,12 @@ export class SmartScraperService {
           continue;
         }
 
-        // Norma inédita identificada! Persiste no MongoDB (scraped_pages)
+        // Norma inédita identificada! Normaliza acentuação e persiste no MongoDB (scraped_pages)
+        const sanitizedNormCode = TextEncodingSanitizer.sanitizeAndRepairText(doc.normCode);
+        const sanitizedDocTitle = TextEncodingSanitizer.sanitizeAndRepairText(doc.title);
+        const sanitizedContent = TextEncodingSanitizer.sanitizeAndRepairText(doc.content);
+        const sanitizedGuidance = TextEncodingSanitizer.sanitizeAndRepairText(doc.correctiveGuidance || doc.summary);
+
         const combinedTags = [
           doc.authority.toUpperCase(),
           doc.authority.toLowerCase(),
@@ -229,10 +235,10 @@ export class SmartScraperService {
         const createdPage = await prisma.scrapedPage.create({
           data: {
             url: doc.officialUrl,
-            title: `[${doc.authority.toUpperCase()}] ${doc.normCode} - ${doc.title}`,
-            cleanMarkdown: `# ${doc.normCode} - ${doc.article || 'Geral'}: ${doc.title}\n\n**Dispositivo Normativo:**\n${doc.content}\n\n**Orientação Deontológica:**\n${doc.correctiveGuidance || doc.summary}\n\n**Fonte:** ${doc.authority.toUpperCase()} (${doc.officialUrl})`,
-            rawLength: doc.content.length,
-            tokensCount: Math.ceil(doc.content.length / 4),
+            title: `[${doc.authority.toUpperCase()}] ${sanitizedNormCode} - ${sanitizedDocTitle}`,
+            cleanMarkdown: `# ${sanitizedNormCode} - ${doc.article || 'Geral'}: ${sanitizedDocTitle}\n\n**Dispositivo Normativo:**\n${sanitizedContent}\n\n**Orientação Deontológica:**\n${sanitizedGuidance}\n\n**Fonte:** ${doc.authority.toUpperCase()} (${doc.officialUrl})`,
+            rawLength: sanitizedContent.length,
+            tokensCount: Math.ceil(sanitizedContent.length / 4),
             tags: Array.from(new Set(combinedTags)),
           },
         });
