@@ -57,29 +57,29 @@ export class HeuristicProvider implements IAIProvider {
     for (const norm of activeNorms) {
       const keywords = norm.keywords.map((k) => k.toLowerCase());
 
-      // 1. Norma de identificação profissional (CRM / Registro)
+      // 1. Norma de identificação profissional (CRM / Registro) - T11 e T12
       if (keywords.includes('crm') || keywords.includes('registro')) {
         if (scrape.extractedEntities.crms.length === 0) {
           violations.push({
-            normCode: norm.normCode,
-            normArticle: norm.article,
-            severity: norm.severityDefault,
+            normCode: norm.normCode || 'Res. CFM 2.336/23',
+            normArticle: norm.article || 'Artigo 1º, § 1º',
+            severity: norm.severityDefault || 'GRAVE',
             detectedText: 'Nenhum número de identificação profissional (CRM) identificado no material auditado.',
-            correctiveAdvice: norm.correctiveGuidance,
+            correctiveAdvice: norm.correctiveGuidance || 'Informar de forma ostensiva o número de inscrição no Conselho Regional de Medicina (CRM) acompanhado da respectiva UF.',
           });
         } else if (scrape.extractedEntities.states.length === 0) {
           violations.push({
-            normCode: norm.normCode,
-            normArticle: norm.article,
-            severity: 'LEVE',
+            normCode: norm.normCode || 'Res. CFM 2.336/23',
+            normArticle: norm.article || 'Artigo 1º, § 1º',
+            severity: 'MEDIA',
             detectedText: `Identificação profissional detectada (${scrape.extractedEntities.crms.join(', ')}), porém sem indicação expressa da Unidade Federativa (UF).`,
-            correctiveAdvice: norm.correctiveGuidance,
+            correctiveAdvice: norm.correctiveGuidance || 'Acompanhar a inscrição do CRM com a sigla do estado onde atua o profissional.',
           });
         }
         continue;
       }
 
-      // 2. Norma de qualificação de especialidade (RQE / Especialista)
+      // 2. Norma de qualificação de especialidade (RQE / Especialista) - T11 e T12
       if (keywords.includes('rqe') || keywords.includes('especialista') || keywords.includes('especialidade')) {
         const specialtyKeywordMatch =
           keywords.find((k) => k !== 'rqe' && k !== 'especialista' && k !== 'especialidade' && textLower.includes(k)) ||
@@ -87,11 +87,11 @@ export class HeuristicProvider implements IAIProvider {
 
         if (specialtyKeywordMatch && scrape.extractedEntities.rqes.length === 0) {
           violations.push({
-            normCode: norm.normCode,
-            normArticle: norm.article,
-            severity: norm.severityDefault,
-            detectedText: `Menção a especialidade médica ("${specialtyKeywordMatch}") sem a concomitante divulgação do respectivo registro de qualificação.`,
-            correctiveAdvice: norm.correctiveGuidance,
+            normCode: norm.normCode || 'Res. CFM 2.336/23',
+            normArticle: norm.article || 'Artigo 1º, § 2º e Artigo 2º',
+            severity: norm.severityDefault || 'GRAVE',
+            detectedText: `Menção a especialidade médica ("${specialtyKeywordMatch}") sem a concomitante divulgação do respectivo Registro de Qualificação de Especialista (RQE).`,
+            correctiveAdvice: norm.correctiveGuidance || 'Apenas anunciar especialidade médica com a indicação expressa do respectivo número de RQE registrado no CRM.',
           });
         }
         continue;
@@ -198,8 +198,8 @@ export class HeuristicProvider implements IAIProvider {
       totalTokens: 0,
       sourcesUsed,
       aiModelUsed: 'heuristic:regex-heuristic-v1',
-      groundingScore: 100,
-      hallucinationRisk: 'NONE',
+      groundingScore: null,
+      hallucinationRisk: 'NOT_EVALUATED',
       guardrailsApplied: false,
       hallucinationsInterceptedCount: 0,
     });

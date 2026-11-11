@@ -75,6 +75,11 @@ export class AuditExecutionService {
       // 2 & 3. Scraping Exclusivo via Firecrawl + Hash SHA-256 + MongoDB
       const firecrawlResult = await FirecrawlService.scrape(targetUrl, agentModuleId, clientId);
 
+      // T04: Validação estrita de integridade do conteúdo extraído
+      if (!firecrawlResult || !firecrawlResult.markdown || firecrawlResult.markdown.trim().length === 0) {
+        throw new Error('Conteúdo extraído vazio ou inexistente. Auditoria deontológica abortada para evitar geração de laudo inconsequente.');
+      }
+
       await prisma.systemLog.create({
         data: {
           level: 'INFO',
@@ -98,6 +103,21 @@ export class AuditExecutionService {
       );
       const normsFilesNames = agentContext.resolvedDbNorms?.map((n) => n.normCode || n.title) || [];
       const combinedNormsList = Array.from(new Set([...allFilesAndNorms, ...normsFilesNames]));
+
+      // C05: Snapshot estruturado das normas vigentes utilizadas na auditoria
+      const normsSnapshotJson = NormsResolver.createNormsSnapshot(
+        agentContext.resolvedDbNorms && agentContext.resolvedDbNorms.length > 0
+          ? agentContext.resolvedDbNorms
+          : agentContext.activeNorms.map((n) => ({
+              id: n.id,
+              normCode: n.normCode,
+              source: n.source,
+              title: n.title,
+              content: n.content,
+              tags: n.keywords,
+              article: n.article,
+            }))
+      );
 
       // Log operacional dedicado das normas e arquivos normativos acionados na telemetria
       await prisma.systemLog.create({
@@ -170,7 +190,8 @@ export class AuditExecutionService {
 
       // Gera Contrato Estruturado de Alta Confiabilidade
       const structuredContract = AIStructuredContractAdapter.toStructuredContract(recon, auditReportId);
-      const requiresHumanReview = structuredContract.findings.some((f) => f.requires_human_review);
+      const effectiveVerdict = (structuredContract.verdict as any) || recon.verdict;
+      const requiresHumanReview = structuredContract.findings.some((f) => f.requires_human_review) || effectiveVerdict === 'INCONCLUSIVO';
 
       // 6. Persistência Transacional no MongoDB (AuditReport e Violations)
       await prisma.$transaction(async (tx) => {
@@ -178,16 +199,17 @@ export class AuditExecutionService {
           where: { id: auditReportId },
           data: {
             status: 'COMPLETED',
-            verdict: recon.verdict,
+            verdict: effectiveVerdict,
             score: recon.score,
             summary: recon.summary,
             riskLevel: structuredContract.risk_level,
             confidence: structuredContract.confidence,
             structuredContract: JSON.stringify(structuredContract),
-            groundingScore: recon.groundingScore ?? 100,
-            hallucinationRisk: recon.hallucinationRisk ?? 'NONE',
+            groundingScore: recon.groundingScore ?? null,
+            hallucinationRisk: recon.hallucinationRisk ?? 'NOT_EVALUATED',
             guardrailsApplied: recon.guardrailsApplied ?? false,
             requiresHumanReview,
+            normSnapshots: normsSnapshotJson,
             rawContent: firecrawlResult.rawContent,
             cleanMarkdown: firecrawlResult.markdown,
             tokensSaved: Math.max(0, scrapeAdapter.tokensEstimatedRaw - scrapeAdapter.tokensEstimatedClean),
@@ -282,6 +304,8 @@ export class AuditExecutionService {
         data: {
           status: 'FAILED',
           summary: `Falha técnica durante a execução da auditoria: ${error.message}`,
+          score: 0,
+          requiresHumanReview: true,
         },
       }).catch(() => {});
 

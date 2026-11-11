@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
+import { safeHttpUrl } from '../utils/urlSecurity';
 
 const REGULATORY_TAG_OPTIONS = [
   {
@@ -512,15 +513,23 @@ export const ScrapingPage: React.FC = () => {
                       {p.title}
                     </td>
                     <td className="py-3.5 px-4 font-mono text-slate-300 max-w-[240px] truncate">
-                      <a
-                        href={p.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="hover:text-emerald-400 inline-flex items-center gap-1"
-                      >
-                        <span className="truncate">{p.url}</span>
-                        <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                      </a>
+                      {(() => {
+                        const safeUrl = safeHttpUrl(p.url);
+                        if (safeUrl) {
+                          return (
+                            <a
+                              href={safeUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-emerald-400 inline-flex items-center gap-1"
+                            >
+                              <span className="truncate">{safeUrl}</span>
+                              <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                            </a>
+                          );
+                        }
+                        return <span className="truncate text-slate-500 italic">{p.url}</span>;
+                      })()}
                     </td>
                     <td className="py-3.5 px-4">
                       <div className="flex flex-wrap gap-1">

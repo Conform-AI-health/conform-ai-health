@@ -44,7 +44,8 @@ services:
     container_name: conformia-api
     restart: unless-stopped
     ports:
-      - "${API_PORT:-3333}:3000"
+      # Restrict plain HTTP to the host; expose it publicly only through a TLS-terminating reverse proxy.
+      - "127.0.0.1:${API_PORT:-3333}:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -64,7 +65,10 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
       - EXTRACTION_MODE=${EXTRACTION_MODE:-CHEERIO}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
-      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000,http://127.0.0.1:3000}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@conform.ai}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD é obrigatória}
+      - MONITORING_API_KEY=${MONITORING_API_KEY:?MONITORING_API_KEY é obrigatória}
     depends_on:
       redis:
         condition: service_healthy
@@ -73,10 +77,10 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/api/v1/system/status', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
-      interval: 15s
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
       start_period: 10s
     deploy:
       resources:
@@ -120,6 +124,10 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
       - EXTRACTION_MODE=${EXTRACTION_MODE:-CHEERIO}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000,http://127.0.0.1:3000}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@conform.ai}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD é obrigatória}
+      - MONITORING_API_KEY=${MONITORING_API_KEY:?MONITORING_API_KEY é obrigatória}
     depends_on:
       redis:
         condition: service_healthy
@@ -152,7 +160,8 @@ services:
     container_name: conformia-web
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-3000}:80"
+      # Restrict plain HTTP to the host; expose it publicly only through a TLS-terminating reverse proxy.
+      - "127.0.0.1:${WEB_PORT:-3000}:80"
     depends_on:
       dashboard-api:
         condition: service_healthy

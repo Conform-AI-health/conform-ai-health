@@ -183,6 +183,7 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
       const res: any = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),
+        setHeader: vi.fn(),
       };
 
       await AuthController.login(req, res);
@@ -191,8 +192,9 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
       const responseData = res.json.mock.calls[0][0];
 
       expect(responseData).toHaveProperty('token');
-      expect(responseData).toHaveProperty('refreshToken');
       expect(responseData.user.email).toBe('auditor@conformia.med.br');
+      // T30: Refresh token emitido estritamente via cookie seguro HttpOnly
+      expect(res.setHeader).toHaveBeenCalledWith('Set-Cookie', expect.arrayContaining([expect.stringContaining('conformia_refresh_token=')]));
 
       // Verifica expiração do JWT Access Token (1h = 3600s)
       const decodedAccess: any = jwt.decode(responseData.token);
@@ -237,6 +239,7 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
       const res: any = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),
+        setHeader: vi.fn(),
       };
 
       await AuthController.refreshToken(req, res);
@@ -245,7 +248,8 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
       const responseData = res.json.mock.calls[0][0];
 
       expect(responseData).toHaveProperty('token');
-      expect(responseData).toHaveProperty('refreshToken');
+      // T30: Refresh token rotacionado emitido estritamente no cookie seguro
+      expect(res.setHeader).toHaveBeenCalledWith('Set-Cookie', expect.arrayContaining([expect.stringContaining('conformia_refresh_token=')]));
 
       // Valida que o token foi rotacionado
       expect(prisma.user.update).toHaveBeenCalledWith(
@@ -558,10 +562,31 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
         JWT_SECRET: 'crypto-secure-jwt-secret-min-32-bytes-production-key-abc123',
         JWT_REFRESH_SECRET: 'crypto-secure-jwt-refresh-secret-min-32-bytes-production-key-def456',
         CORS_ORIGIN: 'https://app.conformia.med.br,https://admin.conformia.med.br',
+        ADMIN_EMAIL: 'admin.prod@conformia.med.br',
+        ADMIN_PASSWORD: 'SuperSecureProdAdminPassword2026!#',
+        MONITORING_API_KEY: 'crypto-secure-monitoring-key-2026-prod',
       };
 
       const result = envSchema.safeParse(validProdEnv);
       expect(result.success).toBe(true);
+    });
+
+    it('deve rejeitar ambiente de produção se ADMIN_PASSWORD for fraca ou ausente (T01)', () => {
+      const invalidAdminEnv = {
+        NODE_ENV: 'production',
+        PORT: '3000',
+        DATABASE_URL: 'mongodb://prod-db:27017/conformia',
+        JWT_SECRET: 'crypto-secure-jwt-secret-min-32-bytes-production-key-abc123',
+        JWT_REFRESH_SECRET: 'crypto-secure-jwt-refresh-secret-min-32-bytes-production-key-def456',
+        CORS_ORIGIN: 'https://app.conformia.med.br',
+        ADMIN_PASSWORD: 'fraca', // Menos de 12 chars
+      };
+
+      const result = envSchema.safeParse(invalidAdminEnv);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((i) => i.path.includes('ADMIN_PASSWORD'))).toBe(true);
+      }
     });
   });
 });

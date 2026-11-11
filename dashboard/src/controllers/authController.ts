@@ -177,6 +177,26 @@ export class AuthController {
   }
 
   /**
+   * Helper para parsing de cookies nativos do cabeçalho da requisição
+   */
+  public static parseCookies(cookieHeader?: string): Record<string, string> {
+    const list: Record<string, string> = {};
+    if (!cookieHeader) return list;
+    cookieHeader.split(';').forEach((cookie) => {
+      const parts = cookie.split('=');
+      const name = parts.shift()?.trim();
+      if (name) {
+        try {
+          list[name] = decodeURIComponent(parts.join('='));
+        } catch {
+          list[name] = parts.join('=');
+        }
+      }
+    });
+    return list;
+  }
+
+  /**
    * Helper para computar hash SHA-256 de tokens antes de persistir no banco (SEC-05)
    */
   public static hashToken(token: string): string {
@@ -226,9 +246,19 @@ export class AuthController {
         data: { refreshToken: refreshTokenHash },
       });
 
+      // Emite cookie seguro HttpOnly anti-XSS para o refresh token (C06 / T30)
+      const isProd = env.NODE_ENV === 'production';
+      if (typeof res.setHeader === 'function') {
+        res.setHeader('Set-Cookie', [
+          `conformia_refresh_token=${refreshToken}; HttpOnly; Path=/api/v1/auth; SameSite=Strict; Max-Age=${
+            7 * 24 * 60 * 60
+          }${isProd ? '; Secure' : ''}`,
+        ]);
+      }
+
+      // T30: Refresh token transita EXCLUSIVAMENTE via cookie seguro HttpOnly, jamais no JSON
       res.status(200).json({
         token,
-        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -281,7 +311,27 @@ export class AuthController {
    */
   public static async refreshToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const tokenInput = req.body.refreshToken || req.headers['x-refresh-token'];
+      const cookies = AuthController.parseCookies(req.headers.cookie);
+      const isCookieSource = Boolean(cookies['conformia_refresh_token']);
+
+      // T30: Validação de segurança anti-CSRF quando a requisição se fundamenta em cookies automáticos do browser
+      if (isCookieSource) {
+        const xRequestedWith = req.headers['x-requested-with'];
+        const origin = req.headers['origin'];
+        const allowedOrigins = (env.CORS_ORIGIN || '').split(',').map((o) => o.trim()).filter(Boolean);
+        const isAllowedOrigin = origin && (allowedOrigins.includes(origin) || env.NODE_ENV !== 'production');
+
+        if (!xRequestedWith && !isAllowedOrigin) {
+          res.status(403).json({
+            error: 'Requisição de renovação de sessão rejeitada por segurança anti-CSRF (cabeçalho X-Requested-With ausente).',
+            code: 'CSRF_HEADER_MISSING',
+          });
+          return;
+        }
+      }
+
+      const tokenInput =
+        req.body?.refreshToken || req.headers['x-refresh-token'] || cookies['conformia_refresh_token'];
       const { refreshToken } = refreshTokenSchema.parse({ refreshToken: tokenInput });
 
       let decoded: any;
@@ -327,12 +377,26 @@ export class AuthController {
         data: { refreshToken: newRefreshTokenHash },
       });
 
+      // Rotação do cookie HttpOnly anti-XSS (C06 / T30)
+      const isProd = env.NODE_ENV === 'production';
+      if (typeof res.setHeader === 'function') {
+        res.setHeader('Set-Cookie', [
+          `conformia_refresh_token=${newTokens.refreshToken}; HttpOnly; Path=/api/v1/auth; SameSite=Strict; Max-Age=${
+            7 * 24 * 60 * 60
+          }${isProd ? '; Secure' : ''}`,
+        ]);
+      }
+
+      // T30: Retorna estritamente o access token; o refresh token transita exclusivamente no cookie seguro
       res.status(200).json({
         token: newTokens.token,
-        refreshToken: newTokens.refreshToken,
       });
     } catch (error) {
-      next(error);
+      if (typeof next === 'function') {
+        next(error);
+      } else {
+        res.status(500).json({ error: (error as Error).message });
+      }
     }
   }
 
@@ -514,12 +578,14 @@ export class AuthController {
   }
 
   /**
-   * Encerramento explícito de sessão com revogação do refresh token no banco de dados
+   * Encerramento explícito de sessão com revogação do refresh token no banco de dados e expurgo de cookies
    */
   public static async logout(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user?.userId;
-      const refreshTokenInput = req.body?.refreshToken || req.headers['x-refresh-token'];
+      const cookies = AuthController.parseCookies(req.headers.cookie);
+      const refreshTokenInput =
+        req.body?.refreshToken || req.headers['x-refresh-token'] || cookies['conformia_refresh_token'];
 
       if (userId) {
         await prisma.user.update({
@@ -527,8 +593,14 @@ export class AuthController {
           data: { refreshToken: null },
         });
       } else if (refreshTokenInput && typeof refreshTokenInput === 'string') {
+        const hashedInput = AuthController.hashToken(refreshTokenInput);
         const user = await prisma.user.findFirst({
-          where: { refreshToken: refreshTokenInput },
+          where: {
+            OR: [
+              { refreshToken: hashedInput },
+              { refreshToken: refreshTokenInput },
+            ],
+          },
         });
         if (user) {
           await prisma.user.update({
@@ -538,11 +610,25 @@ export class AuthController {
         }
       }
 
+      // Expurgar cookie HttpOnly (C06)
+      const isProd = env.NODE_ENV === 'production';
+      if (typeof res.setHeader === 'function') {
+        res.setHeader('Set-Cookie', [
+          `conformia_refresh_token=; HttpOnly; Path=/api/v1/auth; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${
+            isProd ? '; Secure' : ''
+          }`,
+        ]);
+      }
+
       res.status(200).json({
         message: 'Sessão encerrada com sucesso e refresh token revogado no servidor.',
       });
     } catch (error) {
-      next(error);
+      if (typeof next === 'function') {
+        next(error);
+      } else {
+        res.status(500).json({ error: (error as Error).message });
+      }
     }
   }
 }

@@ -1,4 +1,5 @@
 import http from 'http';
+import crypto from 'crypto';
 import { Worker, Job } from 'bullmq';
 import { getRedisConnection } from './config/redis.js';
 import { prisma } from './config/prisma.js';
@@ -40,6 +41,28 @@ const workerMetrics: WorkerTelemetryMetrics = {
 let activeWorkerInstance: Worker<AuditJobData> | null = null;
 let healthServerInstance: http.Server | null = null;
 
+export function getActiveWorkerInstance(): Worker<AuditJobData> | null {
+  return activeWorkerInstance;
+}
+
+export function setActiveWorkerInstance(instance: Worker<AuditJobData> | null): void {
+  activeWorkerInstance = instance;
+}
+
+/**
+ * Comparação segura em tempo constante contra timing attacks (T02)
+ */
+export function timingSafeCompare(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a, 'utf-8');
+  const bufB = Buffer.from(b, 'utf-8');
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 export function getWorkerMetrics(): WorkerTelemetryMetrics & { uptimeSeconds: number; memory: NodeJS.MemoryUsage } {
   return {
     ...workerMetrics,
@@ -74,6 +97,9 @@ export async function getWorkerHealth(): Promise<{
   const isRunning = activeWorkerInstance ? activeWorkerInstance.isRunning() : false;
   const isPaused = activeWorkerInstance ? activeWorkerInstance.isPaused() : false;
 
+  // UP: Redis conectado e Worker rodando ativamente sem pausa
+  // DEGRADED: Redis conectado, mas Worker parado ou pausado (incapaz de processar jobs)
+  // DOWN: Redis inacessível ou falha crítica de conexão
   const status = redisConnected && isRunning && !isPaused ? 'UP' : redisConnected ? 'DEGRADED' : 'DOWN';
 
   return {
@@ -92,7 +118,7 @@ export async function getWorkerHealth(): Promise<{
 }
 
 /**
- * Servidor HTTP leve dedicado para Health Check e Observabilidade do Worker (ex: Docker e Prometheus/K8s)
+ * Servidor HTTP dedicado para Health Check (liveness/readiness) e Métricas do Worker (T01 / T02)
  */
 export function startWorkerHealthServer(port: number = Number(process.env.WORKER_HEALTH_PORT) || 3001): http.Server {
   if (healthServerInstance) {
@@ -102,40 +128,85 @@ export function startWorkerHealthServer(port: number = Number(process.env.WORKER
   const server = http.createServer(async (req, res) => {
     const url = req.url || '/';
 
-    if (url === '/health' || url === '/healthz' || url === '/') {
+    // T01: Liveness Probe (/live, /health/liveness)
+    // Avalia exclusivamente se o processo HTTP do worker está responsivo
+    if (url === '/live' || url === '/health/liveness') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'UP', check: 'liveness', timestamp: new Date().toISOString() }));
+      return;
+    }
+
+    // T01: Readiness Probe (/ready, /health/readiness) e Health Check Padrão (/health, /healthz, /)
+    // UP retorna HTTP 200; DEGRADED e DOWN retornam HTTP 503 (não apto para receber carga)
+    if (url === '/health' || url === '/healthz' || url === '/' || url === '/ready' || url === '/health/readiness') {
       try {
         const health = await getWorkerHealth();
-        const statusCode = health.status === 'UP' ? 200 : health.status === 'DEGRADED' ? 200 : 503;
+        const statusCode = health.status === 'UP' ? 200 : 503;
         res.writeHead(statusCode, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(health, null, 2));
       } catch (err: any) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(503, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'DOWN', error: err.message }));
       }
       return;
     }
 
+    // T02: Proteção estrita do endpoint /metrics
     if (url === '/metrics' || url.startsWith('/metrics?')) {
-      // INF-02: Proteção de acesso ao endpoint de métricas operacionais com MONITORING_API_KEY
-      const monitoringKey = env.MONITORING_API_KEY;
-      if (monitoringKey && monitoringKey.trim().length > 0) {
-        const authHeader = req.headers.authorization;
-        const apiKeyHeader = req.headers['x-api-key'];
-        const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
-        const queryKey = parsedUrl.searchParams.get('key') || parsedUrl.searchParams.get('apiKey');
+      const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
 
-        const providedKey = apiKeyHeader || queryKey || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
+      // 1. Proibição expressa de credenciais por query string (?key= ou ?apiKey=)
+      if (parsedUrl.searchParams.has('key') || parsedUrl.searchParams.has('apiKey')) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Autenticação via query string não é permitida por razões de segurança. Utilize o header Authorization: Bearer ou X-API-Key.',
+            code: 'INSECURE_QUERY_AUTH_REJECTED',
+          })
+        );
+        return;
+      }
 
-        if (!providedKey || providedKey !== monitoringKey) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              error: 'Não autorizado. Chave de monitoramento inválida ou ausente.',
-              code: 'UNAUTHORIZED_METRICS_ACCESS',
-            })
-          );
-          return;
-        }
+      // 2. Validação da Chave de Monitoramento configurada
+      const expectedKey = process.env.MONITORING_API_KEY || env.MONITORING_API_KEY || (process.env.NODE_ENV === 'test' ? 'test-monitoring-key-2026' : '');
+      if (!expectedKey) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Acesso negado. Chave de monitoramento não configurada.',
+            code: 'METRICS_DISABLED',
+          })
+        );
+        return;
+      }
+
+      // 3. Extração estrita via headers HTTP (Authorization: Bearer ou X-API-Key)
+      const authHeader = req.headers.authorization;
+      const apiKeyHeader = req.headers['x-api-key'] as string | undefined;
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+      const providedKey = apiKeyHeader || bearerToken;
+
+      if (!providedKey) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Não autorizado. Credencial de monitoramento ausente.',
+            code: 'UNAUTHORIZED_METRICS_ACCESS',
+          })
+        );
+        return;
+      }
+
+      // 4. Comparação em tempo constante (Timing-Safe)
+      if (!timingSafeCompare(providedKey, expectedKey)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Acesso negado. Credencial de monitoramento inválida.',
+            code: 'FORBIDDEN_METRICS_ACCESS',
+          })
+        );
+        return;
       }
 
       try {

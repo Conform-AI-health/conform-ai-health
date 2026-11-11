@@ -11,6 +11,7 @@
     "start": "node dist/index.js",
     "start:worker": "node dist/worker.js",
     "typecheck": "tsc --noEmit",
+    "db:cleanup": "tsx src/scripts/cleanupScrapedPages.ts",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx src/shared/autoMigrate.ts",
     "test": "vitest run"
