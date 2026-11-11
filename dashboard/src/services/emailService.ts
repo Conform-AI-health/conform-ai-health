@@ -100,6 +100,25 @@ export class EmailService {
       });
 
       if (response.error) {
+        // Fallback resiliente: se o domínio próprio não foi verificado no Resend, tenta onboarding@resend.dev
+        if (
+          response.error.message?.toLowerCase().includes('domain is not verified') &&
+          !env.EMAIL_FROM.includes('onboarding@resend.dev')
+        ) {
+          console.warn(`⚠️ [EmailService] Domínio em '${env.EMAIL_FROM}' não está verificado no Resend. Tentando fallback para 'Conform.AI <onboarding@resend.dev>'...`);
+          const fallbackRes = await client.emails.send({
+            from: 'Conform.AI <onboarding@resend.dev>',
+            to: [to],
+            subject: '🔒 Conform.AI — Redefinição de Senha Segura (Válido por 1h)',
+            html: htmlContent,
+          });
+
+          if (!fallbackRes.error && fallbackRes.data?.id) {
+            console.log(`📧 [EmailService] E-mail de redefinição enviado via fallback (onboarding@resend.dev) para ${to} | ID: ${fallbackRes.data.id}`);
+            return { success: true, messageId: fallbackRes.data.id };
+          }
+        }
+
         console.error(`❌ [EmailService] Resend API retornou erro para ${to}:`, response.error);
         return { success: false, error: response.error.message || JSON.stringify(response.error) };
       }
@@ -225,6 +244,25 @@ export class EmailService {
       });
 
       if (response.error) {
+        // Fallback resiliente: se o domínio próprio não foi verificado no Resend, tenta onboarding@resend.dev
+        if (
+          response.error.message?.toLowerCase().includes('domain is not verified') &&
+          !env.EMAIL_FROM.includes('onboarding@resend.dev')
+        ) {
+          console.warn(`⚠️ [EmailService] Domínio em '${env.EMAIL_FROM}' não está verificado no Resend. Tentando fallback para 'Conform.AI <onboarding@resend.dev>'...`);
+          const fallbackRes = await client.emails.send({
+            from: 'Conform.AI <onboarding@resend.dev>',
+            to: [to],
+            subject: `⚖️ Conform.AI — Laudo Deontológico Concluído [${report.verdict}] (${clientName})`,
+            html: htmlContent,
+          });
+
+          if (!fallbackRes.error && fallbackRes.data?.id) {
+            console.log(`📧 [EmailService] Notificação de laudo enviada com sucesso via fallback (onboarding@resend.dev) para ${to} | ID: ${fallbackRes.data.id}`);
+            return { success: true, messageId: fallbackRes.data.id };
+          }
+        }
+
         console.error(`❌ [EmailService] Resend API retornou erro para ${to}:`, response.error);
         return { success: false, error: response.error.message || JSON.stringify(response.error) };
       }
