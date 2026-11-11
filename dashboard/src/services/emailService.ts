@@ -303,4 +303,58 @@ export class EmailService {
       return { success: false, error: err.message || 'Falha de conexão com provedor de e-mail' };
     }
   }
+
+  /**
+   * Envia e-mail genérico (alertas normativos, notificações administrativas e comunicados)
+   */
+  public static async sendEmail(params: {
+    to: string;
+    subject: string;
+    html: string;
+  }): Promise<{ success: boolean; messageId?: string; error?: string; mocked?: boolean }> {
+    const { to, subject, html } = params;
+    if (!to || to.trim() === '' || to.toLowerCase().includes('contato@clinica.com')) {
+      return { success: false, error: 'E-mail de destino inválido ou mock genérico proibido' };
+    }
+
+    const client = this.getClient();
+    if (!client) {
+      if (env.NODE_ENV === 'test') {
+        console.log(`📧 [EmailService:MOCK] E-mail enviado para ${to} (Assunto: ${subject})`);
+        return { success: true, mocked: true, messageId: `mock-msg-${Date.now()}` };
+      }
+      return { success: false, mocked: true, error: 'RESEND_API_KEY não configurada' };
+    }
+
+    try {
+      const response = await client.emails.send({
+        from: env.EMAIL_FROM,
+        to: [to],
+        subject,
+        html,
+      });
+
+      if (response.error) {
+        if (
+          response.error.message?.toLowerCase().includes('domain is not verified') &&
+          !env.EMAIL_FROM.includes('onboarding@resend.dev')
+        ) {
+          const fallbackRes = await client.emails.send({
+            from: 'Conform.AI <onboarding@resend.dev>',
+            to: [to],
+            subject,
+            html,
+          });
+          if (!fallbackRes.error && fallbackRes.data?.id) {
+            return { success: true, messageId: fallbackRes.data.id };
+          }
+        }
+        return { success: false, error: response.error.message || JSON.stringify(response.error) };
+      }
+
+      return { success: true, messageId: response.data?.id };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
 }
