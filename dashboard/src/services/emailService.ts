@@ -14,6 +14,9 @@ export class EmailService {
   private static resendClient: Resend | null = null;
 
   private static getClient(): Resend | null {
+    if (env.NODE_ENV === 'test') {
+      return this.resendClient;
+    }
     if (!this.resendClient && env.RESEND_API_KEY && env.RESEND_API_KEY.trim().length > 0) {
       this.resendClient = new Resend(env.RESEND_API_KEY);
     }
