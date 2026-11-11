@@ -15,5 +15,6 @@ router.get('/:id/export', ReportController.exportMarkdown);
 // AI-05: Fluxo de Revisão e Governança Humana (restrito a Auditores e Administradores)
 router.post('/:id/review', authorize(Role.ADMIN, Role.AUDITOR), ReportController.reviewReport);
 router.patch('/:id/violations/:violationId/resolve', authorize(Role.ADMIN, Role.AUDITOR), ReportController.resolveViolation);
+router.post('/:id/notify', authorize(Role.ADMIN, Role.AUDITOR), ReportController.notifyClient);
 
 export default router;

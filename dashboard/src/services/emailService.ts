@@ -121,11 +121,12 @@ export class EmailService {
     to: string,
     clientName: string,
     report: AuditReportEmailData
-  ): Promise<{ success: boolean; messageId?: string; mocked?: boolean }> {
+  ): Promise<{ success: boolean; messageId?: string; error?: string; mocked?: boolean }> {
     // Bloqueia tentativas de envio para endereço nulo, vazio ou fallback mock inseguro (T08)
     if (!to || to.trim() === '' || to.toLowerCase().includes('contato@clinica.com')) {
-      console.warn(`⚠️ [EmailService] Envio de laudo ignorado: e-mail de destino inválido ou mock genérico (${to}).`);
-      return { success: false };
+      const errorMsg = `E-mail de destino inválido ou mock genérico proibido (${to || 'vazio'})`;
+      console.warn(`⚠️ [EmailService] Envio de laudo ignorado: ${errorMsg}.`);
+      return { success: false, error: errorMsg };
     }
 
     const reportUrl = `${env.FRONTEND_URL}/reports`;
@@ -218,7 +219,7 @@ export class EmailService {
 
     if (!client || env.NODE_ENV === 'test') {
       console.log(`📧 [EmailService:MOCK] Notificação de laudo para ${to} (Score: ${report.score}%, Veredito: ${report.verdict})`);
-      return { success: true, mocked: true };
+      return { success: true, mocked: true, messageId: `mock-msg-${Date.now()}` };
     }
 
     try {
@@ -229,11 +230,17 @@ export class EmailService {
         html: htmlContent,
       });
 
+      if ((response as any).error) {
+        const resendErr = (response as any).error.message || 'Erro retornado pela API do Resend';
+        console.error(`❌ [EmailService] Resend API retornou erro para ${to}:`, resendErr);
+        return { success: false, error: resendErr };
+      }
+
       console.log(`📧 [EmailService] Notificação de laudo enviada via Resend para ${to} | ID: ${response.data?.id}`);
       return { success: true, messageId: response.data?.id };
     } catch (err: any) {
       console.error(`❌ [EmailService] Erro ao enviar laudo via Resend para ${to}:`, err.message);
-      return { success: false };
+      return { success: false, error: err.message || 'Falha de conexão com provedor de e-mail' };
     }
   }
 }
