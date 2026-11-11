@@ -27,7 +27,7 @@ export class EmailService {
     to: string,
     resetToken: string,
     userName = 'Usuário'
-  ): Promise<{ success: boolean; messageId?: string; mocked?: boolean }> {
+  ): Promise<{ success: boolean; messageId?: string; mocked?: boolean; error?: string }> {
     const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${encodeURIComponent(resetToken)}`;
     const client = this.getClient();
 
@@ -82,9 +82,13 @@ export class EmailService {
       </html>
     `;
 
-    if (!client || env.NODE_ENV === 'test') {
-      console.log(`📧 [EmailService:MOCK] Link de recuperação para ${to}: ${resetUrl}`);
-      return { success: true, mocked: true };
+    if (!client) {
+      if (env.NODE_ENV === 'test') {
+        console.log(`📧 [EmailService:MOCK] Link de recuperação para ${to}: ${resetUrl}`);
+        return { success: true, mocked: true };
+      }
+      console.warn(`⚠️ [EmailService] RESEND_API_KEY ausente. E-mail de redefinição não enviado para ${to}`);
+      return { success: false, mocked: true, error: 'Chave RESEND_API_KEY não configurada no ambiente.' };
     }
 
     try {
@@ -95,11 +99,20 @@ export class EmailService {
         html: htmlContent,
       });
 
-      console.log(`📧 [EmailService] E-mail de redefinição enviado via Resend para ${to} | ID: ${response.data?.id}`);
-      return { success: true, messageId: response.data?.id };
+      if (response.error) {
+        console.error(`❌ [EmailService] Resend API retornou erro para ${to}:`, response.error);
+        return { success: false, error: response.error.message || JSON.stringify(response.error) };
+      }
+
+      if (!response.data?.id) {
+        return { success: false, error: 'ID da mensagem não retornado pela Resend API.' };
+      }
+
+      console.log(`📧 [EmailService] E-mail de redefinição enviado via Resend para ${to} | ID: ${response.data.id}`);
+      return { success: true, messageId: response.data.id };
     } catch (err: any) {
       console.error(`❌ [EmailService] Erro ao enviar e-mail via Resend para ${to}:`, err.message);
-      return { success: false };
+      return { success: false, error: err.message };
     }
   }
 
@@ -110,7 +123,7 @@ export class EmailService {
     to: string,
     clientName: string,
     report: AuditReportEmailData
-  ): Promise<{ success: boolean; messageId?: string; mocked?: boolean }> {
+  ): Promise<{ success: boolean; messageId?: string; mocked?: boolean; error?: string }> {
     const reportUrl = `${env.FRONTEND_URL}/reports`;
     const client = this.getClient();
 
@@ -194,9 +207,13 @@ export class EmailService {
       </html>
     `;
 
-    if (!client || env.NODE_ENV === 'test') {
-      console.log(`📧 [EmailService:MOCK] Notificação de laudo para ${to} (Score: ${report.score}%, Veredito: ${report.verdict})`);
-      return { success: true, mocked: true };
+    if (!client) {
+      if (env.NODE_ENV === 'test') {
+        console.log(`📧 [EmailService:MOCK] Notificação de laudo para ${to} (Score: ${report.score}%, Veredito: ${report.verdict})`);
+        return { success: true, mocked: true };
+      }
+      console.warn(`⚠️ [EmailService] RESEND_API_KEY ausente. Notificação de laudo não enviada para ${to}`);
+      return { success: false, mocked: true, error: 'Chave RESEND_API_KEY não configurada no ambiente. E-mail real não enviado.' };
     }
 
     try {
@@ -207,11 +224,20 @@ export class EmailService {
         html: htmlContent,
       });
 
-      console.log(`📧 [EmailService] Notificação de laudo enviada via Resend para ${to} | ID: ${response.data?.id}`);
-      return { success: true, messageId: response.data?.id };
+      if (response.error) {
+        console.error(`❌ [EmailService] Resend API retornou erro para ${to}:`, response.error);
+        return { success: false, error: response.error.message || JSON.stringify(response.error) };
+      }
+
+      if (!response.data?.id) {
+        return { success: false, error: 'ID da mensagem não retornado pela Resend API.' };
+      }
+
+      console.log(`📧 [EmailService] Notificação de laudo enviada via Resend para ${to} | ID: ${response.data.id}`);
+      return { success: true, messageId: response.data.id };
     } catch (err: any) {
       console.error(`❌ [EmailService] Erro ao enviar laudo via Resend para ${to}:`, err.message);
-      return { success: false };
+      return { success: false, error: err.message };
     }
   }
 }

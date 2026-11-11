@@ -41,21 +41,30 @@ export class AuditExecutionService {
     console.log(`[AuditExecutionService] Iniciando pipeline para Report: ${auditReportId} | URL: ${targetUrl} (Job: ${jobId || 'direct'})`);
 
     try {
-      // 1. Marca o laudo como RUNNING
-      await prisma.auditReport.update({
+      // 1. Marca o laudo como RUNNING e recupera vínculo de cliente existente
+      const updatedReport = await prisma.auditReport.update({
         where: { id: auditReportId },
         data: { status: 'RUNNING' },
-      });
+        select: { clientId: true },
+      }).catch(() => null);
 
-      // Recupera dados do cliente e módulo para contexto
-      const [client, mod] = await Promise.all([
-        prisma.client.findUnique({ where: { id: clientId } }).catch(() => null),
-        agentModuleId
-          ? prisma.agentModule.findFirst({
-              where: { OR: [{ id: agentModuleId }, { code: agentModuleId }] },
-            }).catch(() => null)
-          : null,
-      ]);
+      const effectiveClientId = clientId || updatedReport?.clientId;
+
+      // Recupera dados do módulo para contexto
+      const mod = agentModuleId
+        ? await prisma.agentModule.findFirst({
+            where: { OR: [{ id: agentModuleId }, { code: agentModuleId }] },
+          }).catch(() => null)
+        : null;
+
+      const finalClientId = effectiveClientId || mod?.clientId;
+
+      const client = finalClientId
+        ? await prisma.client.findUnique({
+            where: { id: finalClientId },
+            include: { users: { select: { email: true, name: true } } },
+          }).catch(() => null)
+        : null;
 
       const clientName = client?.name || client?.tradeName || 'Clínica Auditada';
       const moduleName = mod?.name || 'Módulo Geral';
@@ -241,17 +250,41 @@ export class AuditExecutionService {
         },
       }).catch(() => {});
 
-      // 7. Notificação por E-mail do Laudo Concluído para a Clínica (Resend Email API)
-      if (clientId) {
-        try {
-          const client = await prisma.client.findUnique({
-            where: { id: clientId },
-            include: { users: { select: { email: true } } },
-          });
+      // 7. Notificação por E-mail do Laudo Concluído para a Clínica (Resend Email API & Telemetria)
+      const resolvedEmails: string[] = [];
+      if (client?.email && client.email.trim().length > 0) {
+        resolvedEmails.push(client.email.trim());
+      }
+      if (client?.users && client.users.length > 0) {
+        for (const u of client.users) {
+          if (u.email && u.email.trim().length > 0 && !resolvedEmails.includes(u.email.trim())) {
+            resolvedEmails.push(u.email.trim());
+          }
+        }
+      }
 
-          const recipientEmail = client?.email || (client?.users && client.users.length > 0 ? client.users[0].email : null);
-          if (recipientEmail) {
-            await EmailService.sendAuditReportCompletedEmail(recipientEmail, clientName, {
+      if (resolvedEmails.length === 0) {
+        console.warn(`⚠️ [AuditExecutionService] Nenhum e-mail de destinatário encontrado para a clínica "${clientName}" (Cliente ID: ${finalClientId || 'N/A'}).`);
+        await prisma.systemLog.create({
+          data: {
+            level: 'WARN',
+            module: 'EMAIL_SERVICE',
+            correlationId,
+            message: `[EMAIL_WARN] Notificação do laudo não enviada: Clínica "${clientName}" não possui endereço de e-mail de contato cadastrado nem usuários vinculados.`,
+            details: JSON.stringify({
+              auditReportId,
+              clientId: finalClientId,
+              clientName,
+              targetUrl,
+              score: recon.score,
+              verdict: recon.verdict,
+            }),
+          },
+        }).catch(() => {});
+      } else {
+        for (const recipientEmail of resolvedEmails) {
+          try {
+            const emailResult = await EmailService.sendAuditReportCompletedEmail(recipientEmail, clientName, {
               id: auditReportId,
               targetUrl,
               score: recon.score,
@@ -259,9 +292,66 @@ export class AuditExecutionService {
               summary: recon.summary,
               violationsCount: recon.violations.length,
             });
+
+            if (emailResult.success) {
+              await prisma.systemLog.create({
+                data: {
+                  level: 'INFO',
+                  module: 'EMAIL_SERVICE',
+                  correlationId,
+                  message: `[EMAIL_SUCCESS] E-mail de laudo entregue com sucesso para ${recipientEmail} (Clínica: ${clientName}) | MessageId: ${emailResult.messageId || 'MOCK'} | Veredito: ${recon.verdict}`,
+                  details: JSON.stringify({
+                    auditReportId,
+                    clientId: finalClientId,
+                    clientName,
+                    recipientEmail,
+                    messageId: emailResult.messageId,
+                    mocked: emailResult.mocked || false,
+                    score: recon.score,
+                    verdict: recon.verdict,
+                  }),
+                },
+              }).catch(() => {});
+            } else {
+              console.error(`❌ [AuditExecutionService] Falha ao enviar e-mail de laudo para ${recipientEmail}: ${emailResult.error}`);
+              await prisma.systemLog.create({
+                data: {
+                  level: 'ERROR',
+                  module: 'EMAIL_SERVICE',
+                  correlationId,
+                  message: `[EMAIL_ERROR] Falha no envio de notificação por e-mail para "${recipientEmail}" (Clínica: "${clientName}"): ${emailResult.error || 'Erro na API de e-mail'}`,
+                  details: JSON.stringify({
+                    auditReportId,
+                    clientId: finalClientId,
+                    clientName,
+                    recipientEmail,
+                    error: emailResult.error,
+                    score: recon.score,
+                    verdict: recon.verdict,
+                    targetUrl,
+                  }),
+                },
+              }).catch(() => {});
+            }
+          } catch (emailErr: any) {
+            console.error(`❌ [AuditExecutionService] Exceção ao enviar notificação de laudo para ${recipientEmail}: ${emailErr.message}`);
+            await prisma.systemLog.create({
+              data: {
+                level: 'ERROR',
+                module: 'EMAIL_SERVICE',
+                correlationId,
+                message: `[EMAIL_ERROR] Exceção inesperada no envio de notificação por e-mail para "${recipientEmail}": ${emailErr.message}`,
+                details: JSON.stringify({
+                  auditReportId,
+                  clientId: finalClientId,
+                  clientName,
+                  recipientEmail,
+                  error: emailErr.message,
+                  stack: emailErr.stack,
+                }),
+              },
+            }).catch(() => {});
           }
-        } catch (emailErr: any) {
-          console.warn(`[AuditExecutionService] Aviso ao enviar notificação de laudo por e-mail: ${emailErr.message}`);
         }
       }
 
