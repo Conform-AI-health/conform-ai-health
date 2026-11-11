@@ -1,0 +1,15 @@
+# ==============================================================================
+# Gitleaks Configuration - Conform.AI Health
+# ==============================================================================
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Permitir mocks, testes sintéticos e templates .example"
+paths = [
+  '''__tests__/.*''',
+  '''\.env\.example$''',
+  '''dashboard/\.env\.example$''',
+  '''\.agents/.*''',
+  '''package-lock\.json$''',
+]

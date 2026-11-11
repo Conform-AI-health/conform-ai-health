@@ -84,6 +84,11 @@ export class AuditExecutionService {
       // 2 & 3. Scraping Exclusivo via Firecrawl + Hash SHA-256 + MongoDB
       const firecrawlResult = await FirecrawlService.scrape(targetUrl, agentModuleId, clientId);
 
+      // T04: Validação estrita de integridade do conteúdo extraído
+      if (!firecrawlResult || !firecrawlResult.markdown || firecrawlResult.markdown.trim().length === 0) {
+        throw new Error('Conteúdo extraído vazio ou inexistente. Auditoria deontológica abortada para evitar geração de laudo inconsequente.');
+      }
+
       await prisma.systemLog.create({
         data: {
           level: 'INFO',
@@ -107,6 +112,21 @@ export class AuditExecutionService {
       );
       const normsFilesNames = agentContext.resolvedDbNorms?.map((n) => n.normCode || n.title) || [];
       const combinedNormsList = Array.from(new Set([...allFilesAndNorms, ...normsFilesNames]));
+
+      // C05: Snapshot estruturado das normas vigentes utilizadas na auditoria
+      const normsSnapshotJson = NormsResolver.createNormsSnapshot(
+        agentContext.resolvedDbNorms && agentContext.resolvedDbNorms.length > 0
+          ? agentContext.resolvedDbNorms
+          : agentContext.activeNorms.map((n) => ({
+              id: n.id,
+              normCode: n.normCode,
+              source: n.source,
+              title: n.title,
+              content: n.content,
+              tags: n.keywords,
+              article: n.article,
+            }))
+      );
 
       // Log operacional dedicado das normas e arquivos normativos acionados na telemetria
       await prisma.systemLog.create({
@@ -179,7 +199,8 @@ export class AuditExecutionService {
 
       // Gera Contrato Estruturado de Alta Confiabilidade
       const structuredContract = AIStructuredContractAdapter.toStructuredContract(recon, auditReportId);
-      const requiresHumanReview = structuredContract.findings.some((f) => f.requires_human_review);
+      const effectiveVerdict = (structuredContract.verdict as any) || recon.verdict;
+      const requiresHumanReview = structuredContract.findings.some((f) => f.requires_human_review) || effectiveVerdict === 'INCONCLUSIVO';
 
       // 6. Persistência Transacional no MongoDB (AuditReport e Violations)
       await prisma.$transaction(async (tx) => {
@@ -187,16 +208,17 @@ export class AuditExecutionService {
           where: { id: auditReportId },
           data: {
             status: 'COMPLETED',
-            verdict: recon.verdict,
+            verdict: effectiveVerdict,
             score: recon.score,
             summary: recon.summary,
             riskLevel: structuredContract.risk_level,
             confidence: structuredContract.confidence,
             structuredContract: JSON.stringify(structuredContract),
-            groundingScore: recon.groundingScore ?? 100,
-            hallucinationRisk: recon.hallucinationRisk ?? 'NONE',
+            groundingScore: recon.groundingScore ?? null,
+            hallucinationRisk: recon.hallucinationRisk ?? 'NOT_EVALUATED',
             guardrailsApplied: recon.guardrailsApplied ?? false,
             requiresHumanReview,
+            normSnapshots: normsSnapshotJson,
             rawContent: firecrawlResult.rawContent,
             cleanMarkdown: firecrawlResult.markdown,
             tokensSaved: Math.max(0, scrapeAdapter.tokensEstimatedRaw - scrapeAdapter.tokensEstimatedClean),
@@ -268,9 +290,9 @@ export class AuditExecutionService {
         await prisma.systemLog.create({
           data: {
             level: 'WARN',
-            module: 'EMAIL_SERVICE',
+            module: 'EMAIL_NOTIFICATION',
             correlationId,
-            message: `[EMAIL_WARN] Notificação do laudo não enviada: Clínica "${clientName}" não possui endereço de e-mail de contato cadastrado nem usuários vinculados.`,
+            message: `[EMAIL_WARN] Nenhum endereço de e-mail válido encontrado para a clínica "${clientName}". Notificação não enviada.`,
             details: JSON.stringify({
               auditReportId,
               clientId: finalClientId,
@@ -297,9 +319,9 @@ export class AuditExecutionService {
               await prisma.systemLog.create({
                 data: {
                   level: 'INFO',
-                  module: 'EMAIL_SERVICE',
+                  module: 'EMAIL_NOTIFICATION',
                   correlationId,
-                  message: `[EMAIL_SUCCESS] E-mail de laudo entregue com sucesso para ${recipientEmail} (Clínica: ${clientName}) | MessageId: ${emailResult.messageId || 'MOCK'} | Veredito: ${recon.verdict}`,
+                  message: `[EMAIL_SUCCESS] E-mail de conclusão de laudo enviado com sucesso para ${recipientEmail} (Clínica: ${clientName}) | MessageId: ${emailResult.messageId || 'MOCK'} | Veredito: ${recon.verdict}`,
                   details: JSON.stringify({
                     auditReportId,
                     clientId: finalClientId,
@@ -316,10 +338,10 @@ export class AuditExecutionService {
               console.error(`❌ [AuditExecutionService] Falha ao enviar e-mail de laudo para ${recipientEmail}: ${emailResult.error}`);
               await prisma.systemLog.create({
                 data: {
-                  level: 'ERROR',
-                  module: 'EMAIL_SERVICE',
+                  level: 'WARN',
+                  module: 'EMAIL_NOTIFICATION',
                   correlationId,
-                  message: `[EMAIL_ERROR] Falha no envio de notificação por e-mail para "${recipientEmail}" (Clínica: "${clientName}"): ${emailResult.error || 'Erro na API de e-mail'}`,
+                  message: `[EMAIL_WARN] Falha ao enviar notificação de laudo por e-mail para "${recipientEmail}" (Clínica: "${clientName}"): ${emailResult.error || 'Erro na API de e-mail'}`,
                   details: JSON.stringify({
                     auditReportId,
                     clientId: finalClientId,
@@ -338,9 +360,9 @@ export class AuditExecutionService {
             await prisma.systemLog.create({
               data: {
                 level: 'ERROR',
-                module: 'EMAIL_SERVICE',
+                module: 'EMAIL_NOTIFICATION',
                 correlationId,
-                message: `[EMAIL_ERROR] Exceção inesperada no envio de notificação por e-mail para "${recipientEmail}": ${emailErr.message}`,
+                message: `[EMAIL_ERROR] Erro inesperado durante o disparo de e-mail do laudo para "${recipientEmail}": ${emailErr.message}`,
                 details: JSON.stringify({
                   auditReportId,
                   clientId: finalClientId,
@@ -372,6 +394,8 @@ export class AuditExecutionService {
         data: {
           status: 'FAILED',
           summary: `Falha técnica durante a execução da auditoria: ${error.message}`,
+          score: 0,
+          requiresHumanReview: true,
         },
       }).catch(() => {});
 

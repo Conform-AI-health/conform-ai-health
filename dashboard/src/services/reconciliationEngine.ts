@@ -103,6 +103,13 @@ export class ReconciliationEngine {
               keywords: n.tags,
               content: n.content,
               correctiveGuidance: `Adequar conforme as diretrizes regulatórias vigentes da norma ${n.normCode}.`,
+              validity: (n as any).validity || {
+                publishedAt: '2023-01-01',
+                effectiveDate: '2023-01-01',
+                revokedAt: null,
+                isRevoked: false,
+                officialGazette: 'Diário Oficial da União',
+              },
             }));
 
           if (activeNorms.length === 0) {
@@ -168,27 +175,28 @@ CATÁLOGO NORMATIVO VIGENTE DO ESCOPO:
       });
       if (defaultAgentDef) {
         const targetNormLower = defaultAgentDef.targetNorm ? defaultAgentDef.targetNorm.toLowerCase() : '';
-        const activeNorms = targetNormLower
+        const activeNorms = (targetNormLower
           ? NORMS_CATALOG.filter(
               (n) =>
                 n.source.toLowerCase().includes(targetNormLower) ||
                 n.normCode.toLowerCase().includes(targetNormLower) ||
                 n.id.toLowerCase().includes(targetNormLower)
             )
-          : [...NORMS_CATALOG];
+          : [...NORMS_CATALOG]).filter((chunk) => !chunk.validity?.isRevoked);
 
         return {
           name: defaultAgentDef.name,
           systemPrompt: defaultAgentDef.systemPrompt.trim(),
           targetNorms: defaultAgentDef.targetNorm ? [defaultAgentDef.targetNorm] : [],
-          activeNorms: activeNorms.length > 0 ? activeNorms : [...NORMS_CATALOG],
+          activeNorms: activeNorms.length > 0 ? activeNorms : NORMS_CATALOG.filter((c) => !c.validity?.isRevoked),
         };
       }
     } catch {
       // Fallback seguro
     }
 
-    const fallbackNormsText = NORMS_CATALOG
+    const activeFallbackNorms = NORMS_CATALOG.filter((c) => !c.validity?.isRevoked);
+    const fallbackNormsText = activeFallbackNorms
       .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
       .join('\n');
 
@@ -201,7 +209,7 @@ DIRETRIZ DE VIGÊNCIA REGULATÓRIA: Normas ou artigos revogados não possuem vig
 CATÁLOGO NORMATIVO VIGENTE DO ESCOPO:
 ${fallbackNormsText}`,
       targetNorms: [],
-      activeNorms: [...NORMS_CATALOG],
+      activeNorms: activeFallbackNorms,
     };
   }
 

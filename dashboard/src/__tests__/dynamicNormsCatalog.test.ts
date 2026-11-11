@@ -28,15 +28,9 @@ describe('Desacoplamento Normativo Dinâmico & Catálogo Ativo', () => {
   });
 
   describe('NormsResolver', () => {
-    it('deve resolver todas as normas ativas quando chamado sem tags (sem engessar em CFM)', async () => {
-      vi.mocked(prisma.scrapedPage.findMany).mockResolvedValueOnce([]);
-
+    it('deve manter o escopo regulatório neutro/vazio quando chamado sem tags (T31)', async () => {
       const resolved = await NormsResolver.resolveByTags([]);
-      expect(resolved.length).toBeGreaterThan(0);
-
-      // Deve incluir múltiplas fontes do catálogo geral (não apenas CFM)
-      const sources = new Set(resolved.map((n) => n.source));
-      expect(sources.size).toBeGreaterThan(1);
+      expect(resolved).toEqual([]);
     });
 
     it('deve resolver dinamicamente normas para uma tag específica de conselho ou órgão', async () => {

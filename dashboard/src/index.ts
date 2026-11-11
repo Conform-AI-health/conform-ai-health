@@ -10,12 +10,13 @@ dns.setDefaultResultOrder('ipv4first');
 async function bootstrap() {
   const app = createApp();
 
-  // Executa auto-migração e seed apenas se não estiver em ambiente de teste
+  // Executa auto-migração e provisionamento estrito inicial (T03)
   if (env.NODE_ENV !== 'test') {
     try {
       await runAutoMigrateAndSeed();
     } catch (err: any) {
-      console.warn(`[Bootstrap] Aviso no seed inicial: ${err.message}. Continuando inicialização do servidor...`);
+      console.error(`❌ [Bootstrap Fatal] Falha crítica de inicialização/provisionamento no banco de dados: ${err.message}`);
+      process.exit(1);
     }
   }
 

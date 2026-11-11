@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { Role, Verdict, AuditStatus, RuleSeverity } from '@prisma/client';
 import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
+import { EmailService } from '../services/emailService.js';
 
 export class ReportController {
   /**
@@ -65,7 +66,7 @@ export class ReportController {
       res.status(200).json({
         data: reports.map((r) => ({
           ...r,
-          targetUrl: r.targetUrl || 'https://conform-ia.med.br',
+          targetUrl: r.targetUrl || 'URL não informada',
           summary: r.summary || 'Laudo de conformidade deontológica.',
           client: r.client || {
             id: r.clientId || 'avulso',
@@ -144,8 +145,8 @@ export class ReportController {
           totalTokens: report.totalTokens ?? 0,
           sourcesUsed: report.sourcesUsed,
           aiModelUsed: report.aiModelUsed || 'gemini-3.5-flash',
-          groundingScore: report.groundingScore ?? 100,
-          hallucinationRisk: (report.hallucinationRisk as any) || 'NONE',
+          groundingScore: report.groundingScore ?? null,
+          hallucinationRisk: (report.hallucinationRisk as any) || 'NOT_EVALUATED',
           guardrailsApplied: report.guardrailsApplied ?? false,
           hallucinationsInterceptedCount: 0,
         },
@@ -407,6 +408,96 @@ export class ReportController {
         message: `Revisão humana registrada com sucesso (${decision}).`,
         report: updatedReport,
         review: contractObj.humanReview,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Reenvia notificação por e-mail para a clínica e grava telemetria auditável
+   */
+  public static async notifyClient(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const report = await prisma.auditReport.findUnique({
+        where: { id },
+        include: {
+          client: {
+            include: { users: { select: { email: true } } },
+          },
+          violations: true,
+        },
+      });
+
+      if (!report) {
+        res.status(404).json({ error: 'Laudo de auditoria não encontrado.' });
+        return;
+      }
+
+      // Se perfil for CLIENT, valida se pertence à sua clínica
+      if (req.user?.role === Role.CLIENT && report.clientId !== req.user.clientId) {
+        res.status(403).json({ error: 'Acesso negado ao laudo desta clínica.' });
+        return;
+      }
+
+      const client = report.client;
+      const clientName = client?.tradeName || client?.name || 'Clínica Médica';
+      const recipientEmail = client?.email || (client?.users && client.users.length > 0 ? client.users[0].email : null);
+
+      if (!recipientEmail) {
+        await prisma.systemLog.create({
+          data: {
+            level: 'WARN',
+            module: 'EMAIL_NOTIFICATION',
+            correlationId: id,
+            message: `[EMAIL_NOTIFICATION] Falha ao disparar e-mail: Nenhum e-mail de destino encontrado para a clínica "${clientName}".`,
+            details: JSON.stringify({ auditReportId: id, clientId: report.clientId }),
+          },
+        }).catch(() => {});
+
+        res.status(400).json({ error: 'Clínica não possui endereço de e-mail cadastrado.' });
+        return;
+      }
+
+      const emailResult = await EmailService.sendAuditReportCompletedEmail(recipientEmail, clientName, {
+        id: report.id,
+        targetUrl: report.targetUrl || '',
+        score: report.score ?? 0,
+        verdict: report.verdict,
+        summary: report.summary,
+        violationsCount: report.violations.length,
+      });
+
+      if (!emailResult.success) {
+        await prisma.systemLog.create({
+          data: {
+            level: 'WARN',
+            module: 'EMAIL_NOTIFICATION',
+            correlationId: id,
+            message: `[EMAIL_NOTIFICATION] Falha no disparo de notificação de laudo para ${recipientEmail}: ${emailResult.error || 'Erro no provedor de mensageria'}`,
+            details: JSON.stringify({ auditReportId: id, recipientEmail, error: emailResult.error, requestedBy: req.user?.email }),
+          },
+        }).catch(() => {});
+
+        res.status(502).json({ error: `Falha no envio de e-mail: ${emailResult.error || 'Erro no provedor de mensageria'}` });
+        return;
+      }
+
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'EMAIL_NOTIFICATION',
+          correlationId: id,
+          message: `[EMAIL_NOTIFICATION] Notificação de laudo enviada com sucesso para ${recipientEmail} | MessageId: ${emailResult.messageId || 'mocked'} por ${req.user?.email || 'sistema'}`,
+          details: JSON.stringify({ auditReportId: id, recipientEmail, messageId: emailResult.messageId, requestedBy: req.user?.email }),
+        },
+      }).catch(() => {});
+
+      res.status(200).json({
+        message: 'Notificação de laudo enviada com sucesso para a clínica.',
+        recipient: recipientEmail,
+        messageId: emailResult.messageId,
       });
     } catch (error) {
       next(error);

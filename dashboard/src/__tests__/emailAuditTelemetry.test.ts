@@ -220,7 +220,7 @@ describe('Auditoria Concluída & Telemetria de E-mail (@backend-specialist)', ()
       );
       expect(emailSuccessLog).toBeDefined();
       expect(emailSuccessLog?.[0].data.level).toBe('INFO');
-      expect(emailSuccessLog?.[0].data.module).toBe('EMAIL_SERVICE');
+      expect(emailSuccessLog?.[0].data.module).toBe('EMAIL_NOTIFICATION');
     });
 
     it('deve registrar [EMAIL_WARN] na telemetria quando o cliente não tiver e-mail cadastrado', async () => {
@@ -249,10 +249,10 @@ describe('Auditoria Concluída & Telemetria de E-mail (@backend-specialist)', ()
       );
       expect(emailWarnLog).toBeDefined();
       expect(emailWarnLog?.[0].data.level).toBe('WARN');
-      expect(emailWarnLog?.[0].data.module).toBe('EMAIL_SERVICE');
+      expect(emailWarnLog?.[0].data.module).toBe('EMAIL_NOTIFICATION');
     });
 
-    it('deve registrar [EMAIL_ERROR] na telemetria quando a API de e-mail falhar, sem quebrar o laudo', async () => {
+    it('deve registrar [EMAIL_WARN] na telemetria quando a API de e-mail falhar, sem quebrar o laudo', async () => {
       vi.mocked(prisma.client.findUnique).mockResolvedValue({
         id: 'client-123',
         name: 'Clínica Beta',
@@ -274,15 +274,15 @@ describe('Auditoria Concluída & Telemetria de E-mail (@backend-specialist)', ()
       // A auditoria em si conclui com sucesso
       expect(res.success).toBe(true);
 
-      // Mas o erro de e-mail deve ser reportado na telemetria
+      // O aviso de e-mail deve ser reportado na telemetria
       const systemLogCalls = vi.mocked(prisma.systemLog.create).mock.calls;
       const emailErrorLog = systemLogCalls.find(call =>
-        call[0].data.message?.includes('[EMAIL_ERROR]') &&
-        call[0].data.message?.includes('beta@clinica.com.br')
+        call[0].data.message?.includes('beta@clinica.com.br') &&
+        call[0].data.module === 'EMAIL_NOTIFICATION'
       );
       expect(emailErrorLog).toBeDefined();
-      expect(emailErrorLog?.[0].data.level).toBe('ERROR');
-      expect(emailErrorLog?.[0].data.module).toBe('EMAIL_SERVICE');
+      expect(emailErrorLog?.[0].data.level).toBe('WARN');
+      expect(emailErrorLog?.[0].data.module).toBe('EMAIL_NOTIFICATION');
       expect(emailErrorLog?.[0].data.message).toContain('API Key inválida');
     });
 

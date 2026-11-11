@@ -53,4 +53,25 @@ describe('Validação Zod e Endpoints da API REST', () => {
     expect(res.body.database).toBeDefined();
     expect(res.body.redis).toBeDefined();
   });
+
+  it('T25 — Upload de normas não deve ser bloqueado pelo parser global de 100 KB', async () => {
+    // 1. Gera um payload maior que 100 KB (aprox. 250 KB)
+    const largeContent = 'A'.repeat(250 * 1024);
+
+    // 2. Em rota padrão com parser global de 100kb, o payload deve ser rejeitado com 413
+    const normalRouteRes = await request(app)
+      .post('/api/v1/auth/register')
+      .send({ email: 'test@example.com', password: '123', padding: largeContent });
+    expect(normalRouteRes.status).toBe(413);
+
+    // 3. Na rota de upload de normas regulatórias (/scraped-pages/upload), o parser global de 100kb
+    // deve ser ignorado para que o parser dedicado de 20mb atue (não resultando em 413)
+    const uploadRouteRes = await request(app)
+      .post('/api/v1/scraped-pages/upload')
+      .send({ url: 'https://normas.saude.gov.br/resolucao-grande', content: largeContent });
+
+    // Chega ao middleware de autenticação (401), e NÃO no 413 do parser global!
+    expect(uploadRouteRes.status).toBe(401);
+    expect(uploadRouteRes.status).not.toBe(413);
+  });
 });

@@ -10,6 +10,16 @@ export interface AuditReportEmailData {
   violationsCount?: number;
 }
 
+function escapeHtml(str: string | null | undefined): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 export class EmailService {
   private static resendClient: Resend | null = null;
 
@@ -33,6 +43,7 @@ export class EmailService {
   ): Promise<{ success: boolean; messageId?: string; mocked?: boolean; error?: string }> {
     const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${encodeURIComponent(resetToken)}`;
     const client = this.getClient();
+    const safeUserName = escapeHtml(userName);
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -62,7 +73,7 @@ export class EmailService {
             <div class="badge">SAÚDE & DEONTOLOGIA</div>
           </div>
           <h2>Recuperação de Senha Segura</h2>
-          <p>Olá, <strong>${userName}</strong>.</p>
+          <p>Olá, <strong>${safeUserName}</strong>.</p>
           <p>Recebemos uma solicitação de redefinição de acesso para sua conta no ecossistema Conform.AI. Clique no botão abaixo para cadastrar sua nova senha:</p>
           
           <div class="button-container">
@@ -145,7 +156,13 @@ export class EmailService {
     to: string,
     clientName: string,
     report: AuditReportEmailData
-  ): Promise<{ success: boolean; messageId?: string; mocked?: boolean; error?: string }> {
+  ): Promise<{ success: boolean; messageId?: string; error?: string; mocked?: boolean }> {
+    // Bloqueia tentativas de envio para endereço nulo, vazio ou fallback mock inseguro (T08)
+    if (!to || to.trim() === '' || to.toLowerCase().includes('contato@clinica.com')) {
+      const errorMsg = `E-mail de destino inválido ou mock genérico proibido (${to || 'vazio'})`;
+      console.warn(`⚠️ [EmailService] Envio de laudo ignorado: ${errorMsg}.`);
+      return { success: false, error: errorMsg };
+    }
     const reportUrl = `${env.FRONTEND_URL}/reports`;
     const client = this.getClient();
 
@@ -157,6 +174,11 @@ export class EmailService {
       : isParcial
       ? 'PARCIALMENTE CONFORME (Requer Atenção)'
       : 'NÃO CONFORME (Risco Iminente)';
+
+    const safeClientName = escapeHtml(clientName);
+    const safeTargetUrl = escapeHtml(report.targetUrl);
+    const safeSummary = report.summary ? escapeHtml(report.summary) : '';
+    const safeVerdict = escapeHtml(report.verdict);
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -191,7 +213,7 @@ export class EmailService {
             <div class="badge">LAUDO DEONTOLÓGICO CONCLUÍDO</div>
           </div>
           <h2>Relatório de Conformidade Regulatória</h2>
-          <p>Prezada equipe da clínica <strong>${clientName}</strong>,</p>
+          <p>Prezada equipe da clínica <strong>${safeClientName}</strong>,</p>
           <p>O motor autônomo do Conform.AI finalizou a auditoria do seu canal digital oficial. Segue o panorama da avaliação:</p>
           
           <div class="verdict-card">
@@ -202,7 +224,7 @@ export class EmailService {
           <table class="meta-table">
             <tr>
               <td class="meta-label">Canal Auditado:</td>
-              <td class="meta-value">${report.targetUrl}</td>
+              <td class="meta-value">${safeTargetUrl}</td>
             </tr>
             <tr>
               <td class="meta-label">Infrações Identificadas:</td>
@@ -214,7 +236,7 @@ export class EmailService {
             </tr>
           </table>
 
-          ${report.summary ? `<p style="background: #070d1e; padding: 12px; border-radius: 8px; border-left: 3px solid #38bdf8; font-size: 13px;"><em>"${report.summary}"</em></p>` : ''}
+          ${safeSummary ? `<p style="background: #070d1e; padding: 12px; border-radius: 8px; border-left: 3px solid #38bdf8; font-size: 13px;"><em>"${safeSummary}"</em></p>` : ''}
 
           <div class="button-container">
             <a href="${reportUrl}" class="btn">Visualizar Laudo Completo no Portal</a>
@@ -232,7 +254,7 @@ export class EmailService {
     if (!client) {
       if (env.NODE_ENV === 'test') {
         console.log(`📧 [EmailService:MOCK] Notificação de laudo para ${to} (Score: ${report.score}%, Veredito: ${report.verdict})`);
-        return { success: true, mocked: true };
+        return { success: true, mocked: true, messageId: `mock-msg-${Date.now()}` };
       }
       console.warn(`⚠️ [EmailService] RESEND_API_KEY ausente. Notificação de laudo não enviada para ${to}`);
       return { success: false, mocked: true, error: 'Chave RESEND_API_KEY não configurada no ambiente. E-mail real não enviado.' };
@@ -278,7 +300,7 @@ export class EmailService {
       return { success: true, messageId: response.data.id };
     } catch (err: any) {
       console.error(`❌ [EmailService] Erro ao enviar laudo via Resend para ${to}:`, err.message);
-      return { success: false, error: err.message };
+      return { success: false, error: err.message || 'Falha de conexão com provedor de e-mail' };
     }
   }
 }

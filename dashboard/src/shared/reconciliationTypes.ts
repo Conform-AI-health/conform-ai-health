@@ -12,7 +12,7 @@ export const violationSchema = z.object({
 });
 
 export const reconciliationOutputSchema = z.object({
-  verdict: z.enum(['CONFORME', 'PARCIALMENTE_CONFORME', 'NAO_CONFORME']).describe('Veredito semáforo final'),
+  verdict: z.enum(['CONFORME', 'PARCIALMENTE_CONFORME', 'NAO_CONFORME', 'INCONCLUSIVO']).describe('Veredito semáforo final'),
   score: z.number().min(0).max(100).describe('Pontuação de risco ou conformidade de 0 a 100'),
   summary: z.string().describe('Síntese diagnóstica da auditoria deontológica'),
   violations: z.array(violationSchema).describe('Lista de violações normativas identificadas'),
@@ -21,8 +21,8 @@ export const reconciliationOutputSchema = z.object({
   totalTokens: z.number().default(0),
   sourcesUsed: z.array(z.string()).default([]),
   aiModelUsed: z.string().default('gemini-3.5-flash'),
-  groundingScore: z.number().default(100).describe('Score de ancoragem fática e normativa (0-100)'),
-  hallucinationRisk: z.enum(['NONE', 'LOW', 'MEDIUM', 'HIGH']).default('NONE').describe('Nível de risco de alucinação'),
+  groundingScore: z.number().min(0).max(100).nullable().optional().describe('Score de ancoragem fática e normativa (0-100), ou null se não avaliado'),
+  hallucinationRisk: z.enum(['NONE', 'LOW', 'MEDIUM', 'HIGH', 'NOT_EVALUATED']).default('NOT_EVALUATED').describe('Nível de risco de alucinação deontológica'),
   guardrailsApplied: z.boolean().default(false).describe('Indica se guardrails interceptaram alucinações'),
   hallucinationsInterceptedCount: z.number().default(0).describe('Quantidade de alucinações expurgadas'),
 });

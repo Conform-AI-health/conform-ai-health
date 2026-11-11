@@ -61,13 +61,20 @@ export function createApp(): Express {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'x-refresh-token'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-refresh-token', 'X-Requested-With', 'x-requested-with'],
     })
   );
 
-  // 3. Parsers com limites adequados para extração de PDFs e normas
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+  // 3. Parsers com limites estritos anti-DoS (T09): 100kb global
+  // Exclui a rota de upload de normas (/scraped-pages/upload), que possui parser dedicado de 20mb (T25)
+  app.use((req, res, next) => {
+    const isUploadRoute = req.originalUrl?.includes('/scraped-pages/upload') || req.path?.includes('/scraped-pages/upload');
+    if (isUploadRoute) {
+      return next();
+    }
+    express.json({ limit: '100kb' })(req, res, next);
+  });
+  app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
   // 4. Healthcheck simples
   app.get('/health', (_req, res) => {

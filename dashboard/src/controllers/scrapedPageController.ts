@@ -188,8 +188,21 @@ export class ScrapedPageController {
         return;
       }
 
+      const isClient = req.user?.role === 'CLIENT';
+      const agentWhere: any = {
+        enabled: true,
+        ...(isClient
+          ? {
+              OR: [
+                { clientId: null },
+                ...(req.user?.clientId ? [{ clientId: req.user.clientId }] : []),
+              ],
+            }
+          : {}),
+      };
+
       const allAgents = await prisma.agentModule.findMany({
-        where: { enabled: true },
+        where: agentWhere,
       });
 
       // Filtra agentes cujo array de tags possui interseção com as tags da página

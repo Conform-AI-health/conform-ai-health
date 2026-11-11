@@ -2,6 +2,8 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { ExtractionMode } from '@prisma/client';
 import { env } from '../config/env.js';
+import { safeHttpGet, validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
+import { startSafeScrapingProxy } from '../shared/safeScrapingProxy.js';
 
 export interface ScrapeResult {
   url: string;
@@ -194,7 +196,7 @@ export class ScraperService {
       Accept: 'application/pdf,application/octet-stream,*/*',
     };
 
-    const resp = await axios.get(url, {
+    const resp = await safeHttpGet(url, {
       responseType: 'arraybuffer',
       headers,
       timeout: 35000,
@@ -393,7 +395,7 @@ export class ScraperService {
       ghHeaders['Authorization'] = `token ${process.env.GITHUB_TOKEN || process.env.GH_TOKEN}`;
     }
 
-    const contentsResponse = await axios.get(apiUrl, {
+    const contentsResponse = await safeHttpGet(apiUrl, {
       headers: ghHeaders,
       timeout: 20000,
     });
@@ -425,7 +427,7 @@ export class ScraperService {
             fileItem.download_url ||
             `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${fileItem.path}`;
 
-          const fileResp = await axios.get(rawUrl, {
+          const fileResp = await safeHttpGet(rawUrl, {
             timeout: 15000,
             headers: {
               'User-Agent': 'ConformIA-Regulatory-Auditor',
@@ -509,7 +511,7 @@ export class ScraperService {
 
     let rawHtml = '';
     try {
-      const resp = await axios.get(targetUrl, { headers, timeout: 25000 });
+      const resp = await safeHttpGet(targetUrl, { headers, timeout: 25000 });
       rawHtml = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
     } catch (err: any) {
       console.warn(`[Scraper DOU] Falha na requisição HTTP direta (${err.message}).`);
@@ -597,7 +599,7 @@ export class ScraperService {
         // Se o texto vier resumido no JSON e houver urlTitle, busca o artigo completo
         if (contentHtml.length < 150 && urlTitle && !urlTitle.startsWith('javascript:')) {
           try {
-            const indResp = await axios.get(docUrl, { headers, timeout: 8000 });
+            const indResp = await safeHttpGet(docUrl, { headers, timeout: 8000 });
             const ind$ = cheerio.load(indResp.data);
             const fullArticle = ind$('.texto-dou, .dou-paragraph, article, .materia-conteudo').html();
             if (fullArticle && fullArticle.length > 100) {
@@ -683,7 +685,7 @@ export class ScraperService {
 
       for (const linkItem of toFetch) {
         try {
-          const actResp = await axios.get(linkItem.url, { headers, timeout: 10000 });
+          const actResp = await safeHttpGet(linkItem.url, { headers, timeout: 10000 });
           const processed = this.processHtml(linkItem.url, actResp.data, 'CHEERIO');
           if (customTags && customTags.length > 0) {
             processed.detectedTags = Array.from(new Set([...customTags, ...processed.detectedTags]));
@@ -723,7 +725,7 @@ export class ScraperService {
 
     let rawHtml = '';
     try {
-      const resp = await axios.get(targetUrl, { headers, timeout: 20000 });
+      const resp = await safeHttpGet(targetUrl, { headers, timeout: 20000 });
       rawHtml = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
     } catch (err: any) {
       throw new Error(`Falha ao acessar portal regulatório: ${err.message}`);
@@ -775,7 +777,7 @@ export class ScraperService {
       for (const nextPg of paginationLinks.slice(0, 2)) {
         if (discoveredLinks.length >= 40) break;
         try {
-          const pgResp = await axios.get(nextPg, { headers, timeout: 10000 });
+          const pgResp = await safeHttpGet(nextPg, { headers, timeout: 10000 });
           const pg$ = cheerio.load(pgResp.data);
           pg$('a').each((_, el) => {
             const h = pg$(el).attr('href') || '';
@@ -809,7 +811,7 @@ export class ScraperService {
             }
             results.push(pdfRes);
           } else {
-            const docResp = await axios.get(item.url, { headers, timeout: 10000 });
+            const docResp = await safeHttpGet(item.url, { headers, timeout: 10000 });
             const docRes = this.processHtml(item.url, docResp.data, 'CHEERIO');
             if (item.title && (!docRes.title || docRes.title === 'Página sem título')) {
               docRes.title = item.title;
@@ -885,7 +887,7 @@ export class ScraperService {
     const blobInfo = this.isGitHubBlobUrl(url);
     if (blobInfo.isBlob && blobInfo.owner && blobInfo.repo && blobInfo.branch && blobInfo.path) {
       const rawUrl = `https://raw.githubusercontent.com/${blobInfo.owner}/${blobInfo.repo}/${blobInfo.branch}/${blobInfo.path}`;
-      const resp = await axios.get(rawUrl, { timeout: 15000 });
+      const resp = await safeHttpGet(rawUrl, { timeout: 15000 });
       const rawText = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
       return this.processHtml(url, `<html><head><title>${blobInfo.path}</title></head><body><pre>${rawText}</pre></body></html>`, 'CHEERIO');
     }
@@ -913,7 +915,7 @@ export class ScraperService {
    * Extração com Cheerio (Ultra-rápido, páginas estáticas ou PDFs dinâmicos)
    */
   private static async scrapeWithCheerio(url: string): Promise<ScrapeResult> {
-    const response = await axios.get(url, {
+    const response = await safeHttpGet(url, {
       responseType: 'arraybuffer',
       timeout: 25000,
       headers: {
@@ -947,14 +949,22 @@ export class ScraperService {
   }
 
   /**
-   * Extração com Puppeteer Headless (Páginas SPA, React/Vue/Angular)
+   * Extração com Puppeteer Headless (Páginas SPA, React/Vue/Angular) com blindagem anti-SSRF (T02/C07)
    */
   private static async scrapeWithPuppeteer(url: string): Promise<ScrapeResult> {
+    // 1. Verificação SSRF assíncrona pré-navegação com proteção DNS Rebinding
+    const targetCheck = await validateSafeUrlAsync(url);
+    if (!targetCheck.safe) {
+      throw new Error(`SSRF bloqueado: ${targetCheck.reason}`);
+    }
+
     // Importação dinâmica para evitar travar se puppeteer não estiver em ambiente headless restrito
     let browser: any = null;
+    let safeProxy: Awaited<ReturnType<typeof startSafeScrapingProxy>> | null = null;
     try {
       const puppeteerModule = await import('puppeteer');
       const puppeteer = puppeteerModule.default || puppeteerModule;
+      safeProxy = await startSafeScrapingProxy();
 
       browser = await puppeteer.launch({
         headless: true,
@@ -964,6 +974,9 @@ export class ScraperService {
           '--disable-dev-shm-usage',
           '--disable-gpu',
           '--disable-extensions',
+          `--proxy-server=http://127.0.0.1:${safeProxy.port}`,
+          '--proxy-bypass-list=<-loopback>',
+          '--disable-quic',
         ],
       });
 
@@ -973,33 +986,49 @@ export class ScraperService {
       );
       await page.setViewport({ width: 1280, height: 800 });
 
-      // Otimização: bloquear imagens e fontes desnecessárias para acelerar
+      // Otimização e Segurança anti-SSRF: intercepta e valida todas as requisições subjacentes
       await page.setRequestInterception(true);
       page.on('request', (req: any) => {
-        const resourceType = req.resourceType();
-        if (['font', 'media'].includes(resourceType)) {
-          req.abort();
-        } else {
-          req.continue();
-        }
+        void (async () => {
+          const reqUrl = req.url();
+          const urlCheck = await validateSafeUrlAsync(reqUrl);
+          if (!urlCheck.safe || ['font', 'media'].includes(req.resourceType())) {
+            await req.abort();
+            return;
+          }
+          await req.continue();
+        })().catch((error) => {
+          console.warn(`[Puppeteer] Requisição bloqueada após falha de validação: ${error.message}`);
+          void req.abort();
+        });
       });
 
       await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 });
       const rawHtml = await page.content();
       await browser.close();
+      await safeProxy.close();
 
       return this.processHtml(url, rawHtml, 'PUPPETEER');
     } catch (err: any) {
       if (browser) await browser.close();
+      if (safeProxy) await safeProxy.close();
+      if (err.message && err.message.includes('SSRF bloqueado')) {
+        throw err;
+      }
       console.warn('[Puppeteer] Falha na execução headless, recorrendo ao Cheerio:', err.message);
       return await this.scrapeWithCheerio(url);
     }
   }
 
   /**
-   * Extração via Firecrawl API (quando configurada chave) ou fallback
+   * Extração via Firecrawl API (quando configurada chave) ou fallback (C07)
    */
   private static async scrapeWithFirecrawl(url: string): Promise<ScrapeResult> {
+    const targetCheck = await validateSafeUrlAsync(url);
+    if (!targetCheck.safe) {
+      throw new Error(`SSRF bloqueado: ${targetCheck.reason}`);
+    }
+
     if (!env.FIRECRAWL_API_KEY) {
       console.info('[Firecrawl] Chave não configurada, executando Cheerio otimizado.');
       return await this.scrapeWithCheerio(url);
@@ -1030,9 +1059,21 @@ export class ScraperService {
   }
 
   /**
-   * Extração via Protocolo MCP (Model Context Protocol)
+   * Extração via Protocolo MCP (Model Context Protocol) com validação anti-SSRF (C07)
    */
   private static async scrapeWithMcp(url: string): Promise<ScrapeResult> {
+    const targetCheck = await validateSafeUrlAsync(url);
+    if (!targetCheck.safe) {
+      throw new Error(`SSRF bloqueado: ${targetCheck.reason}`);
+    }
+
+    if (env.MCP_SERVER_URL) {
+      const mcpCheck = validateSafeUrl(env.MCP_SERVER_URL);
+      if (!mcpCheck.safe) {
+        throw new Error(`SSRF bloqueado no servidor MCP: ${mcpCheck.reason}`);
+      }
+    }
+
     try {
       const response = await axios.post(
         `${env.MCP_SERVER_URL}/tools/fetch_page`,
@@ -1241,4 +1282,3 @@ export class ScraperService {
     return tags;
   }
 }
-

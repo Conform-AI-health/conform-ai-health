@@ -40,8 +40,11 @@ export class GeminiProvider implements IAIProvider {
 
       const ai = new GoogleGenAI({ apiKey });
 
-      // Pre-Execution Guardrails: Sanitização de entrada contra injeções de prompt
-      const sanitizedMarkdown = AIGuardrails.sanitizeInputPrompt(scrape.cleanMarkdown.substring(0, 10000)).sanitized;
+      // Pre-Execution Guardrails: Sanitização profunda e delimitação com Nonce dinâmico (C04)
+      const secureAudit = AIGuardrails.generateSecureAuditBlock(
+        scrape.cleanMarkdown.substring(0, 12000),
+        scrape.url
+      );
       const groundingInstructions = AIGuardrails.buildGroundingPromptInstructions(agentContext.activeNorms);
 
       const relevantNorms = agentContext.activeNorms
@@ -57,8 +60,8 @@ export class GeminiProvider implements IAIProvider {
       const prompt = `CONTEÚDO AUDITADO:
 Título: ${scrape.title}
 URL: ${scrape.url}
-Markdown da Página:
-${sanitizedMarkdown}
+
+${secureAudit.secureBlock}
 
 NORMAS VINCULADAS AO AGENTE:
 ${relevantNorms}
@@ -105,7 +108,18 @@ Retorne o resultado estritamente em formato JSON estruturado conforme o seguinte
       if (responseText.includes('```')) {
         responseText = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
       }
-      const parsed = JSON.parse(responseText);
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(responseText);
+      } catch {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('A resposta gerada pelo modelo Gemini não contém um JSON válido.');
+        }
+      }
 
       const usage: any = (response as any).usageMetadata || {};
       const promptTokens = usage.promptTokenCount || Math.ceil(prompt.length / 4);

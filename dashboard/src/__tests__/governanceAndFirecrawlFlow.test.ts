@@ -225,6 +225,7 @@ describe('Governança de IA & Auditoria de Módulos (Firecrawl + Tags + SHA-256)
   });
 
   it('5. ReconciliationEngine deve integrar a Skill comportamental e normas dinâmicas na reconciliação', async () => {
+    ReconciliationEngine.setActiveProvider('heuristic');
     const scrapeMock = {
       url: mockUrl,
       title: 'Clínica Dermatológica Teste',

@@ -4,6 +4,7 @@ import { CircuitBreaker } from '../../shared/circuitBreaker.js';
 import { AIGuardrails } from '../../shared/aiGuardrails.js';
 import { ScrapeResult } from '../scraperService.js';
 import { AgentContext, ReconciliationOutput, reconciliationOutputSchema } from '../../shared/reconciliationTypes.js';
+import { safeHttpPostJson } from '../../shared/security.js';
 import { IAIProvider, AIProviderHealth, AIProviderType } from './aiProvider.interface.js';
 
 export class OllamaProvider implements IAIProvider {
@@ -34,7 +35,10 @@ export class OllamaProvider implements IAIProvider {
         .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
         .join('\n');
 
-      const sanitizedMarkdown = AIGuardrails.sanitizeInputPrompt(scrape.cleanMarkdown.substring(0, 4000)).sanitized;
+      const secureAudit = AIGuardrails.generateSecureAuditBlock(
+        scrape.cleanMarkdown.substring(0, 6000),
+        scrape.url
+      );
       const groundingInstructions = AIGuardrails.buildGroundingPromptInstructions(agentContext.activeNorms);
 
       const resolvedSystemPrompt = agentContext.systemPrompt.includes('{normasVigentesDoEscopo}')
@@ -49,12 +53,11 @@ ${groundingInstructions}
 NORMAS VINCULADAS AO AGENTE:
 ${relevantNorms}
 
-TEXTO A AUDITAR:
-${sanitizedMarkdown}
+${secureAudit.secureBlock}
 
 Retorne APENAS um JSON válido no formato:
 {
-  "verdict": "CONFORME" | "PARCIALMENTE_CONFORME" | "NAO_CONFORME",
+  "verdict": "CONFORME" | "PARCIALMENTE_CONFORME" | "NAO_CONFORME" | "INCONCLUSIVO",
   "score": number,
   "summary": string,
   "violations": [
@@ -69,7 +72,7 @@ Retorne APENAS um JSON válido no formato:
 }
 `;
 
-      const response = await axios.post(
+      const response = await safeHttpPostJson(
         `${ollamaUrl}/api/generate`,
         {
           model,
@@ -80,8 +83,22 @@ Retorne APENAS um JSON válido no formato:
         { timeout: 30000 }
       );
 
-      const jsonText = response.data?.response || '{}';
-      const parsed = JSON.parse(jsonText);
+      let jsonText = response.data?.response || '{}';
+      if (jsonText.includes('```')) {
+        jsonText = jsonText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      }
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch {
+        const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('A resposta gerada pelo modelo Ollama não contém um JSON válido.');
+        }
+      }
 
       const promptTokens = response.data?.prompt_eval_count || Math.ceil(prompt.length / 4);
       const completionTokens = response.data?.eval_count || Math.ceil(jsonText.length / 4);
@@ -108,7 +125,7 @@ Retorne APENAS um JSON válido no formato:
       'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica com base no catálogo normativo dinâmico.';
 
     try {
-      const response = await axios.post(
+      const response = await safeHttpPostJson(
         `${ollamaUrl}/api/generate`,
         {
           model,

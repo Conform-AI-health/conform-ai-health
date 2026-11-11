@@ -103,7 +103,13 @@ export class TelemetryController {
           ? Number(((totalHumanResolvedViolations / totalViolationsReported) * 100).toFixed(1))
           : 0;
 
-      // 8. Taxa de Falhas por Modelo
+      // 8. Métricas de Notificações por E-mail (Telemetria & Mensageria)
+      const emailLogs = recentLogs.filter((l) => l.module === 'EMAIL_NOTIFICATION');
+      const emailSentCount = emailLogs.filter((l) => l.level === 'INFO').length;
+      const emailFailedCount = emailLogs.filter((l) => l.level === 'WARN' || l.level === 'ERROR').length;
+      const emailDeliveryRate = emailLogs.length > 0 ? Number(((emailSentCount / emailLogs.length) * 100).toFixed(1)) : 100;
+
+      // 9. Taxa de Falhas por Modelo
       const modelUsageCounts: Record<string, { total: number; failures: number }> = {
         gemini: { total: 0, failures: 0 },
         ollama: { total: 0, failures: 0 },
@@ -198,6 +204,13 @@ export class TelemetryController {
           evidenceMissingRate,
           invalidCitationsRate,
           humanAiDivergenceRate,
+          // Notificações por E-mail (Telemetria)
+          emailNotifications: {
+            totalAttempted: emailLogs.length,
+            sentTotal: emailSentCount,
+            failedTotal: emailFailedCount,
+            deliveryRate: emailDeliveryRate,
+          },
         },
         modelFailureRates,
         promptVersionHistory,
