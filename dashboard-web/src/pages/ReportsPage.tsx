@@ -134,6 +134,7 @@ export const ReportsPage: React.FC = () => {
             <option value="CONFORME">🟢 Conforme</option>
             <option value="PARCIALMENTE_CONFORME">🟡 Parcialmente Conforme</option>
             <option value="NAO_CONFORME">🔴 Não Conforme</option>
+            <option value="INCONCLUSIVO">⚪ Inconclusivo (Revisão)</option>
           </select>
         </div>
       </div>
@@ -169,6 +170,23 @@ export const ReportsPage: React.FC = () => {
               reports.map((r) => {
                 const isConforme = r.verdict === 'CONFORME';
                 const isParcial = r.verdict === 'PARCIALMENTE_CONFORME';
+                const isInconclusivo = r.verdict === 'INCONCLUSIVO';
+
+                const badgeClass = isConforme
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : isParcial
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  : isInconclusivo
+                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                  : 'bg-red-500/10 text-red-400 border-red-500/20';
+
+                const dotClass = isConforme
+                  ? 'bg-emerald-400'
+                  : isParcial
+                  ? 'bg-amber-400'
+                  : isInconclusivo
+                  ? 'bg-sky-400'
+                  : 'bg-red-400';
 
                 return (
                   <tr key={r.id} className="hover:bg-slate-900/50 transition">
@@ -185,19 +203,9 @@ export const ReportsPage: React.FC = () => {
                     </td>
                     <td className="py-3.5 px-4">
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          isConforme
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : isParcial
-                            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                            : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                        }`}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeClass}`}
                       >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            isConforme ? 'bg-emerald-400' : isParcial ? 'bg-amber-400' : 'bg-red-400'
-                          }`}
-                        ></span>
+                        <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`}></span>
                         {r.verdict}
                       </span>
                     </td>

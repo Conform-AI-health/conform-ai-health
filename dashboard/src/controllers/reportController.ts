@@ -65,7 +65,7 @@ export class ReportController {
       res.status(200).json({
         data: reports.map((r) => ({
           ...r,
-          targetUrl: r.targetUrl || 'https://conform-ia.med.br',
+          targetUrl: r.targetUrl || 'URL não informada',
           summary: r.summary || 'Laudo de conformidade deontológica.',
           client: r.client || {
             id: r.clientId || 'avulso',
@@ -138,8 +138,8 @@ export class ReportController {
           totalTokens: report.totalTokens ?? 0,
           sourcesUsed: report.sourcesUsed,
           aiModelUsed: report.aiModelUsed || 'gemini-3.5-flash',
-          groundingScore: report.groundingScore ?? 100,
-          hallucinationRisk: (report.hallucinationRisk as any) || 'NONE',
+          groundingScore: report.groundingScore ?? null,
+          hallucinationRisk: (report.hallucinationRisk as any) || 'NOT_EVALUATED',
           guardrailsApplied: report.guardrailsApplied ?? false,
           hallucinationsInterceptedCount: 0,
         },
