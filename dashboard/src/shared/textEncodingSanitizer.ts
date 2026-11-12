@@ -8,9 +8,19 @@
 
 function matchCase(original: string, standardReplacement: string): string {
   if (!original || !standardReplacement) return standardReplacement;
-  const firstChar = original[0];
-  const isFirstUpper = firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase();
-  const isAllUpper = original.length > 1 && original === original.toUpperCase();
+
+  // Localiza a primeira letra alfabética para determinar com precisão a caixa alta/baixa
+  let firstAlpha = '';
+  for (const ch of original) {
+    if (/[a-zA-ZáéíóúâêîôûãõçÁÉÍÓÚÂÊÎÔÛÃÕÇ]/.test(ch)) {
+      firstAlpha = ch;
+      break;
+    }
+  }
+
+  const isFirstUpper = Boolean(firstAlpha && firstAlpha === firstAlpha.toUpperCase());
+  const lettersOnly = original.replace(/[^a-zA-ZáéíóúâêîôûãõçÁÉÍÓÚÂÊÎÔÛÃÕÇ]/g, '');
+  const isAllUpper = lettersOnly.length > 1 && lettersOnly === lettersOnly.toUpperCase();
 
   if (isAllUpper) {
     return standardReplacement.toUpperCase();
@@ -181,8 +191,47 @@ export class TextEncodingSanitizer {
     [/\bM[^\w\s]?dica\b/gi, (m) => matchCase(m, 'médica')],
     [/\bM[^\w\s]?dicas\b/gi, (m) => matchCase(m, 'médicas')],
     [/\bSa[^\w\s]?de\b/gi, (m) => matchCase(m, 'saúde')],
+
+    // Órgãos e Órgão (suporta início com \uFFFD,  ou sem o 'o' inicial)
+    [/(?<=\s|^|[^\w])(?:[^\w\s]|[\uFFFD])?rg(?:[^\w\s]|[\uFFFD])?os\b/gi, (m) => matchCase(m, 'órgãos')],
+    [/(?<=\s|^|[^\w])(?:[^\w\s]|[\uFFFD])?rg(?:[^\w\s]|[\uFFFD])?o\b/gi, (m) => matchCase(m, 'órgão')],
     [/\b[OÓoó]rg[^\w\s]?os\b/gi, (m) => matchCase(m, 'órgãos')],
     [/\b[OÓoó]rg[^\w\s]?o\b/gi, (m) => matchCase(m, 'órgão')],
+
+    // Público / Pública / Públicos / Públicas
+    [/\bp(?:[^\w\s]|[\uFFFD])?blicos\b/gi, (m) => matchCase(m, 'públicos')],
+    [/\bp(?:[^\w\s]|[\uFFFD])?blico\b/gi, (m) => matchCase(m, 'público')],
+    [/\bp(?:[^\w\s]|[\uFFFD])?blicas\b/gi, (m) => matchCase(m, 'públicas')],
+    [/\bp(?:[^\w\s]|[\uFFFD])?blica\b/gi, (m) => matchCase(m, 'pública')],
+
+    // Administração e Administrações (suporta com 1 ou 2 caracteres corrompidos, ou caracteres omitidos)
+    [/\badministra(?:[^\w\s]|[\uFFFD]){0,2}o\b/gi, (m) => matchCase(m, 'administração')],
+    [/\badministra(?:[^\w\s]|[\uFFFD]){0,2}es\b/gi, (m) => matchCase(m, 'administrações')],
+
+    // Judiciário / Judiciária
+    [/\bjudici(?:[^\w\s]|[\uFFFD])?rios\b/gi, (m) => matchCase(m, 'judiciários')],
+    [/\bjudici(?:[^\w\s]|[\uFFFD])?rio\b/gi, (m) => matchCase(m, 'judiciário')],
+    [/\bjudici(?:[^\w\s]|[\uFFFD])?rias\b/gi, (m) => matchCase(m, 'judiciárias')],
+    [/\bjudici(?:[^\w\s]|[\uFFFD])?ria\b/gi, (m) => matchCase(m, 'judiciária')],
+
+    // Ministério / Ministérios
+    [/\bminist(?:[^\w\s]|[\uFFFD])?rios\b/gi, (m) => matchCase(m, 'ministérios')],
+    [/\bminist(?:[^\w\s]|[\uFFFD])?rio\b/gi, (m) => matchCase(m, 'ministério')],
+
+    // Outros termos do vocabulário normativo e deontológico
+    [/\brelat(?:[^\w\s]|[\uFFFD])?rios\b/gi, (m) => matchCase(m, 'relatórios')],
+    [/\brelat(?:[^\w\s]|[\uFFFD])?rio\b/gi, (m) => matchCase(m, 'relatório')],
+    [/\bobrigat(?:[^\w\s]|[\uFFFD])?ri(o|a|os|as)\b/gi, (m) => matchCase(m, m.toLowerCase().includes('as') ? 'obrigatórias' : m.toLowerCase().includes('os') ? 'obrigatórios' : m.toLowerCase().endsWith('a') ? 'obrigatória' : 'obrigatório')],
+    [/\bnecess(?:[^\w\s]|[\uFFFD])?ri(o|a|os|as)\b/gi, (m) => matchCase(m, m.toLowerCase().includes('as') ? 'necessárias' : m.toLowerCase().includes('os') ? 'necessários' : m.toLowerCase().endsWith('a') ? 'necessária' : 'necessário')],
+    [/\bsecret(?:[^\w\s]|[\uFFFD])?ri(o|a|os|as)\b/gi, (m) => matchCase(m, m.toLowerCase().includes('as') ? 'secretárias' : m.toLowerCase().includes('os') ? 'secretários' : m.toLowerCase().endsWith('a') ? 'secretária' : 'secretário')],
+    [/\bpr(?:[^\w\s]|[\uFFFD])?pri(o|a|os|as)\b/gi, (m) => matchCase(m, m.toLowerCase().includes('as') ? 'próprias' : m.toLowerCase().includes('os') ? 'próprios' : m.toLowerCase().endsWith('a') ? 'própria' : 'próprio')],
+    [/\bpol(?:[^\w\s]|[\uFFFD])?tic(o|a|os|as)\b/gi, (m) => matchCase(m, m.toLowerCase().includes('as') ? 'políticas' : m.toLowerCase().includes('os') ? 'políticos' : m.toLowerCase().endsWith('a') ? 'política' : 'político')],
+    [/\becon(?:[^\w\s]|[\uFFFD])?mic(o|a|os|as)\b/gi, (m) => matchCase(m, m.toLowerCase().includes('as') ? 'econômicas' : m.toLowerCase().includes('os') ? 'econômicos' : m.toLowerCase().endsWith('a') ? 'econômica' : 'econômico')],
+    [/\bcl(?:[^\w\s]|[\uFFFD])?nic(o|a|os|as)\b/gi, (m) => matchCase(m, m.toLowerCase().includes('as') ? 'clínicas' : m.toLowerCase().includes('os') ? 'clínicos' : m.toLowerCase().endsWith('a') ? 'clínica' : 'clínico')],
+    [/\bdiagn(?:[^\w\s]|[\uFFFD])?stic(o|a|os|as)\b/gi, (m) => matchCase(m, m.toLowerCase().includes('as') ? 'diagnósticas' : m.toLowerCase().includes('os') ? 'diagnósticos' : m.toLowerCase().endsWith('a') ? 'diagnóstica' : 'diagnóstico')],
+    [/\bc(?:[^\w\s]|[\uFFFD])?dig(o|os)\b/gi, (m) => matchCase(m, m.toLowerCase().endsWith('s') ? 'códigos' : 'código')],
+    [/\bn(?:[^\w\s]|[\uFFFD])?mer(o|os)\b/gi, (m) => matchCase(m, m.toLowerCase().endsWith('s') ? 'números' : 'número')],
+
     [/\b[Uu]ni[^\w\s]?o\b/gi, (m) => matchCase(m, 'união')],
     [/\b[Nn][^\w\s\d]?\s*([0-9]+)/gi, (match, num) => match[0] === 'N' ? `Nº ${num}` : `nº ${num}`],
   ];

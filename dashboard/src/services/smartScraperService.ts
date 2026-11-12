@@ -204,7 +204,7 @@ export class SmartScraperService {
     }
 
     // Padrão de rotas regulatórias e termos de menus institucionais
-    const regulatoryMenuRegex = /(resolu[cç][oõ]es|pareceres?|c[aâ]mara[_-]?t[eé]cnica|normas?|legisla[cç][aã]o|atos?|publica[cç][oõ]es|boletim|diretrizes?)/i;
+    const regulatoryMenuRegex = /(resolu[cç][oõ]es|pareceres?|c[aâ]mara[_-]?t[eé]cnica|normas?|legisla[cç][aã]o|\batos?\b|publica[cç][oõ]es|boletim|diretrizes?)/i;
 
     $('header a, nav a, ul.menu a, ul.sub-menu a, .dropdown-menu a, .nav-item a, a[href*="resoluc"], a[href*="parecer"], a[href*="norma"]').each((_, el) => {
       const href = $(el).attr('href') || '';

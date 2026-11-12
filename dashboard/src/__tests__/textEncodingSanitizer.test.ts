@@ -135,4 +135,17 @@ describe('TextEncodingSanitizer - Normalização Universal de Acentuação e Enc
       expect(result.cleanMarkdown).toContain('proteção de dados');
     });
   });
+
+  describe('7. Caso Real: Dispositivos de Lei com Caracteres de Substituição (\uFFFD / )', () => {
+    it('deve restaurar a acentuação completa de dispositivos legais e órgãos da administração pública', () => {
+      const inputCorrupted =
+        'I - os rgos pblicos integrantes da administrao direta dos Poderes Executivo, Legislativo, incluindo as Cortes de Contas, e Judicirio e do Ministrio Pblico;';
+
+      const expected =
+        'I - os órgãos públicos integrantes da administração direta dos Poderes Executivo, Legislativo, incluindo as Cortes de Contas, e Judiciário e do Ministério Público;';
+
+      const result = TextEncodingSanitizer.sanitizeAndRepairText(inputCorrupted);
+      expect(result).toBe(expected);
+    });
+  });
 });
