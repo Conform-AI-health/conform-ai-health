@@ -179,6 +179,7 @@ describe('SmartScraperService & Ingestão Inteligente de Normas (T35)', () => {
       const result = await SmartScraperService.executeSmartScrape({
         urlAlvo: 'https://portal.cfm.org.br/novas-resolucoes',
         tags: ['CFM', 'SAUDE_DIGITAL'],
+        deepCrawl: false,
       });
 
       expect(result.success).toBe(true);
@@ -240,6 +241,7 @@ describe('SmartScraperService & Ingestão Inteligente de Normas (T35)', () => {
 
       const result = await SmartScraperService.executeSmartScrape({
         urlAlvo: 'https://gov.br/saude/legislacao',
+        deepCrawl: false,
       });
 
       expect(result.success).toBe(true);
@@ -282,6 +284,7 @@ describe('SmartScraperService & Ingestão Inteligente de Normas (T35)', () => {
         urlAlvo: 'https://anvisa.gov.br/dispositivos-medicos',
         notifyOnNewNorms: true,
         notificationEmail: 'compliance@conformia.med.br',
+        deepCrawl: false,
       });
 
       expect(result.success).toBe(true);

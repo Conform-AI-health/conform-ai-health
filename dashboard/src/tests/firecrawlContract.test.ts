@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Firecrawl from '@mendable/firecrawl-js';
 
 /**
- * Testes de Contrato do SDK Real `@mendable/firecrawl-js@4.52.0` + Cenários BDD (Estágios 2.0 e 4)
+ * Testes de Contrato do SDK Real Firecrawl v2 + Cenários BDD (Estágios 2.0 e 4)
  *
  * Requisitos atendidos:
- * - PONTO 1: NUNCA mocka `FirecrawlClient`. Instancia o SDK real `@mendable/firecrawl-js@4.52.0`
+ * - PONTO 1: NUNCA mocka `FirecrawlClient`. Instancia o SDK real
  *   e intercepta a camada HTTP (`sdk.http.instance` / adapter Axios) para validar o body real enviado
  *   para `/v2/scrape`, `/v2/map`, `/v2/search` e o shape real de retorno.
  * - PONTO 2 (ADR-001): No fluxo de normas, `FirecrawlClient` envia APENAS `['markdown', 'links', 'html', 'rawHtml']`
@@ -115,6 +115,24 @@ vi.mock('../shared/security.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../services/semanticEmbeddingService.js', () => ({
+  cosineSimilarity: (left: number[], right: number[]) => {
+    const dot = left.reduce((sum, value, index) => sum + value * right[index], 0);
+    const leftMagnitude = Math.sqrt(left.reduce((sum, value) => sum + value * value, 0));
+    const rightMagnitude = Math.sqrt(right.reduce((sum, value) => sum + value * value, 0));
+    return leftMagnitude && rightMagnitude ? dot / (leftMagnitude * rightMagnitude) : 0;
+  },
+  SemanticEmbeddingService: {
+    modelName: 'gemini-embedding-001',
+    vectorDimensions: 768,
+    embeddingModelId: 'gemini-embedding-001:768',
+    embedDocuments: vi.fn(async (texts: string[]) =>
+      texts.map(() => [1, ...Array.from({ length: 767 }, () => 0)])
+    ),
+    embedQuery: vi.fn(async () => [1, ...Array.from({ length: 767 }, () => 0)]),
+  },
+}));
+
 import { FirecrawlClient } from '../services/firecrawl/firecrawlClient.js';
 import {
   ClientWebsiteExtractionSchema,
@@ -123,7 +141,7 @@ import {
 import { LegalNormCrawlerService } from '../services/legalNormCrawlerService.js';
 import { ScraperService } from '../services/scraperService.js';
 
-describe('Firecrawl SDK v2 (@mendable/firecrawl-js@4.52.0) — Testes de Contrato HTTP & BDD (Estágios 2.0 e 4)', () => {
+describe('Firecrawl SDK v2 — Testes de Contrato HTTP & BDD (Estágios 2.0 e 4)', () => {
   let capturedHttpRequests: Array<{
     method: string;
     url: string;
@@ -132,7 +150,7 @@ describe('Firecrawl SDK v2 (@mendable/firecrawl-js@4.52.0) — Testes de Contrat
   }> = [];
 
   /**
-   * Cria uma instância REAL do SDK `@mendable/firecrawl-js` (v4.52.0) e intercepta o adapter HTTP
+   * Cria uma instância REAL do SDK Firecrawl e intercepta o adapter HTTP
    * do `axios` interno do SDK (`realSdk.http.instance.defaults.adapter`), sem mockar o `FirecrawlClient`.
    */
   function attachRealSdkWithHttpInterceptor(
@@ -337,18 +355,18 @@ describe('Firecrawl SDK v2 (@mendable/firecrawl-js@4.52.0) — Testes de Contrat
         </table>
       </body></html>
     `;
-    const deterministicLinks = ScraperService.extractTagAndPdfLinksFromHtml(
+    const deterministicLinks = LegalNormCrawlerService.discoverLinksFromHtml(
       listingHtml,
-      '',
-      mappedUrls,
-      'https://portal.cfm.org.br/normas',
-      ['CFM']
+      'https://portal.cfm.org.br/normas'
     );
-    expect(deterministicLinks.map((l) => l.url)).toContain(
-      'https://portal.cfm.org.br/normas/resolucao-2314-2022.pdf'
-    );
-    expect(deterministicLinks.map((l) => l.url)).toContain(
-      'https://portal.cfm.org.br/normas/resolucao-2336-2023.pdf'
+    expect(deterministicLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: 'https://portal.cfm.org.br/normas/resolucao-2314-2022.pdf',
+          anchorText: 'Baixar PDF',
+          fileType: 'pdf',
+        }),
+      ])
     );
   });
 

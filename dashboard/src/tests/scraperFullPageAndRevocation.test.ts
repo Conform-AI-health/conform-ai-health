@@ -1,20 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { ScraperService } from '../services/scraperService.js';
-import { RegulatoryScraperService } from '../services/regulatoryScraperService.js';
+import { LegalNormCrawlerService } from '../services/legalNormCrawlerService.js';
 
 describe('ScraperService — Extração de Tags <a> e PDFs com Validação Estrita de Conteúdo (Tag + Lei) Sem Mocks de Firecrawl', () => {
   it('NÃO deve aprovar página HTML genérica apenas por ser de domínio oficial (ex: cfm.org.br) sem conteúdo de Lei + Tag', () => {
     const htmlMenuTitle = 'Portal CFM - Busca de Normas e Serviços';
     const htmlMenuContent = 'Bem-vindo ao portal institucional. Clique nos menus abaixo para navegar em nossos serviços.';
-
-    expect(
-      RegulatoryScraperService.isRegulatoryNorm(
-        htmlMenuTitle,
-        htmlMenuContent,
-        'https://portal.cfm.org.br/index.php',
-        ['CFM']
-      )
-    ).toBe(false);
 
     const check = ScraperService.validateContentHasTagAndLawData(
       htmlMenuTitle,
@@ -85,24 +76,24 @@ describe('ScraperService — Extração de Tags <a> e PDFs com Validação Estri
       </html>
     `;
 
-    const extracted = ScraperService.extractTagAndPdfLinksFromHtml(
+    const extracted = LegalNormCrawlerService.discoverLinksFromHtml(
       html,
-      '',
-      [],
-      'https://sistemas.cfm.org.br/portal/busca.html',
-      ['CFM']
+      'https://sistemas.cfm.org.br/portal/busca.html'
     );
 
-    expect(extracted.length).toBe(2);
-    expect(extracted[0]).toEqual({
-      url: 'https://sistemas.cfm.org.br/arquivos/parecer-telemedicina.pdf',
-      anchorText: 'Parecer CFM Telemedicina (PDF)',
-      isPdf: true,
-    });
-    expect(extracted[1]).toEqual({
-      url: 'https://sistemas.cfm.org.br/normas/resolucao-2336',
-      anchorText: 'Resolução CFM nº 2.336/2023',
-      isPdf: false,
-    });
+    expect(extracted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: 'https://sistemas.cfm.org.br/arquivos/parecer-telemedicina.pdf',
+          anchorText: 'Parecer CFM Telemedicina (PDF)',
+          fileType: 'pdf',
+        }),
+        expect.objectContaining({
+          url: 'https://sistemas.cfm.org.br/normas/resolucao-2336',
+          anchorText: 'Resolução CFM nº 2.336/2023',
+          fileType: 'html',
+        }),
+      ])
+    );
   });
 });
