@@ -3,32 +3,88 @@ import crypto from 'crypto';
 import axios from 'axios';
 
 // Mock do Prisma usando vi.hoisted
-const { mockModuleScrapeData, mockScrapedPages, mockAgentModules } = vi.hoisted(() => ({
+const { mockModuleScrapeData, mockNorms, mockAgentModules } = vi.hoisted(() => ({
   mockModuleScrapeData: [] as any[],
-  mockScrapedPages: [
+  mockNorms: [
     {
-      id: 'page-1',
-      url: 'https://normas.conformia.med.br/cfm-2336-art-01',
-      title: '[CFM] Res. CFM 2.336/23 - Identificação Obrigatória do Médico',
-      cleanMarkdown: '# Res. CFM 2.336/23 - Identificação Obrigatória do Médico',
-      tags: ['CFM', 'cfm', 'identificação'],
-      createdAt: new Date(),
+      id: 'norm-1',
+      normId: 'CFM-RES-2336-2023',
+      orgao: 'CFM',
+      status: 'VIGENTE',
+      ementaHigienizada: '[CFM] Res. CFM 2.336/23 - Identificação Obrigatória do Médico',
+      tags: [
+        'CFM',
+        'cfm',
+        'identificação',
+        'promoção',
+        'desconto',
+        'sorteio',
+        'black friday',
+        'garantido',
+        '100%',
+      ],
+      chunks: [
+        {
+          id: 'chunk-1',
+          normId: 'norm-1',
+          normCode: 'CFM-RES-2336-2023',
+          chunkIndex: 1,
+          conteudoChunk: 'Identificação obrigatória do médico.',
+          contextoSemantico: JSON.stringify({
+            article: 'Art. 1º',
+            heading_context: 'Identificação profissional',
+            embedding_model: 'gemini-embedding-001:2',
+          }),
+          embedding: [1, 0],
+          tags: ['CFM'],
+        },
+        {
+          id: 'chunk-2',
+          normId: 'norm-1',
+          normCode: 'CFM-RES-2336-2023',
+          chunkIndex: 2,
+          conteudoChunk:
+            'É vedada a publicidade de serviços médicos com fins de mercantilização, tais como descontos, black friday, sorteios e cupons promocionais.',
+          contextoSemantico: JSON.stringify({
+            article: 'Art. 9º',
+            heading_context: 'Publicidade promocional',
+            embedding_model: 'gemini-embedding-001:2',
+          }),
+          embedding: [1, 0],
+          tags: ['CFM', 'PUBLICIDADE', 'desconto', 'promoção', 'sorteio'],
+        },
+      ],
     },
     {
-      id: 'page-2',
-      url: 'https://normas.conformia.med.br/lgpd-saude-art-11',
-      title: '[LGPD] LGPD Art. 11 - Dados Sensíveis em Saúde',
-      cleanMarkdown: '# LGPD Art. 11 - Dados Sensíveis em Saúde',
+      id: 'norm-2',
+      normId: 'LGPD-LEI-13709-2018',
+      orgao: 'LGPD',
+      status: 'VIGENTE',
+      ementaHigienizada: '[LGPD] LGPD Art. 11 - Dados Sensíveis em Saúde',
       tags: ['LGPD', 'lgpd', 'privacidade'],
-      createdAt: new Date(),
+      chunks: [{
+        id: 'chunk-lgpd-1',
+        normId: 'norm-2',
+        normCode: 'LGPD-LEI-13709-2018',
+        chunkIndex: 1,
+        conteudoChunk: 'Tratamento de dados pessoais sensíveis.',
+        contextoSemantico: JSON.stringify({
+          article: 'Art. 11',
+          heading_context: 'Dados pessoais sensíveis',
+          embedding_model: 'gemini-embedding-001:2',
+        }),
+        embedding: [1, 0],
+        tags: ['LGPD'],
+      }],
     },
     {
-      id: 'page-revogada',
-      url: 'https://normas.conformia.med.br/cfm-1974-revogada',
-      title: '[CFM] Res. CFM 1.974/11 - Manual de Publicidade Médica (Revogado)',
-      cleanMarkdown: '# Res. CFM 1.974/11 - Revogado expressamente pela Resolução 2.336/23',
+      id: 'norm-revogada',
+      normId: 'CFM-RES-1974-2011',
+      orgao: 'CFM',
+      status: 'REVOGADA',
+      ementaHigienizada: '[CFM] Res. CFM 1.974/11 - Manual de Publicidade Médica (Revogado)',
       tags: ['CFM', 'REVOGADO'],
-      createdAt: new Date(),
+      chunks: [{ conteudoChunk: 'Norma revogada.', tags: ['CFM', 'REVOGADO'] }],
     },
   ],
   mockAgentModules: [
@@ -60,14 +116,24 @@ vi.mock('../config/prisma.js', () => ({
       create: vi.fn().mockResolvedValue({ id: 'csd-1' }),
     },
     scrapedPage: {
+      findMany: vi.fn(),
+      count: vi.fn().mockResolvedValue(0),
+    },
+    norm: {
       findMany: vi.fn().mockImplementation(async ({ where }) => {
-        if (!where || !where.tags || !where.tags.hasSome) return mockScrapedPages;
         const searchTags = where.tags.hasSome.map((t: string) => t.toLowerCase());
-        return mockScrapedPages.filter((p) =>
-          p.tags.some((pt) => searchTags.includes(pt.toLowerCase()))
+        return mockNorms.filter((norm) =>
+          norm.status === 'VIGENTE' &&
+          norm.tags.some((tag) => searchTags.includes(tag.toLowerCase()))
         );
       }),
-      count: vi.fn().mockResolvedValue(mockScrapedPages.length),
+    },
+    normChunk: {
+      findMany: vi.fn().mockImplementation(async ({ where }) =>
+        mockNorms
+          .filter((norm) => where.normId.in.includes(norm.id))
+          .flatMap((norm) => norm.chunks)
+      ),
     },
     agentModule: {
       findFirst: vi.fn().mockImplementation(async ({ where }) => {
@@ -111,6 +177,18 @@ vi.mock('../config/prisma.js', () => ({
       return Promise.all(callback);
     }),
   },
+}));
+
+vi.mock('../services/semanticEmbeddingService.js', () => ({
+  SemanticEmbeddingService: {
+    modelName: 'gemini-embedding-001',
+    vectorDimensions: 2,
+    embeddingModelId: 'gemini-embedding-001:2',
+    embedQuery: vi.fn(async () => [1, 0]),
+    embedDocuments: vi.fn(async (texts: string[]) => texts.map(() => [1, 0])),
+  },
+  cosineSimilarity: (left: number[], right: number[]) =>
+    left.reduce((sum, value, index) => sum + value * right[index], 0),
 }));
 
 import { FirecrawlService } from '../services/firecrawlService.js';
@@ -175,6 +253,7 @@ describe('Governança de IA & Auditoria de Módulos (Firecrawl + Tags + SHA-256)
       tokensEstimatedRaw: 300,
       tokensEstimatedClean: 150,
       extractedEntities: {
+        extractionCompleted: true,
         crms: ['12345'],
         rqes: [],
         states: ['SP'],
@@ -195,6 +274,20 @@ describe('Governança de IA & Auditoria de Módulos (Firecrawl + Tags + SHA-256)
   it('4. NormsResolver deve resolver dinamicamente normas oficiais no banco de dados via Tags', async () => {
     const norms = await NormsResolver.resolveByTags(['cfm', 'lgpd']);
 
+    expect(prisma.scrapedPage.findMany).not.toHaveBeenCalled();
+    expect(prisma.norm.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'VIGENTE',
+          tags: { hasSome: expect.arrayContaining(['CFM', 'LGPD']) },
+        }),
+        select: expect.objectContaining({
+          chunks: expect.objectContaining({
+            select: expect.objectContaining({ conteudoChunk: true }),
+          }),
+        }),
+      })
+    );
     expect(norms.length).toBeGreaterThan(0);
     for (const norm of norms) {
       expect(norm.title).toBeTruthy();
@@ -234,6 +327,7 @@ describe('Governança de IA & Auditoria de Módulos (Firecrawl + Tags + SHA-256)
       tokensEstimatedRaw: 800,
       tokensEstimatedClean: 400,
       extractedEntities: {
+        extractionCompleted: true,
         crms: ['12345'],
         rqes: [],
         states: ['SP'],

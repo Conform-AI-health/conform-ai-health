@@ -1,6 +1,168 @@
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../config/prisma.js';
 import { NORMS_CATALOG } from '../data/normsCatalog.js';
+
+function getCatalogNormIdentifier(source: string, normCode: string, fallbackId: string): {
+  normId: string;
+  type: string;
+  number: string;
+  year: string;
+} {
+  const numberYear = normCode.match(/(\d[\d.]*)\s*\/\s*(\d{2,4})/);
+  const number =
+    source === 'LGPD'
+      ? '13709'
+      : numberYear?.[1].replace(/\D/g, '') || fallbackId.replace(/\D/g, '') || '0';
+  const rawYear = source === 'LGPD' ? '2018' : numberYear?.[2];
+  const year = rawYear ? (rawYear.length === 2 ? `20${rawYear}` : rawYear) : '0000';
+  const shortType = /\bRDC\b/i.test(normCode)
+    ? 'RDC'
+    : /\bRN\b/i.test(normCode)
+      ? 'RN'
+      : source === 'LGPD' || /\blei\b/i.test(normCode)
+        ? 'LEI'
+        : 'RES';
+  const type = shortType === 'RES' ? 'RESOLUCAO' : shortType;
+
+  return {
+    normId: `${source}-${shortType}-${number}-${year}`,
+    type,
+    number,
+    year,
+  };
+}
+
+async function seedNormsCatalog(): Promise<void> {
+  const groupedCatalog = new Map<string, typeof NORMS_CATALOG>();
+  for (const item of NORMS_CATALOG) {
+    const key = `${item.source}:${item.normCode}`;
+    const group = groupedCatalog.get(key) || [];
+    group.push(item);
+    groupedCatalog.set(key, group);
+  }
+
+  let seededNorms = 0;
+  let seededChunks = 0;
+  for (const group of groupedCatalog.values()) {
+    const representative = group[0];
+    const identifier = getCatalogNormIdentifier(
+      representative.source,
+      representative.normCode,
+      representative.id
+    );
+    const isRevoked = group.some((item) => item.validity.isRevoked);
+    const status = isRevoked ? 'REVOGADA' : 'VIGENTE';
+    const sourceUrl = `https://normas.conformia.med.br/${identifier.normId.toLowerCase()}`;
+    const tags = Array.from(
+      new Set([
+        representative.source.toUpperCase(),
+        ...group.flatMap((item) => item.keywords.map((keyword) => keyword.toUpperCase())),
+        status,
+        ...(isRevoked ? ['REVOGADO'] : ['RAG_READY', 'NORMAS_OFFICIAL']),
+      ])
+    );
+    const markdown = [
+      `# ${representative.normCode}`,
+      ...group.map(
+        (item) =>
+          `\n## ${item.article} - ${item.title}\n\n**Dispositivo Normativo:**\n${item.content}\n\n**Orientação Corretiva:**\n${item.correctiveGuidance}`
+      ),
+    ].join('\n');
+    const contentHash = crypto.createHash('sha256').update(markdown, 'utf8').digest('hex');
+    const existing = await prisma.norm.findFirst({ where: { normId: identifier.normId } });
+    const norm =
+      existing ||
+      (await prisma.norm.create({
+        data: {
+          normId: identifier.normId,
+          orgao: representative.source,
+          tipo: identifier.type,
+          numero: identifier.number,
+          ano: identifier.year,
+          status,
+          dataPublicacao: representative.validity.publishedAt,
+          ementaOriginal: representative.title,
+          ementaHigienizada: `${representative.normCode} - ${representative.title}`,
+          macroTema: 'Conformidade Regulatória e Normas Legais',
+          urlOriginal: sourceUrl,
+          urlPdfOriginal: null,
+          sha256Original: contentHash,
+          conteudoOriginalBruto: markdown,
+          conteudoHigienizado: markdown,
+          cleanMarkdown: markdown,
+          totalChunks: isRevoked ? 0 : group.length,
+          tokensEstimados: Math.ceil(markdown.length / 4),
+          tags,
+          metadadosRAG: JSON.stringify({
+            source_url: sourceUrl,
+            source: 'NORMS_CATALOG',
+            norm_type: identifier.type,
+            year: identifier.year,
+            status,
+            version: 1,
+          }),
+        },
+      }));
+
+    if (!existing) seededNorms++;
+    if (isRevoked) continue;
+
+    const existingChunks = await prisma.normChunk.count({ where: { normId: norm.id } });
+    if (existingChunks > 0) continue;
+
+    if (existing) {
+      await prisma.norm.update({
+        where: { id: norm.id },
+        data: { totalChunks: group.length },
+      });
+    }
+
+    await prisma.normChunk.createMany({
+      data: group.map((item, index) => {
+        const chunkText = `${item.content}\n\nOrientação Corretiva: ${item.correctiveGuidance}`;
+        const context = `${representative.normCode} | ${item.article} | ${item.title}`;
+        return {
+          normId: norm.id,
+          normCode: norm.normId,
+          chunkIndex: index + 1,
+          totalChunks: group.length,
+          conteudoChunk: chunkText,
+          tokensEstimados: Math.ceil(chunkText.length / 4),
+          caracteresCount: chunkText.length,
+          contextoSemantico: JSON.stringify({
+            heading_context: context,
+            article: item.article,
+            norm_title: representative.title,
+            source_url: sourceUrl,
+            source: 'NORMS_CATALOG',
+            embedding_model: 'PENDING',
+            content_hash: crypto.createHash('sha256').update(chunkText, 'utf8').digest('hex'),
+          }),
+          overlapTokens: 0,
+          maxChunkTokens: 650,
+          embedding: [],
+          tags: Array.from(
+            new Set([...tags, ...item.keywords.map((keyword) => keyword.toUpperCase())])
+          ),
+        };
+      }),
+    });
+    seededChunks += group.length;
+  }
+
+  const obsoleteCatalogUrls = NORMS_CATALOG.map(
+    (item) => `https://normas.conformia.med.br/${item.id.toLowerCase()}`
+  );
+  await prisma.scrapedPage.deleteMany({ where: { url: { in: obsoleteCatalogUrls } } });
+
+  console.log(
+    `📚 [Seed] ${seededNorms} documento(s) e ${seededChunks} chunk(s) do catálogo provisionados em norms/norms_chunk.`
+  );
+  if (seededChunks > 0) {
+    console.warn('[Seed] Os chunks novos estão pendentes de embedding semântico. Execute `npm run rag:reindex` no dashboard.');
+  }
+}
 
 /**
  * 1. Executa migrações de dados, normalizações de schema e autocura estrutural (C03)
@@ -63,7 +225,7 @@ export async function runDatabaseMigrations(): Promise<void> {
   });
 
   if (countClinicPages > 0) {
-    console.log(`ℹ️ [Migration:T27] ${countClinicPages} página(s) de clínica detectadas na coleção de normas. Execute 'npm run db:cleanup' para higienização manual com backup.`);
+    console.log(`ℹ️ [Migration:T27] ${countClinicPages} página(s) de clínica detectadas em scraped_pages. Execute 'npm run db:cleanup' para higienização manual com backup.`);
   }
 
   // C03: NUNCA associar laudos antigos a clientes arbitrários nem injetar URLs fictícias.
@@ -115,30 +277,8 @@ export async function runInitialSeed(): Promise<void> {
     console.log(`ℹ️ [Seed] Administrador existente detectado (${adminEmail}). Preservando credenciais e configurações atuais.`);
   }
 
-  // 2.2 Repositório de Normas Oficiais no MongoDB (scraped_pages)
-  const normsInDb = await prisma.scrapedPage.count();
-  if (normsInDb === 0) {
-    console.log('📚 [Seed] Provisionando Catálogo de Normas Oficiais no MongoDB (scraped_pages)...');
-    for (const norm of NORMS_CATALOG) {
-      await prisma.scrapedPage.upsert({
-        where: { url: `https://normas.conformia.med.br/${norm.id.toLowerCase()}` },
-        update: {
-          title: `[${norm.source}] ${norm.normCode} - ${norm.title}`,
-          cleanMarkdown: `# ${norm.normCode} - ${norm.article}: ${norm.title}\n\n**Dispositivo Normativo:**\n${norm.content}\n\n**Orientação Deontológica:**\n${norm.correctiveGuidance}`,
-          tags: [norm.source, norm.source.toLowerCase(), ...norm.keywords.map((k) => k.toLowerCase())],
-        },
-        create: {
-          url: `https://normas.conformia.med.br/${norm.id.toLowerCase()}`,
-          title: `[${norm.source}] ${norm.normCode} - ${norm.title}`,
-          cleanMarkdown: `# ${norm.normCode} - ${norm.article}: ${norm.title}\n\n**Dispositivo Normativo:**\n${norm.content}\n\n**Orientação Deontológica:**\n${norm.correctiveGuidance}`,
-          rawLength: norm.content.length,
-          tokensCount: Math.ceil(norm.content.length / 4),
-          tags: [norm.source, norm.source.toLowerCase(), ...norm.keywords.map((k) => k.toLowerCase())],
-        },
-      });
-    }
-    console.log(`✅ [Seed] Repositório de normas inicializado com ${NORMS_CATALOG.length} resoluções.`);
-  }
+  // 2.2 Repositório de Normas Oficiais nas coleções normativas usadas pelo RAG
+  await seedNormsCatalog();
 
   // 2.3 Definição do Agente Deontológico Padrão (Desacoplamento Normativo Dinâmico)
   await prisma.agentDefinition.upsert({

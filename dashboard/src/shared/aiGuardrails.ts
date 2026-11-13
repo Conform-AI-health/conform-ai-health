@@ -237,7 +237,7 @@ ${sanitized}
   public static verifyFactuality(
     evidenceText: string,
     scrapedMarkdown: string,
-    extractedEntities?: any
+    extractedEntities?: ScrapeResult['extractedEntities']
   ): { isGrounded: boolean; matchRatio: number; reason?: string } {
     if (!evidenceText || evidenceText.trim().length === 0) {
       return { isGrounded: false, matchRatio: 0, reason: 'Evidência textual vazia.' };
@@ -284,14 +284,14 @@ ${sanitized}
 
     if (hasCrmOrRqeAbsence) {
       if (cleanEvidence.includes('crm')) {
-        if (extractedEntities && Array.isArray(extractedEntities.crms) && extractedEntities.crms.length === 0) {
+        if (extractedEntities?.extractionCompleted && extractedEntities.crms.length === 0) {
           return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de ausência de CRM confirmada por varredura.' };
         }
         return { isGrounded: false, matchRatio: 0, reason: 'Alegação de ausência de CRM não pôde ser confirmada pelas entidades extraídas.' };
       }
 
       if (cleanEvidence.includes('rqe')) {
-        if (extractedEntities && Array.isArray(extractedEntities.rqes) && extractedEntities.rqes.length === 0) {
+        if (extractedEntities?.extractionCompleted && extractedEntities.rqes.length === 0) {
           return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de ausência de RQE confirmada por varredura.' };
         }
         return { isGrounded: false, matchRatio: 0, reason: 'Alegação de ausência de RQE não confirmada pelas entidades extraídas.' };
@@ -310,21 +310,21 @@ ${sanitized}
     // 2. Validação Fática de Infrações Específicas com base em flags do Extrator
     if (
       (cleanEvidence.includes('resultado') || cleanEvidence.includes('garantia') || cleanEvidence.includes('promessa') || cleanEvidence.includes('cura')) &&
-      extractedEntities?.hasGuaranteedResultMention
+      extractedEntities?.extractionCompleted && extractedEntities.hasGuaranteedResultMention
     ) {
       return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de promessa de resultado garantido confirmada.' };
     }
 
     if (
       (cleanEvidence.includes('promoção') || cleanEvidence.includes('desconto') || cleanEvidence.includes('comercial') || cleanEvidence.includes('preço') || cleanEvidence.includes('black friday')) &&
-      extractedEntities?.hasPromotionalPricing
+      extractedEntities?.extractionCompleted && extractedEntities.hasPromotionalPricing
     ) {
       return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de apelo comercial ou desconto confirmada.' };
     }
 
     if (
       (cleanEvidence.includes('antes') || cleanEvidence.includes('depois')) &&
-      extractedEntities?.hasBeforeAfterMention
+      extractedEntities?.extractionCompleted && extractedEntities.hasBeforeAfterMention
     ) {
       return { isGrounded: true, matchRatio: 1.0, reason: 'Comprovação fática de fotos ou menção a antes/depois confirmada.' };
     }

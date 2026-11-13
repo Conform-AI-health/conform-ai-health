@@ -63,14 +63,12 @@ URL: ${scrape.url}
 
 ${secureAudit.secureBlock}
 
-NORMAS VINCULADAS AO AGENTE:
+NORMAS RECUPERADAS:
 ${relevantNorms}
 
-${groundingInstructions}
-
 ENTIDADES DETECTADAS NO PROCESSAMENTO DA PÁGINA:
-- CRMs: ${scrape.extractedEntities.crms.join(', ') || 'Nenhum detectado'}
-- RQEs: ${scrape.extractedEntities.rqes.join(', ') || 'Nenhum detectado'}
+- CRMs: ${scrape.extractedEntities.extractionCompleted ? (scrape.extractedEntities.crms.join(', ') || 'Nenhum detectado') : 'Extração não confirmada'}
+- RQEs: ${scrape.extractedEntities.extractionCompleted ? (scrape.extractedEntities.rqes.join(', ') || 'Nenhum detectado') : 'Extração não confirmada'}
 - Estados (UF): ${scrape.extractedEntities.states.join(', ') || 'Nenhum detectado'}
 - Menção a Antes/Depois: ${scrape.extractedEntities.hasBeforeAfterMention}
 - Menção a Promoção/Descontos: ${scrape.extractedEntities.hasPromotionalPricing}

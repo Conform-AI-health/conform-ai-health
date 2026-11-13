@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { RuleSeverity, Verdict } from '@prisma/client';
 import { NormChunk } from '../data/normsCatalog.js';
-import { ResolvedNorm } from '../services/normsResolver.js';
+import { NormRetrievalDiagnostics, ResolvedNorm } from '../services/normsResolver.js';
 
 export const violationSchema = z.object({
   normArticle: z.string().describe('Artigo e parágrafo específico violado'),
@@ -41,4 +41,8 @@ export interface AgentContext {
   tags?: string[];
   activeNorms: NormChunk[];
   resolvedDbNorms?: ResolvedNorm[];
+  retrievalStatus?: string;
+  retrievalSource?: string;
+  retrievalCandidatesCount?: number;
+  retrievalDiagnostics?: NormRetrievalDiagnostics;
 }

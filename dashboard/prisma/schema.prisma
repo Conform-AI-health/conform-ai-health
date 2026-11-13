@@ -266,3 +266,60 @@ model AiModelConfig {
   @@map("ai_model_configs")
 }
 
+model Norm {
+  id                    String      @id @default(auto()) @map("_id") @db.ObjectId
+  normId                String      @unique // ex: CFM-RES-1-1957, CFM-PAR-1-1985
+  idNormaCfm           String?
+  orgao                 String      @default("CFM")
+  tipo                  String      // RESOLUCAO, PARECER, RECOMENDACAO, PORTARIA, LEI
+  numero                String
+  ano                   String
+  status                String      @default("VIGENTE") // VIGENTE, REVOGADA
+  dataPublicacao        String?
+  ementaOriginal        String?     // Versão 1: Ementa bruta original
+  ementaHigienizada     String?     // Versão 2: Ementa higienizada
+  macroTema             String?
+  urlOriginal           String      @unique
+  urlPdfOriginal        String?
+  filePathOriginal      String?     // Caminho do arquivo original no disco local
+  sha256Original        String?     // Checksum de integridade
+  conteudoOriginalBruto String      // Versão 1: Conteúdo original completo e bruto
+  conteudoHigienizado   String      // Versão 2: Conteúdo higienizado (anti-mojibake)
+  cleanMarkdown         String      // Versão estruturada em Markdown com cabeçalho RAG
+  totalChunks           Int         @default(0)
+  tokensEstimados       Int         @default(0)
+  tags                  String[]    @default([])
+  metadadosRAG          String?     // JSON serializado
+  chunks                NormChunk[]
+  createdAt             DateTime?   @default(now())
+  updatedAt             DateTime?   @updatedAt
+
+  @@index([orgao, tipo, ano])
+  @@index([status])
+  @@index([tags])
+  @@map("norms")
+}
+
+model NormChunk {
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  normId            String    @db.ObjectId
+  norm              Norm      @relation(fields: [normId], references: [id], onDelete: Cascade)
+  normCode          String    // CFM-RES-1-1957
+  chunkIndex        Int       // 1, 2, 3...
+  totalChunks       Int       // Total de blocos
+  conteudoChunk     String    // Texto do chunk higienizado com sobreposição
+  tokensEstimados   Int       @default(0)
+  caracteresCount   Int       @default(0)
+  contextoSemantico String?   // Resumo/Ementa para ancoragem de embedding
+  overlapTokens     Int       @default(64)
+  maxChunkTokens    Int       @default(512)
+  embedding         Float[]   @default([]) // Vetor numérico para busca vetorial RAG
+  tags              String[]  @default([])
+  createdAt         DateTime? @default(now())
+
+  @@index([normCode, chunkIndex])
+  @@index([normId])
+  @@map("norms_chunk")
+}
+
+

@@ -12,12 +12,15 @@
     "start:worker": "node dist/worker.js",
     "typecheck": "tsc --noEmit",
     "db:cleanup": "tsx src/scripts/cleanupScrapedPages.ts",
+    "rag:reindex": "node dist/scripts/reindexNormEmbeddings.js",
+    "rag:reindex:dev": "tsx src/scripts/reindexNormEmbeddings.ts",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx src/shared/autoMigrate.ts",
     "test": "vitest run"
   },
   "dependencies": {
     "@google/genai": "^0.2.0",
+    "@mendable/firecrawl-js": "^4.52.0",
     "@prisma/client": "^5.22.0",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",

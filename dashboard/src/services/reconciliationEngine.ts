@@ -1,10 +1,9 @@
-import { z } from 'zod';
-import { RuleSeverity, Verdict } from '@prisma/client';
+import { RuleSeverity } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
-import { env } from '../config/env.js';
-import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
+import { NormChunk } from '../data/normsCatalog.js';
 import { ScrapeResult } from './scraperService.js';
-import { NormsResolver, ResolvedNorm } from './normsResolver.js';
+import { NormsResolver } from './normsResolver.js';
+import { SemanticEmbeddingService } from './semanticEmbeddingService.js';
 import { CircuitBreaker } from '../shared/circuitBreaker.js';
 import { Bulkhead } from '../shared/bulkhead.js';
 import { AIGuardrails } from '../shared/aiGuardrails.js';
@@ -25,8 +24,28 @@ export {
   AgentContext,
 };
 
+function toNormChunks(norms: Awaited<ReturnType<typeof NormsResolver.retrieveRelevantByTags>>['norms']): NormChunk[] {
+  return norms.map((norm) => ({
+    id: norm.id,
+    normCode: norm.normCode,
+    source: norm.source || 'REGULATORIO',
+    title: norm.title,
+    article: norm.article || 'Dispositivo Geral',
+    severityDefault: (norm.severityDefault || 'MEDIA') as RuleSeverity,
+    keywords: norm.tags,
+    content: norm.content,
+    correctiveGuidance: `Adequar conforme as diretrizes regulatórias vigentes da norma ${norm.normCode}.`,
+    validity: {
+      publishedAt: '2023-01-01',
+      effectiveDate: '2023-01-01',
+      revokedAt: null,
+      isRevoked: false,
+      officialGazette: 'Diário Oficial da União',
+    },
+  }));
+}
+
 export class ReconciliationEngine {
-  // Padrão de Resiliência: Circuit Breakers e Bulkhead unificados na fábrica de provedores
   public static get geminiCircuitBreaker(): CircuitBreaker {
     return AIProviderFactory.getProvider('gemini').getCircuitBreaker();
   }
@@ -53,9 +72,6 @@ export class ReconciliationEngine {
     AIProviderFactory.setActiveProvider(provider);
   }
 
-  /**
-   * Realiza teste pontual de integridade, latência e conectividade com o modelo ativo ou um modelo específico
-   */
   public static async testModelResponse(customPrompt?: string, targetModelId?: string): Promise<{
     provider: string;
     model: string;
@@ -68,148 +84,88 @@ export class ReconciliationEngine {
     return await AIProviderFactory.testModelResponse(customPrompt, targetModelId);
   }
 
-  /**
-   * Resolve o contexto completo e soberano do agente a partir do banco de dados (MongoDB)
-   */
-  public static async resolveAgentContext(agentModuleId?: string): Promise<AgentContext> {
+  public static async resolveAgentContext(agentModuleId?: string, queryText?: string): Promise<AgentContext> {
     if (agentModuleId) {
-      try {
-        const agent = await prisma.agentModule.findFirst({
-          where: {
-            OR: [{ id: agentModuleId }, { code: agentModuleId }],
-          },
-        });
-        if (agent) {
-          // Resolução dinâmica de normas no banco de dados através das tags do agente
-          const agentTags = agent.tags && agent.tags.length > 0
-            ? agent.tags
-            : (agent.regulatoryFramework ? [agent.regulatoryFramework] : []);
-          const dbNorms = await NormsResolver.resolveByTags(agentTags);
+      const agent = await prisma.agentModule.findFirst({
+        where: { OR: [{ id: agentModuleId }, { code: agentModuleId }] },
+      });
+      if (!agent) {
+        throw new Error(`Módulo de auditoria "${agentModuleId}" não encontrado.`);
+      }
 
-          let activeNorms: NormChunk[] = dbNorms
-            .filter((n) => {
-              const isRevogada = (n.tags || []).some(
-                (t) => t.trim().toUpperCase() === 'REVOGADO' || t.trim().toUpperCase().includes('REVOGAD')
-              );
-              return !isRevogada;
-            })
-            .map((n) => ({
-              id: n.id,
-              normCode: n.normCode,
-              source: (n.source as any) || 'CFM',
-              title: n.title,
-              article: n.article || 'Dispositivo Geral',
-              severityDefault: (n.severityDefault as any) || 'MEDIA',
-              keywords: n.tags,
-              content: n.content,
-              correctiveGuidance: `Adequar conforme as diretrizes regulatórias vigentes da norma ${n.normCode}.`,
-              validity: (n as any).validity || {
-                publishedAt: '2023-01-01',
-                effectiveDate: '2023-01-01',
-                revokedAt: null,
-                isRevoked: false,
-                officialGazette: 'Diário Oficial da União',
-              },
-            }));
-
-          if (activeNorms.length === 0) {
-            activeNorms = NORMS_CATALOG.filter((chunk) => {
-              const isChunkRevogado =
-                chunk.keywords.some((k) => k.toLowerCase().includes('revogad')) ||
-                chunk.title.toLowerCase().includes('revogad');
-              return !isChunkRevogado;
-            });
-          }
-
-          // A Descrição e Escopo atua como a Skill comportamental e persona da IA
-          const agentSkill =
-            agent.description && agent.description.trim().length > 0
-              ? agent.description.trim()
-              : `Auditor Deontológico em Saúde especialista em conformidade com as resoluções vigentes de ${agentTags.join(', ')}.`;
-
-          const normasVigentesDoEscopo = activeNorms
-            .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
-            .join('\n');
-
-          const defaultPromptTemplate = `Você é o agente especialista "${agent.name}" (${agent.code || 'MODULO'}).
+      const agentTags = Array.from(new Set([
+        ...(agent.tags || []),
+        ...(agent.targetNorms || []),
+      ].map((tag) => tag.trim()).filter(Boolean)));
+      const retrieval = queryText
+        ? await NormsResolver.retrieveRelevantByTags(agentTags, queryText)
+        : {
+            norms: [],
+            status: agentTags.length > 0 ? 'NO_QUERY' as const : 'NO_SCOPE' as const,
+            candidatesCount: 0,
+            source: undefined,
+            diagnostics: undefined,
+          };
+      const agentSkill = agent.description?.trim() ||
+        `Auditor Deontológico em Saúde especialista em conformidade com as resoluções vigentes de ${agentTags.join(', ')}.`;
+      const defaultPrompt = `Você é o agente especialista "${agent.name}" (${agent.code || 'MODULO'}).
 Skill Comportamental e Escopo do Agente: ${agentSkill}.
 Tags Regulatórias: ${agentTags.join(', ')}.
 Marco Regulatório Auditado: ${agent.regulatoryFramework || 'Conformidade e Deontologia em Saúde'}.
-Sua missão é realizar auditoria deontológica rigorosa confrontando o conteúdo do website com o rol integral de normas associadas.
-DIRETRIZ DE VIGÊNCIA REGULATÓRIA: Normas, resoluções ou artigos revogados não possuem vigência jurídica e JAMAIS devem ser considerados como infração na auditoria deontológica imediata.
+Audite somente com base nos dispositivos normativos recuperados para esta página.
+Normas ou artigos revogados nunca devem fundamentar uma infração.
+Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da auditoria.`;
+      const rawPrompt = agent.systemPrompt?.trim() || defaultPrompt;
+      const systemPrompt = rawPrompt.replace(
+        /\{normasVigentesDoEscopo\}/g,
+        'As normas são fornecidas uma única vez na seção "NORMAS RECUPERADAS" do contexto.'
+      );
 
-CATÁLOGO NORMATIVO VIGENTE DO ESCOPO:
-{normasVigentesDoEscopo}`;
-
-          const rawPrompt = agent.systemPrompt && agent.systemPrompt.trim().length > 0
-            ? agent.systemPrompt.trim()
-            : defaultPromptTemplate;
-
-          const systemPrompt = rawPrompt.includes('{normasVigentesDoEscopo}')
-            ? rawPrompt.replace(/\{normasVigentesDoEscopo\}/g, normasVigentesDoEscopo)
-            : `${rawPrompt}\n\nCATÁLOGO NORMATIVO VIGENTE DO ESCOPO:\n${normasVigentesDoEscopo}`;
-
-          return {
-            id: agent.id,
-            name: agent.name,
-            code: agent.code || undefined,
-            description: agent.description || undefined,
-            skill: agentSkill,
-            regulatoryFramework: agent.regulatoryFramework || undefined,
-            systemPrompt,
-            targetNorms: agent.targetNorms || [],
-            tags: agentTags,
-            activeNorms,
-            resolvedDbNorms: dbNorms,
-          };
-        }
-      } catch (err: any) {
-        console.warn(`[ReconciliationEngine] Não foi possível carregar o agente ${agentModuleId}: ${err.message}`);
-      }
+      return {
+        id: agent.id,
+        name: agent.name,
+        code: agent.code || undefined,
+        description: agent.description || undefined,
+        skill: agentSkill,
+        regulatoryFramework: agent.regulatoryFramework || undefined,
+        systemPrompt,
+        targetNorms: agent.targetNorms || [],
+        tags: agentTags,
+        activeNorms: toNormChunks(retrieval.norms),
+        resolvedDbNorms: retrieval.norms,
+        retrievalStatus: retrieval.status,
+        retrievalSource: retrieval.source,
+        retrievalCandidatesCount: retrieval.candidatesCount,
+        retrievalDiagnostics: retrieval.diagnostics,
+      };
     }
 
-    // Busca na definição padrão de agente
-    try {
-      const defaultAgentDef = await prisma.agentDefinition.findFirst({
-        orderBy: { createdAt: 'desc' },
-      });
-      if (defaultAgentDef) {
-        const targetNormLower = defaultAgentDef.targetNorm ? defaultAgentDef.targetNorm.toLowerCase() : '';
-        const activeNorms = (targetNormLower
-          ? NORMS_CATALOG.filter(
-              (n) =>
-                n.source.toLowerCase().includes(targetNormLower) ||
-                n.normCode.toLowerCase().includes(targetNormLower) ||
-                n.id.toLowerCase().includes(targetNormLower)
-            )
-          : [...NORMS_CATALOG]).filter((chunk) => !chunk.validity?.isRevoked);
-
-        return {
-          name: defaultAgentDef.name,
-          systemPrompt: defaultAgentDef.systemPrompt.trim(),
-          targetNorms: defaultAgentDef.targetNorm ? [defaultAgentDef.targetNorm] : [],
-          activeNorms: activeNorms.length > 0 ? activeNorms : NORMS_CATALOG.filter((c) => !c.validity?.isRevoked),
+    const defaultAgent = await prisma.agentDefinition.findFirst({
+      orderBy: { createdAt: 'desc' },
+    });
+    const defaultTags = defaultAgent?.targetNorm ? [defaultAgent.targetNorm] : [];
+    const retrieval = queryText
+      ? await NormsResolver.retrieveRelevantByTags(defaultTags, queryText)
+      : {
+          norms: [],
+          status: defaultTags.length > 0 ? 'NO_QUERY' as const : 'NO_SCOPE' as const,
+          candidatesCount: 0,
+          source: undefined,
+          diagnostics: undefined,
         };
-      }
-    } catch {
-      // Fallback seguro
-    }
-
-    const activeFallbackNorms = NORMS_CATALOG.filter((c) => !c.validity?.isRevoked);
-    const fallbackNormsText = activeFallbackNorms
-      .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
-      .join('\n');
 
     return {
-      name: 'Auditor Deontológico ConformIA',
-      systemPrompt: `Você é o Auditor Deontológico em Saúde da ConformIA.
-Sua missão é auditar o conteúdo de materiais e confrontá-los com o Catálogo Normativo Ativo e as diretrizes vigentes aplicáveis ao escopo selecionado.
-DIRETRIZ DE VIGÊNCIA REGULATÓRIA: Normas ou artigos revogados não possuem vigência jurídica.
-
-CATÁLOGO NORMATIVO VIGENTE DO ESCOPO:
-${fallbackNormsText}`,
-      targetNorms: [],
-      activeNorms: activeFallbackNorms,
+      name: defaultAgent?.name || 'Auditor Deontológico ConformIA',
+      systemPrompt: defaultAgent?.systemPrompt.trim() ||
+        'Audite somente com base nos dispositivos normativos recuperados para esta página. Na ausência deles, não conclua conformidade.',
+      targetNorms: defaultTags,
+      tags: defaultTags,
+      activeNorms: toNormChunks(retrieval.norms),
+      resolvedDbNorms: retrieval.norms,
+      retrievalStatus: retrieval.status,
+      retrievalSource: retrieval.source,
+      retrievalCandidatesCount: retrieval.candidatesCount,
+      retrievalDiagnostics: retrieval.diagnostics,
     };
   }
 
@@ -218,31 +174,47 @@ ${fallbackNormsText}`,
     return context.systemPrompt;
   }
 
-  /**
-   * Executa a auditoria deontológica com cascata de resiliência e contexto dinâmico do agente
-   * delegando aos provedores desacoplados via AIProviderFactory (Gemini, Ollama, Heurística)
-   */
-  public static async reconcile(scrape: ScrapeResult, agentModuleId?: string): Promise<ReconciliationOutput> {
+  public static async reconcile(
+    scrape: ScrapeResult,
+    agentModuleId?: string,
+    resolvedContext?: AgentContext
+  ): Promise<ReconciliationOutput> {
+    const agentContext = resolvedContext || await this.resolveAgentContext(agentModuleId, scrape.cleanMarkdown);
+    if (agentContext.activeNorms.length === 0) {
+      const retrievalStatus = agentContext.retrievalStatus || 'NO_MATCH';
+      const diagnostics = agentContext.retrievalDiagnostics;
+      const retrievalDetails = retrievalStatus === 'UNINDEXED'
+        ? `A recuperação encontrou ${diagnostics?.indexedChunksCount || 0}/${diagnostics?.activeChunksCount || agentContext.retrievalCandidatesCount || 0} chunks indexados. Modelo esperado: "${diagnostics?.expectedEmbeddingModel || SemanticEmbeddingService.embeddingModelId}". Sem embedding: ${diagnostics?.missingEmbeddingCount || 0}; dimensão inválida: ${diagnostics?.invalidDimensionCount || 0}; modelo diferente: ${diagnostics?.modelMismatchCount || 0}; metadado ausente: ${diagnostics?.missingModelMetadataCount || 0}; norma-pai ausente: ${diagnostics?.missingNormParentCount || 0}. A IA não foi chamada (0 tokens). Gere os embeddings na mesma base usada pela aplicação e verifique a saída de \`npm run rag:reindex\`.`
+        : `Nenhum chunk normativo utilizável foi recuperado para as tags [${(agentContext.tags || []).join(', ')}]. Status da recuperação: ${retrievalStatus}.`;
+      return reconciliationOutputSchema.parse({
+        verdict: 'INCONCLUSIVO',
+        score: 60,
+        summary: `Auditoria inconclusiva: ${retrievalDetails} Revisão humana obrigatória.`,
+        violations: [],
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        sourcesUsed: [],
+        aiModelUsed: `retrieval:${retrievalStatus}`,
+        groundingScore: null,
+        hallucinationRisk: 'NOT_EVALUATED',
+        guardrailsApplied: true,
+        hallucinationsInterceptedCount: 0,
+      });
+    }
+
     const activeModel = await this.getActiveModelConfig();
     console.log(`[ReconciliationEngine] Iniciando auditoria para ${scrape.url} usando modelo: ${activeModel.name} (${activeModel.provider})`);
-
-    const agentContext = await this.resolveAgentContext(agentModuleId);
     const rawOutput = await AIProviderFactory.reconcile(scrape, agentContext);
 
-    // Camada Obrigatória de Quality Gate: Guardrails Anti-Alucinação & Grounding Mandatório
     const { sanitizedOutput } = await AIGuardrails.validateAndSanitizeOutput(
       rawOutput,
       scrape,
       agentContext.activeNorms
     );
-
     return sanitizedOutput;
   }
 
-  /**
-   * Executa a reconciliação e retorna estritamente no Contrato Estruturado de Alta Confiabilidade
-   * { audit_id, risk_level, confidence, findings: [ { description, regulation, article, evidence, source_version, recommendation, requires_human_review } ] }
-   */
   public static async reconcileStructured(
     scrape: ScrapeResult,
     agentModuleId?: string,
@@ -252,9 +224,6 @@ ${fallbackNormsText}`,
     return AIStructuredContractAdapter.toStructuredContract(rawOutput, auditId);
   }
 
-  /**
-   * Mecanismo determinístico de regras baseado estritamente no catálogo de normas vinculado ao agente
-   */
   public static reconcileWithHeuristic(
     scrape: ScrapeResult,
     customSummaryHeader?: string,

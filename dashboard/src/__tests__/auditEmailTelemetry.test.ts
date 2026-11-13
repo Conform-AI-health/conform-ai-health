@@ -147,6 +147,17 @@ describe('📧 Notificações por E-mail & Registro de Falhas na Telemetria (Aud
       });
 
       expect(result.success).toBe(true);
+      expect(ReconciliationEngine.reconcile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          extractedEntities: expect.objectContaining({
+            extractionCompleted: true,
+            crms: expect.arrayContaining([expect.stringContaining('123456')]),
+            rqes: expect.arrayContaining([expect.stringContaining('654321')]),
+          }),
+        }),
+        undefined,
+        expect.any(Object)
+      );
       expect(sendEmailSpy).toHaveBeenCalledWith(
         'diretoria@clinicavisao.med.br',
         'Clínica Oftalmológica Visão',
@@ -161,6 +172,55 @@ describe('📧 Notificações por E-mail & Registro de Falhas na Telemetria (Aud
             module: 'EMAIL_NOTIFICATION',
             correlationId: 'rep-100',
             message: expect.stringContaining('enviado com sucesso'),
+          }),
+        })
+      );
+    });
+
+    it('deve registrar que a IA foi pulada quando a recuperação RAG está sem embeddings', async () => {
+      (prisma.client.findUnique as any).mockResolvedValue({
+        id: 'client-unindexed',
+        name: 'Clínica sem índice RAG',
+        email: null,
+        users: [],
+      });
+      (ReconciliationEngine.resolveAgentContext as any).mockResolvedValue({
+        activeNorms: [],
+        resolvedDbNorms: [],
+        tags: ['cfm', 'lgpd'],
+        retrievalStatus: 'UNINDEXED',
+        retrievalCandidatesCount: 12,
+      });
+      (ReconciliationEngine.reconcile as any).mockResolvedValue({
+        ...mockRecon,
+        verdict: 'INCONCLUSIVO',
+        score: 60,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        sourcesUsed: [],
+        aiModelUsed: 'retrieval:UNINDEXED',
+      });
+
+      await AuditExecutionService.execute({
+        auditReportId: 'rep-unindexed',
+        clientId: 'client-unindexed',
+        targetUrl: 'https://clinicasemindice.med.br',
+      });
+
+      expect(prisma.systemLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            module: 'AI_ENGINE',
+            message: expect.stringContaining('[AI_INVOCATION_SKIPPED]'),
+            details: expect.stringContaining('"aiInvoked":false'),
+          }),
+        })
+      );
+      expect(prisma.systemLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            message: expect.stringContaining('npm run rag:reindex'),
           }),
         })
       );

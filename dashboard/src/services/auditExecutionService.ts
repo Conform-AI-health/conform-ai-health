@@ -5,6 +5,7 @@ import { NormsResolver } from './normsResolver.js';
 import { EmailService } from './emailService.js';
 import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
 import { ExtractionMode } from '@prisma/client';
+import { ScraperService, ScrapeResult } from './scraperService.js';
 
 export interface ExecuteAuditParams {
   auditReportId: string;
@@ -68,7 +69,6 @@ export class AuditExecutionService {
 
       const clientName = client?.name || client?.tradeName || 'Clínica Auditada';
       const moduleName = mod?.name || 'Módulo Geral';
-      const moduleTags = mod?.tags && mod.tags.length > 0 ? mod.tags : ['CFM'];
       const effectiveSkill = params.skill || mod?.description || 'compliance-specialist';
 
       // Log operacional: Início da extração
@@ -106,7 +106,14 @@ export class AuditExecutionService {
       }).catch(() => {});
 
       // 4. Resolução Dinâmica de Normas no Banco de Dados através das Tags do Módulo
-      const agentContext = await ReconciliationEngine.resolveAgentContext(agentModuleId);
+      const retrievalStartedAt = Date.now();
+      const agentContext = await ReconciliationEngine.resolveAgentContext(agentModuleId, firecrawlResult.markdown);
+      const retrievalTimeMs = Date.now() - retrievalStartedAt;
+      const moduleTags = agentContext.tags || [];
+      const retrievalDiagnostics = agentContext.retrievalDiagnostics;
+      const retrievalDiagnosticsSummary = retrievalDiagnostics
+        ? ` | Embeddings: ${retrievalDiagnostics.indexedChunksCount}/${retrievalDiagnostics.activeChunksCount} | Sem vetor: ${retrievalDiagnostics.missingEmbeddingCount} | Dimensão inválida: ${retrievalDiagnostics.invalidDimensionCount} | Modelo diferente: ${retrievalDiagnostics.modelMismatchCount} | Metadado ausente: ${retrievalDiagnostics.missingModelMetadataCount} | Norma-pai ausente: ${retrievalDiagnostics.missingNormParentCount} | Esperado: ${retrievalDiagnostics.expectedEmbeddingModel}`
+        : '';
       const allFilesAndNorms = agentContext.activeNorms.map(
         (n) => `${n.normCode}${n.article ? ` (${n.article})` : ''}: ${n.title}`
       );
@@ -141,7 +148,21 @@ export class AuditExecutionService {
             tags: moduleTags,
             totalNormsCount: combinedNormsList.length,
             normsAndFilesUsed: combinedNormsList,
-            sources: ['MongoDB (scraped_pages)', 'normas/*.md', 'NORMS_CATALOG'],
+            databaseNormsCount: agentContext.retrievalSource?.startsWith('MongoDB')
+              ? agentContext.resolvedDbNorms?.length || 0
+              : 0,
+            retrievalStatus: agentContext.retrievalStatus,
+            retrievalTimeMs,
+            retrievalCandidatesCount: agentContext.retrievalCandidatesCount || 0,
+            retrievalDiagnostics: agentContext.retrievalDiagnostics || null,
+            retrievedChunks: (agentContext.resolvedDbNorms || []).map((norm) => ({
+              code: norm.normCode,
+              article: norm.article,
+              score: norm.relevanceScore,
+            })),
+            sources: agentContext.retrievalSource
+              ? [agentContext.retrievalSource]
+              : ['Nenhum contexto normativo recuperado'],
           }),
         },
       }).catch(() => {});
@@ -151,41 +172,53 @@ export class AuditExecutionService {
           level: 'INFO',
           module: 'AI_ENGINE',
           correlationId,
-          message: `[AI_INTERACTION] Invocando IA com Skill: "${effectiveSkill}" | Contexto com ${combinedNormsList.length} normas ativas para tags: [${moduleTags.join(', ')}]`,
+          message: combinedNormsList.length > 0
+            ? `[AI_INVOCATION] Invocando IA com Skill: "${effectiveSkill}" | Contexto com ${combinedNormsList.length} normas ativas para tags: [${moduleTags.join(', ')}]`
+            : `[AI_INVOCATION_SKIPPED] IA não chamada: recuperação ${agentContext.retrievalStatus || 'NO_MATCH'} para tags [${moduleTags.join(', ')}] | Candidatos: ${agentContext.retrievalCandidatesCount || 0}${retrievalDiagnosticsSummary} | Ação: ${agentContext.retrievalStatus === 'UNINDEXED' ? 'executar npm run rag:reindex na base da aplicação e repetir a auditoria' : 'verificar as tags e a disponibilidade das normas vigentes'}`,
         },
       }).catch(() => {});
 
       // Adaptador para o formato do ReconciliationEngine
-      const scrapeAdapter = {
+      const extractedEntities = ScraperService.extractEntities(
+        firecrawlResult.markdown,
+        firecrawlResult.rawContent || firecrawlResult.markdown
+      );
+      const rawLength = (firecrawlResult.rawContent || firecrawlResult.markdown).length;
+      const cleanLength = firecrawlResult.markdown.length;
+      const scrapeAdapter: ScrapeResult = {
         url: targetUrl,
         title: mod?.name || clientName,
-        rawHtmlLength: firecrawlResult.markdown.length,
+        mode: params.extractionMode || ExtractionMode.FIRECRAWL,
+        rawHtmlLength: rawLength,
         cleanMarkdown: firecrawlResult.markdown,
-        tokensEstimatedRaw: Math.ceil(firecrawlResult.markdown.length / 3),
-        tokensEstimatedClean: Math.ceil(firecrawlResult.markdown.length / 4),
-        extractedEntities: {
-          crms: [] as string[],
-          rqes: [] as string[],
-          states: [] as string[],
-          hasBeforeAfterMention: firecrawlResult.markdown.toLowerCase().includes('antes e depois'),
-          hasPromotionalPricing: /promoção|desconto|black friday|cupom|sorteio|combo/i.test(firecrawlResult.markdown),
-          hasGuaranteedResultMention: /100%|garantido|cura definitiva|o melhor|resultado certo/i.test(firecrawlResult.markdown),
-        },
+        tokensEstimatedRaw: Math.ceil(rawLength / 3),
+        tokensEstimatedClean: Math.ceil(cleanLength / 4),
+        tokensSavedPercentage: rawLength > 0 ? Math.max(0, ((rawLength - cleanLength) / rawLength) * 100) : 0,
+        detectedTags: moduleTags,
+        extractedEntities,
       };
 
       // 5. Invocação da IA e Reconciliação Deontológica
-      const recon = await ReconciliationEngine.reconcile(scrapeAdapter as any, agentModuleId);
+      const recon = await ReconciliationEngine.reconcile(scrapeAdapter, agentModuleId, agentContext);
       const executionTimeMs = Date.now() - startTime;
 
       // Telemetria e log de IA com tokens e fontes/normas utilizadas
+      const aiInvocationSkipped = recon.aiModelUsed.startsWith('retrieval:');
+      const retrievalStatus = agentContext.retrievalStatus || 'NO_MATCH';
       await prisma.systemLog.create({
         data: {
           level: 'INFO',
           module: 'AI_ENGINE',
           correlationId,
-          message: `[AI_INTERACTION] Veredito da IA emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms | Normas Aplicadas: ${recon.sourcesUsed.length}`,
+          message: aiInvocationSkipped
+            ? `[AI_INVOCATION_SKIPPED] Auditoria ${recon.verdict}: provedor de IA não chamado | Status da recuperação: ${retrievalStatus} | Prompt Tokens: 0 | Completion Tokens: 0 | Total Tokens: 0 | Chunks candidatos: ${agentContext.retrievalCandidatesCount || 0}${retrievalDiagnosticsSummary}`
+            : `[AI_INTERACTION] Veredito emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms | Normas Aplicadas: ${recon.sourcesUsed.length}`,
           details: JSON.stringify({
             aiModelUsed: recon.aiModelUsed,
+            aiInvoked: !aiInvocationSkipped,
+            retrievalStatus,
+            retrievalCandidatesCount: agentContext.retrievalCandidatesCount || 0,
+            retrievalDiagnostics: agentContext.retrievalDiagnostics || null,
             verdict: recon.verdict,
             score: recon.score,
             promptTokens: recon.promptTokens,

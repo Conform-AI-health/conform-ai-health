@@ -37,9 +37,25 @@ export class HeuristicProvider implements IAIProvider {
 
     // Normas ativas fornecidas pelo contexto do agente ou catálogo
     const activeNorms =
-      agentContext?.activeNorms && agentContext.activeNorms.length > 0
-        ? agentContext.activeNorms
-        : NORMS_CATALOG;
+      agentContext ? agentContext.activeNorms : NORMS_CATALOG;
+
+    if (agentContext && activeNorms.length === 0) {
+      return reconciliationOutputSchema.parse({
+        verdict: 'INCONCLUSIVO',
+        score: 60,
+        summary: `Auditoria inconclusiva: nenhuma norma foi recuperada para as tags [${(agentContext.tags || []).join(', ')}]. Revisão humana obrigatória.`,
+        violations: [],
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        sourcesUsed: [],
+        aiModelUsed: 'heuristic:retrieval-unavailable',
+        groundingScore: null,
+        hallucinationRisk: 'NOT_EVALUATED',
+        guardrailsApplied: true,
+        hallucinationsInterceptedCount: 0,
+      });
+    }
 
     // Relação de especialidades para confronto dinâmico
     const medicalSpecialties = [
@@ -59,7 +75,7 @@ export class HeuristicProvider implements IAIProvider {
 
       // 1. Norma de identificação profissional (CRM / Registro) - T11 e T12
       if (keywords.includes('crm') || keywords.includes('registro')) {
-        if (scrape.extractedEntities.crms.length === 0) {
+        if (scrape.extractedEntities.extractionCompleted && scrape.extractedEntities.crms.length === 0) {
           violations.push({
             normCode: norm.normCode || 'Res. CFM 2.336/23',
             normArticle: norm.article || 'Artigo 1º, § 1º',
@@ -67,7 +83,7 @@ export class HeuristicProvider implements IAIProvider {
             detectedText: 'Nenhum número de identificação profissional (CRM) identificado no material auditado.',
             correctiveAdvice: norm.correctiveGuidance || 'Informar de forma ostensiva o número de inscrição no Conselho Regional de Medicina (CRM) acompanhado da respectiva UF.',
           });
-        } else if (scrape.extractedEntities.states.length === 0) {
+        } else if (scrape.extractedEntities.extractionCompleted && scrape.extractedEntities.states.length === 0) {
           violations.push({
             normCode: norm.normCode || 'Res. CFM 2.336/23',
             normArticle: norm.article || 'Artigo 1º, § 1º',
@@ -85,7 +101,11 @@ export class HeuristicProvider implements IAIProvider {
           keywords.find((k) => k !== 'rqe' && k !== 'especialista' && k !== 'especialidade' && textLower.includes(k)) ||
           medicalSpecialties.find((spec) => textLower.includes(spec));
 
-        if (specialtyKeywordMatch && scrape.extractedEntities.rqes.length === 0) {
+        if (
+          specialtyKeywordMatch &&
+          scrape.extractedEntities.extractionCompleted &&
+          scrape.extractedEntities.rqes.length === 0
+        ) {
           violations.push({
             normCode: norm.normCode || 'Res. CFM 2.336/23',
             normArticle: norm.article || 'Artigo 1º, § 2º e Artigo 2º',
