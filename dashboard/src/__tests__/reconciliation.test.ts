@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { ScraperService, ScrapeResult } from '../services/scraperService.js';
+import { AIProviderFactory } from '../services/ai/aiProviderFactory.js';
+import { AgentContext } from '../shared/reconciliationTypes.js';
 
 describe('Motor de Reconciliação Deontológica (CFM)', () => {
   it('deve identificar violações críticas para página médica sem CRM e sem RQE com promessa de resultado', () => {
@@ -76,8 +78,6 @@ describe('Motor de Reconciliação Deontológica (CFM)', () => {
   });
 
   it('deve realizar fallback resiliente para HeuristicProvider quando provedores remotos falharem', async () => {
-    const { AIProviderFactory } = await import('../services/ai/aiProviderFactory.js');
-
     // Força provedor ativo para heurístico garantindo continuidade da operação
     AIProviderFactory.setActiveProvider('heuristic');
     expect(AIProviderFactory.getActiveProviderName()).toBe('heuristic');
@@ -89,10 +89,38 @@ describe('Motor de Reconciliação Deontológica (CFM)', () => {
       'CHEERIO'
     );
 
-    const result = await provider.reconcile(scrapeResult, [], {});
+    const result = await provider.reconcile(scrapeResult);
     expect(result).toBeDefined();
     expect(result.verdict).toBeDefined();
     expect(result.aiModelUsed).toContain('heuristic');
+  });
+
+  it('não deve chamar o provedor nem reportar tokens quando os chunks estão sem embeddings', async () => {
+    const providerCall = vi.spyOn(AIProviderFactory, 'reconcile');
+    const scrapeResult = ScraperService.processHtml(
+      'https://reindex-necessario.med.br',
+      '<html><body><p>Auditoria médica.</p></body></html>',
+      'CHEERIO'
+    );
+    const context: AgentContext = {
+      name: 'Auditor CFM',
+      systemPrompt: 'Use normas recuperadas.',
+      targetNorms: ['cfm', 'lgpd'],
+      tags: ['cfm', 'lgpd'],
+      activeNorms: [],
+      retrievalStatus: 'UNINDEXED',
+      retrievalCandidatesCount: 12,
+    };
+
+    const result = await ReconciliationEngine.reconcile(scrapeResult, undefined, context);
+
+    expect(result.verdict).toBe('INCONCLUSIVO');
+    expect(result.aiModelUsed).toBe('retrieval:UNINDEXED');
+    expect(result.promptTokens).toBe(0);
+    expect(result.totalTokens).toBe(0);
+    expect(result.summary).toContain('npm run rag:reindex');
+    expect(providerCall).not.toHaveBeenCalled();
+    providerCall.mockRestore();
   });
 });
 

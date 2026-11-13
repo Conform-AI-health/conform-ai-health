@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   RegulatoryScraperService,
-  generateDeterministicEmbedding,
 } from '../services/regulatoryScraperService.js';
 import { EmailService } from '../services/emailService.js';
 import { prisma } from '../config/prisma.js';
+import { SemanticEmbeddingService } from '../services/semanticEmbeddingService.js';
 
 describe('RegulatoryScraperService & Persistência Vetorial RAG em norms e norms_chunk', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(SemanticEmbeddingService, 'embedDocuments').mockImplementation(
+      async (texts) => texts.map(() => [1, 0])
+    );
   });
 
   describe('1. Blindagem Anti-SSRF e Deep Crawl de Portais Regulatórios', () => {
@@ -45,20 +48,7 @@ describe('RegulatoryScraperService & Persistência Vetorial RAG em norms e norms
     });
   });
 
-  describe('2. Geração de Embeddings Vetoriais para RAG', () => {
-    it('deve gerar vetor numérico de 768 dimensões com norma L2 unitária para similaridade de cosseno', () => {
-      const text = 'Art. 1º É vedado ao médico prescrever tratamento sem anamnese prévia.';
-      const vector = generateDeterministicEmbedding(text, 768);
-
-      expect(vector.length).toBe(768);
-
-      // Valida L2 Norm ~ 1.0
-      const normSquare = vector.reduce((acc, val) => acc + val * val, 0);
-      expect(Math.sqrt(normSquare)).toBeCloseTo(1.0, 2);
-    });
-  });
-
-  describe('3. Persistência Estruturada nas Coleções norms e norms_chunk', () => {
+  describe('2. Persistência Estruturada nas Coleções norms e norms_chunk', () => {
     it('deve persistir documento mestre em norms (com ambas as versões: bruta e higienizada) e fragmentos vetoriais em norms_chunk', async () => {
       const mockRawContentWithMojibake = `---
 id: CFM-RES-999-2026

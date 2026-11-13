@@ -41,16 +41,12 @@ export class OllamaProvider implements IAIProvider {
       );
       const groundingInstructions = AIGuardrails.buildGroundingPromptInstructions(agentContext.activeNorms);
 
-      const resolvedSystemPrompt = agentContext.systemPrompt.includes('{normasVigentesDoEscopo}')
-        ? agentContext.systemPrompt.replace(/\{normasVigentesDoEscopo\}/g, relevantNorms)
-        : agentContext.systemPrompt;
-
       const prompt = `
-${resolvedSystemPrompt}
+${agentContext.systemPrompt}
 
 ${groundingInstructions}
 
-NORMAS VINCULADAS AO AGENTE:
+NORMAS RECUPERADAS:
 ${relevantNorms}
 
 ${secureAudit.secureBlock}

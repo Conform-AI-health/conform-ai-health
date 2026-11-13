@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
+import { useToast } from '../context/ToastContext';
 import { safeHttpUrl } from '../utils/urlSecurity';
 
 const REGULATORY_TAG_OPTIONS = [
@@ -65,6 +66,7 @@ const REGULATORY_TAG_OPTIONS = [
 ];
 
 export const ScrapingPage: React.FC = () => {
+  const toast = useToast();
   // Aba ativa de visualização do repositório
   const [activeTab, setActiveTab] = useState<'norms' | 'scraped_pages'>('norms');
 
@@ -228,19 +230,24 @@ export const ScrapingPage: React.FC = () => {
         customTags: selectedTags,
       });
 
-      if (res.data?.isBatch) {
-        alert(
-          `🎉 Varredura concluída com sucesso!\n\n${res.data.totalIndexed} normas/documentos foram detectados e salvos individualmente no MongoDB Atlas.`
+      if (res.data?.async || res.data?.isBatch) {
+        toast.info(
+          res.data?.message ||
+            'A varredura foi iniciada em segundo plano. Atualize o acervo após a conclusão.',
+          'Varredura em andamento'
         );
       } else {
-        alert(`Norma/Página indexada com sucesso! Tags atribuídas: [${res.data?.page?.tags?.join(', ')}]`);
+        toast.success(
+          `Norma/Página indexada com sucesso! Tags atribuídas: [${res.data?.page?.tags?.join(', ')}]`
+        );
+        fetchPages();
+        fetchNorms();
+        fetchStats();
       }
 
       setUrl('');
-      fetchPages();
-      fetchStats();
     } catch (err: any) {
-      alert(`Falha ao varrer página: ${err.response?.data?.error || err.message}`);
+      toast.error(err.response?.data?.error || err.message, 'Falha ao varrer página');
     } finally {
       setScrapingInProgress(false);
     }
@@ -603,7 +610,7 @@ export const ScrapingPage: React.FC = () => {
             </div>
             <p className="text-xs text-slate-400 mt-2">
               {activeTab === 'norms'
-                ? 'Documentos mestres do CFM persistidos nas coleções dedicadas norms e norms_chunk para busca semântica RAG.'
+                ? 'Normas de todas as tags regulatórias, com documentos mestres em norms e fragmentos vetoriais RAG em norms_chunk.'
                 : 'Páginas web avulsas e arquivos indexados diretamente pela interface de scraping.'}
             </p>
           </div>
@@ -672,6 +679,7 @@ export const ScrapingPage: React.FC = () => {
               <thead className="text-[11px] uppercase tracking-wider font-bold text-slate-400 border-b border-slate-800 bg-slate-900/60">
                 <tr>
                   <th className="py-3.5 px-4">Identificador da Norma</th>
+                  <th className="py-3.5 px-4">Tags</th>
                   <th className="py-3.5 px-4">Tipo / Ano</th>
                   <th className="py-3.5 px-4">Status</th>
                   <th className="py-3.5 px-4">Ementa Higienizada</th>
@@ -682,13 +690,13 @@ export const ScrapingPage: React.FC = () => {
               <tbody className="divide-y divide-slate-800/60 text-xs">
                 {normsLoading ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
                       Carregando acervo de normas da coleção 'norms'...
                     </td>
                   </tr>
                 ) : normsList.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-500">
+                    <td colSpan={7} className="py-8 text-center text-slate-500">
                       Nenhuma norma encontrada na coleção 'norms'. Execute a ingestão local das 3.857 normas via script CLI para povoar a base!
                     </td>
                   </tr>
@@ -700,6 +708,22 @@ export const ScrapingPage: React.FC = () => {
                         {norm.idNormaCfm && (
                           <span className="text-[10px] text-slate-500 block">ID CFM: {norm.idNormaCfm}</span>
                         )}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex flex-wrap gap-1 max-w-[220px]">
+                          {norm.tags?.map((tag: string) => (
+                            <span
+                              key={tag}
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                                tag === 'RAG_READY'
+                                  ? 'bg-purple-950/50 text-purple-300 border-purple-800/40'
+                                  : 'bg-slate-800 text-slate-300 border-slate-700'
+                              }`}
+                            >
+                              {tag === 'RAG_READY' ? 'RAG' : tag}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] font-semibold text-slate-300">
@@ -768,7 +792,7 @@ export const ScrapingPage: React.FC = () => {
                   <th className="py-3.5 px-4">URL Oficial</th>
                   <th className="py-3.5 px-4">Tags Regulatórias</th>
                   <th className="py-3.5 px-4">Tokens Markdown</th>
-                  <th className="py-3.5 px-4">Data Indexação</th>
+                  <th className="py-3.5 px-4">Data de Indexação</th>
                   <th className="py-3.5 px-4 text-right">Ações</th>
                 </tr>
               </thead>
@@ -831,7 +855,9 @@ export const ScrapingPage: React.FC = () => {
                         {p.tokensCount?.toLocaleString('pt-BR')} tokens
                       </td>
                       <td className="py-3.5 px-4 text-slate-400">
-                        {new Date(p.createdAt).toLocaleDateString('pt-BR')}
+                        {p.updatedAt || p.createdAt
+                          ? new Date(p.updatedAt || p.createdAt).toLocaleString('pt-BR')
+                          : '—'}
                       </td>
                       <td className="py-3.5 px-4 text-right space-x-2">
                         <button

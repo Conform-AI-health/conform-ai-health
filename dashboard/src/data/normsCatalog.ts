@@ -12,7 +12,7 @@ export interface NormValidityMetadata {
 export interface NormChunk {
   id: string;
   normCode: string;
-  source: 'CFM' | 'ANS' | 'ANVISA' | 'LGPD';
+  source: string;
   title: string;
   article: string;
   severityDefault: RuleSeverity;

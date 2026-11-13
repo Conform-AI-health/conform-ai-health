@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { ScraperService } from '../services/scraperService.js';
+import { LegalNormCrawlerService } from '../services/legalNormCrawlerService.js';
+import { env } from '../config/env.js';
 import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 import { validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
 
@@ -29,79 +31,41 @@ export class ScrapedPageController {
         return;
       }
 
-      // 2. Execução do Web Scraping Inteligente (Multi-documentos, DOU in.gov.br, GitHub ou Página Única)
-      const scrapeResults = await ScraperService.scrapeMultiDocOrSingle(url, customTags, mode);
+      // 2. Pipeline canônico (ADR-001, Opção A): LegalNormCrawlerService em segundo plano.
+      //    - Firecrawl como primeira opção de captura (fallback HTTP nativo)
+      //    - Extrai TODOS os links da página, abre cada um (HTML/PDF/DOCX) e segue links de dentro das leis
+      //    - Só grava em norms/norms_chunk o que for norma de privacidade (LGPD), CFM, ANVISA ou ANS
+      //    - Cada link fica registrado na telemetria (aba "Links Consultados")
+      const jobId = `crawl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      void LegalNormCrawlerService.executeCrawlJob({
+        url,
+        tags: customTags,
+        maxDepth: 2,
+        maxPages: env.CRAWL_MAX_PAGES,
+        preferFirecrawl: mode ? mode === 'FIRECRAWL' : true,
+        jobId,
+      }).catch(async (err: any) => {
+        console.error(`❌ [Crawl ${jobId}] Falha geral do job: ${err.message}`);
+        await prisma.systemLog
+          .create({
+            data: {
+              level: 'ERROR',
+              module: 'LEGAL_NORM_CRAWLER',
+              correlationId: jobId,
+              message: `[CRAWL_JOB_FAILED] Job ${jobId} falhou para ${url}: ${err.message}`,
+              details: JSON.stringify({ url, jobId, error: err.message }),
+            },
+          })
+          .catch(() => {});
+      });
 
-      if (!scrapeResults || scrapeResults.length === 0) {
-        throw new Error('Nenhum conteúdo ou documento regulatório pôde ser extraído da URL fornecida.');
-      }
-
-      const isBatch = scrapeResults.length > 1;
-
-      // 3. Persistência de CADA documento individualmente no MongoDB (scraped_pages) com reparo de acentos
-      const savedDocs = [];
-      for (const item of scrapeResults) {
-        const effectiveTags = Array.from(
-          new Set([...(customTags || []), ...item.detectedTags])
-        );
-
-        const sanitizedTitle = TextEncodingSanitizer.sanitizeAndRepairText(item.title);
-        const sanitizedCleanMarkdown = TextEncodingSanitizer.sanitizeAndRepairText(item.cleanMarkdown);
-
-        const doc = await prisma.scrapedPage.upsert({
-          where: { url: item.url },
-          update: {
-            title: sanitizedTitle,
-            cleanMarkdown: sanitizedCleanMarkdown,
-            rawLength: item.rawHtmlLength,
-            tokensCount: item.tokensEstimatedClean,
-            tags: effectiveTags,
-            extractedEntities: JSON.stringify(item.extractedEntities),
-          },
-          create: {
-            url: item.url,
-            title: sanitizedTitle,
-            cleanMarkdown: sanitizedCleanMarkdown,
-            rawLength: item.rawHtmlLength,
-            tokensCount: item.tokensEstimatedClean,
-            tags: effectiveTags,
-            extractedEntities: JSON.stringify(item.extractedEntities),
-          },
-        });
-        savedDocs.push(doc);
-
-        console.log(`📄 [SCRAPER] Documento individual indexado no MongoDB: "${doc.title}" (${doc.url}) | Tokens: ${doc.tokensCount} | Tags: [${doc.tags.join(', ')}]`);
-      }
-
-      // 4. Registro de Log do Sistema / Telemetria
-      if (isBatch) {
-        await prisma.systemLog.create({
-          data: {
-            level: 'INFO',
-            message: `Varredura de repositório/portal concluída: ${savedDocs.length} normas/atos indexados individualmente no MongoDB (${url}).`,
-            module: 'SCRAPER_BATCH',
-            correlationId: savedDocs[0]?.id || null,
-          },
-        });
-      } else {
-        await prisma.systemLog.create({
-          data: {
-            level: 'INFO',
-            message: `Norma/Página varrida e indexada no MongoDB com tags: [${savedDocs[0]?.tags?.join(', ')}] (${savedDocs[0]?.title})`,
-            module: 'SCRAPER_TAGGING',
-            correlationId: savedDocs[0]?.id || null,
-          },
-        });
-      }
-
-      res.status(201).json({
-        message: isBatch
-          ? `Varredura concluída com sucesso! ${savedDocs.length} normas/documentos foram extraídos e indexados individualmente no MongoDB.`
-          : 'Norma/Página varrida e indexada com sucesso!',
-        isBatch,
-        totalIndexed: savedDocs.length,
-        page: savedDocs[0],
-        pages: savedDocs,
+      res.status(202).json({
+        message:
+          'Varredura iniciada! Todos os links da página serão consultados em segundo plano. Acompanhe cada link na aba "Links Consultados" da telemetria.',
+        jobId,
+        async: true,
+        isBatch: true,
+        totalIndexed: 0,
       });
     } catch (error) {
       next(error);
@@ -129,7 +93,7 @@ export class ScrapedPageController {
             where,
             skip: (effectivePage - 1) * effectiveLimit,
             take: effectiveLimit,
-            orderBy: { createdAt: 'desc' },
+            orderBy: { updatedAt: 'desc' },
           }),
         ]);
 
@@ -147,7 +111,7 @@ export class ScrapedPageController {
 
       const pages = await prisma.scrapedPage.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { updatedAt: 'desc' },
       });
 
       res.status(200).json(pages);

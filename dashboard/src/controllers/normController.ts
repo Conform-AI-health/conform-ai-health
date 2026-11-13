@@ -2,6 +2,35 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/prisma.js';
 import { NORMS_CATALOG } from '../data/normsCatalog.js';
 import { Role } from '@prisma/client';
+import { z } from 'zod';
+import { LegalNormCrawlerService } from '../services/legalNormCrawlerService.js';
+import { validateSafeUrlAsync } from '../shared/security.js';
+import { env } from '../config/env.js';
+
+const crawlInputSchema = z.object({
+  url: z.string().url('URL inválida'),
+  maxDepth: z.number().int().min(0).max(4).optional(),
+  maxPages: z.number().int().min(1).max(500).optional(),
+  tags: z.array(z.string()).optional(),
+  allowedDomains: z.array(z.string()).optional(),
+  force: z.boolean().optional(),
+  preferFirecrawl: z.boolean().optional(),
+});
+
+const searchInputSchema = z.object({
+  query: z.string().min(2),
+  topK: z.number().int().min(1).max(25).optional(),
+  filters: z
+    .object({
+      norm_type: z.string().optional(),
+      year: z.union([z.string(), z.number()]).optional(),
+      status: z.string().optional(),
+      tag: z.string().optional(),
+    })
+    .optional(),
+});
+
+const isMongoObjectId = /^[a-f\d]{24}$/i;
 
 export class NormController {
   /**
@@ -148,29 +177,20 @@ export class NormController {
   }
 
   /**
-   * Retorna uma norma completa com versões original bruta e higienizada
+   * Retorna uma norma com versões original bruta e higienizada
    */
   public static async getNormById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { normId } = req.params;
-
-      const norm = await prisma.norm.findFirst({
-        where: {
-          OR: [{ normId }, { id: normId }],
-        },
-        include: {
-          chunks: {
-            take: 10,
-            select: {
-              chunkIndex: true,
-              conteudoChunk: true,
-              tokensEstimados: true,
-              contextoSemantico: true,
-              tags: true,
-            },
-          },
-        },
+      let norm = await prisma.norm.findFirst({
+        where: { normId },
       });
+
+      if (!norm && isMongoObjectId.test(normId)) {
+        norm = await prisma.norm.findFirst({
+          where: { id: normId },
+        });
+      }
 
       if (!norm) {
         res.status(404).json({
@@ -194,11 +214,32 @@ export class NormController {
       const { normId } = req.params;
       const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
+      let norm = await prisma.norm.findFirst({
+        where: { normId },
+        select: { id: true },
+      });
+
+      if (!norm && isMongoObjectId.test(normId)) {
+        norm = await prisma.norm.findFirst({
+          where: { id: normId },
+          select: { id: true },
+        });
+      }
+
+      if (!norm) {
+        res.status(404).json({
+          error: `Norma não encontrada para o identificador: ${normId}`,
+          code: 'NORM_NOT_FOUND',
+        });
+        return;
+      }
+
+      const where = { normId: norm.id };
 
       const [total, chunks] = await Promise.all([
-        prisma.normChunk.count({ where: { normId } }),
+        prisma.normChunk.count({ where }),
         prisma.normChunk.findMany({
-          where: { normId },
+          where,
           skip: (page - 1) * limit,
           take: limit,
           orderBy: { chunkIndex: 'asc' },
@@ -235,6 +276,71 @@ export class NormController {
   /**
    * Retorna sumário consolidado de métricas da base normativa e de RAG
    */
+  /**
+   * POST /norms/crawl — inicia o crawl de normas em segundo plano e devolve o jobId (202).
+   * Cada link descoberto/visitado é rastreado na telemetria (aba "Links Consultados").
+   */
+  public static async startCrawlJob(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const input = crawlInputSchema.parse(req.body);
+
+      const safeCheck = await validateSafeUrlAsync(input.url);
+      if (!safeCheck.safe) {
+        res.status(400).json({
+          error: `URL rejeitada por política de segurança: ${safeCheck.reason}`,
+          code: 'SSRF_SECURITY_VIOLATION',
+        });
+        return;
+      }
+
+      const jobId = `crawl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      void LegalNormCrawlerService.executeCrawlJob({
+        ...input,
+        maxPages: input.maxPages ?? env.CRAWL_MAX_PAGES,
+        jobId,
+      }).catch((err: any) => {
+        console.error(`❌ [Crawl ${jobId}] Falha geral do job: ${err.message}`);
+      });
+
+      res.status(202).json({
+        message: 'Varredura iniciada. Acompanhe cada link consultado na aba "Links Consultados" da telemetria.',
+        jobId,
+        statusUrl: `/norms/crawl/${jobId}`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /norms/crawl/:jobId — estado e contadores do job de crawl
+   */
+  public static async getCrawlJobStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const job = LegalNormCrawlerService.getJob(req.params.jobId);
+      if (!job) {
+        res.status(404).json({ error: 'Job de crawl não encontrado (jobs são mantidos em memória).' });
+        return;
+      }
+      res.status(200).json(job);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /norms/search — busca vetorial nos chunks (apenas normas VIGENTES por padrão)
+   */
+  public static async searchNormsVector(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const input = searchInputSchema.parse(req.body);
+      const results = await LegalNormCrawlerService.searchNormChunksVector(input);
+      res.status(200).json({ data: results, total: results.length });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public static async getStatsSummary(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const [totalNorms, totalChunks, totalScrapedPages, vigentes, revogadas] = await Promise.all([

@@ -71,7 +71,8 @@ describe('🛡️ AI Guardrails Anti-Alucinação & Grounding Deontológico', ()
     tokensEstimatedRaw: 500,
     tokensEstimatedClean: 200,
     extractedEntities: {
-      crms: [], // Nenhum CRM identificado
+      extractionCompleted: true,
+      crms: [],
       rqes: [],
       states: [],
       hasBeforeAfterMention: false,
@@ -160,6 +161,17 @@ describe('🛡️ AI Guardrails Anti-Alucinação & Grounding Deontológico', ()
 
       expect(check.isGrounded).toBe(true);
       expect(check.matchRatio).toBeGreaterThanOrEqual(0.9);
+    });
+
+    it('deve rejeitar alegação de ausência quando a extração de entidades não foi confirmada', () => {
+      const evidence = 'Nenhum número de identificação profissional (CRM) identificado no material auditado.';
+      const check = AIGuardrails.verifyFactuality(evidence, mockScrapeResult.cleanMarkdown, {
+        ...mockScrapeResult.extractedEntities,
+        extractionCompleted: false,
+      });
+
+      expect(check.isGrounded).toBe(false);
+      expect(check.reason).toContain('não pôde ser confirmada');
     });
 
     it('deve reprovar evidência forjada/alucinada que não existe no conteúdo do site', () => {

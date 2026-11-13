@@ -2,59 +2,50 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'crypto';
 
 // Mock isolado do Prisma para testes de unidade do RAG
-const { mockScrapedPages } = vi.hoisted(() => ({
-  mockScrapedPages: [
+const { mockNorms } = vi.hoisted(() => ({
+  mockNorms: [
     {
-      id: 'page-cfm-1',
-      url: 'https://normas.conformia.med.br/cfm-2336-art-01',
-      title: '[CFM] Res. CFM 2.336/23 - Identificação Obrigatória do Médico',
-      cleanMarkdown: '# Res. CFM 2.336/23 - Identificação Obrigatória do Médico',
+      id: 'norm-cfm-1',
+      normId: 'CFM-RES-2336-2023',
+      orgao: 'CFM',
+      status: 'VIGENTE',
+      ementaHigienizada: '[CFM] Res. CFM 2.336/23 - Identificação Obrigatória do Médico',
       tags: ['CFM', 'cfm', 'identificação'],
-      source: 'CFM',
-      normCode: 'Res. CFM 2.336/23',
-      article: 'Artigo 1º, § 1º',
-      severityDefault: 'CRITICA',
-      content: 'Identificação médica obrigatória com CRM e UF.',
-      createdAt: new Date(),
+      chunks: [{ conteudoChunk: 'Identificação médica obrigatória com CRM e UF.', tags: ['CFM'] }],
     },
     {
-      id: 'page-lgpd-1',
-      url: 'https://normas.conformia.med.br/lgpd-saude-art-11',
-      title: '[LGPD] LGPD Art. 11 - Dados Sensíveis em Saúde',
-      cleanMarkdown: '# LGPD Art. 11 - Dados Sensíveis em Saúde',
+      id: 'norm-lgpd-1',
+      normId: 'LGPD-LEI-13709-2018',
+      orgao: 'LGPD',
+      status: 'VIGENTE',
+      ementaHigienizada: '[LGPD] LGPD Art. 11 - Dados Sensíveis em Saúde',
       tags: ['LGPD', 'lgpd', 'privacidade'],
-      source: 'LGPD',
-      normCode: 'LGPD Art. 11',
-      article: 'Artigo 11 e Artigo 14',
-      severityDefault: 'CRITICA',
-      content: 'Tratamento de dados pessoais sensíveis de saúde exige consentimento.',
-      createdAt: new Date(),
+      chunks: [{ conteudoChunk: 'Tratamento de dados pessoais sensíveis de saúde exige consentimento.', tags: ['LGPD'] }],
     },
     {
-      id: 'page-revogada',
-      url: 'https://normas.conformia.med.br/cfm-1974-revogada',
-      title: '[CFM] Res. CFM 1.974/11 - Manual de Publicidade Médica (Revogado)',
-      cleanMarkdown: '# Res. CFM 1.974/11 - Revogado expressamente pela Resolução 2.336/23',
+      id: 'norm-revogada',
+      normId: 'CFM-RES-1974-2011',
+      orgao: 'CFM',
+      status: 'REVOGADA',
+      ementaHigienizada: '[CFM] Res. CFM 1.974/11 - Manual de Publicidade Médica (Revogado)',
       tags: ['CFM', 'REVOGADO'],
-      source: 'CFM',
-      normCode: 'Res. CFM 1.974/11',
-      article: 'Geral',
-      severityDefault: 'MEDIA',
-      content: 'Revogado.',
-      createdAt: new Date(),
+      chunks: [{ conteudoChunk: 'Norma revogada.', tags: ['CFM', 'REVOGADO'] }],
     },
   ],
 }));
 
 vi.mock('../config/prisma.js', () => ({
   prisma: {
-    scrapedPage: {
+    norm: {
       findMany: vi.fn(async ({ where }) => {
-        let results = [...mockScrapedPages];
+        let results = [...mockNorms];
+        if (where?.status) {
+          results = results.filter((norm) => norm.status === where.status);
+        }
         if (where?.tags?.hasSome) {
           const tagsLower = where.tags.hasSome.map((t: string) => t.toLowerCase());
-          results = results.filter((page) =>
-            page.tags.some((tag: string) => tagsLower.includes(tag.toLowerCase()))
+          results = results.filter((norm) =>
+            norm.tags.some((tag: string) => tagsLower.includes(tag.toLowerCase()))
           );
         }
         return results;

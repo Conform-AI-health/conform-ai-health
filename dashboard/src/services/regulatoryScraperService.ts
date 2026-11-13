@@ -10,6 +10,7 @@ import { Bulkhead } from '../shared/bulkhead.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 import { generateSemanticChunks, RagMetadataSchema, DocumentoNormativoRagSchema } from './smartScraperService.js';
+import { SemanticEmbeddingService } from './semanticEmbeddingService.js';
 
 export interface RegulatoryScrapeOptions {
   urlAlvo: string;
@@ -59,31 +60,6 @@ export interface RegulatoryScrapeExecutionSummary {
   deepLinksVisited: string[];
   executionTimeMs: number;
   error?: string;
-}
-
-/**
- * Gera um vetor de embedding normalizado para RAG (padrão 768 dimensões)
- * Utiliza geração pseudo-determinística para RAG local ou chave Gemini quando disponível
- */
-export function generateDeterministicEmbedding(text: string, dimensions = 768): number[] {
-  if (!text || text.length === 0) {
-    return new Array(dimensions).fill(0);
-  }
-
-  const hash = crypto.createHash('sha256').update(text, 'utf8').digest();
-  const vector: number[] = new Array(dimensions);
-
-  let normSquare = 0;
-  for (let i = 0; i < dimensions; i++) {
-    const byteVal = hash[i % hash.length];
-    const val = (byteVal / 255.0) * 2 - 1 + Math.sin(i + (byteVal % 17));
-    vector[i] = val;
-    normSquare += val * val;
-  }
-
-  // Normalização euclidiana (L2 Norm) para busca por similaridade de cosseno
-  const norm = Math.sqrt(normSquare) || 1;
-  return vector.map((v) => parseFloat((v / norm).toFixed(6)));
 }
 
 /**
@@ -314,6 +290,10 @@ export class RegulatoryScraperService {
       const maxChunk = doc.metadadosRAG?.tamanhoMaximoChunk || 512;
       const overlap = doc.metadadosRAG?.sobreposicaoChunk || 64;
       const chunks = generateSemanticChunks(doc.content, maxChunk, overlap);
+      const embeddingContext = doc.metadadosRAG?.contextoSemantico || doc.summary;
+      const embeddings = await SemanticEmbeddingService.embedDocuments(
+        chunks.map((chunkText) => `${embeddingContext}\n${chunkText}`)
+      );
 
       const combinedTags = Array.from(
         new Set([
@@ -375,7 +355,7 @@ export class RegulatoryScraperService {
 
       // 6.2 Persiste cada Chunk com Vetor de Embedding na coleção 'norms_chunk'
       const chunkRecords = chunks.map((chunkText, idx) => {
-        const embedding = generateDeterministicEmbedding(chunkText, 768);
+        const embedding = embeddings[idx];
         return {
           normId: createdNorm.id,
           normCode: doc.normCode,
@@ -384,7 +364,12 @@ export class RegulatoryScraperService {
           conteudoChunk: chunkText,
           tokensEstimados: Math.ceil(chunkText.length / 4),
           caracteresCount: chunkText.length,
-          contextoSemantico: doc.metadadosRAG?.contextoSemantico || doc.summary,
+          contextoSemantico: JSON.stringify({
+            heading_context: doc.metadadosRAG?.contextoSemantico || doc.summary,
+            article: doc.article || null,
+            norm_title: doc.title,
+            embedding_model: SemanticEmbeddingService.embeddingModelId,
+          }),
           overlapTokens: overlap,
           maxChunkTokens: maxChunk,
           embedding,

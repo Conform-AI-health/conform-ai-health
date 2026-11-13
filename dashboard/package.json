@@ -12,6 +12,8 @@
     "start:worker": "node dist/worker.js",
     "typecheck": "tsc --noEmit",
     "db:cleanup": "tsx src/scripts/cleanupScrapedPages.ts",
+    "rag:reindex": "node dist/scripts/reindexNormEmbeddings.js",
+    "rag:reindex:dev": "tsx src/scripts/reindexNormEmbeddings.ts",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx src/shared/autoMigrate.ts",
     "test": "vitest run"

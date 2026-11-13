@@ -11,7 +11,10 @@ import { HeuristicProvider } from './heuristicProvider.js';
 
 export class AIProviderFactory {
   private static providers: Map<AIProviderType, IAIProvider> = new Map();
-  private static activeProviderName: AIProviderType = (env.AI_PROVIDER as any) || 'gemini';
+  private static activeProviderName: AIProviderType =
+    env.NODE_ENV === 'production' && env.AI_PROVIDER === 'ollama'
+      ? 'gemini'
+      : env.AI_PROVIDER;
   private static cachedActiveModel: any = null;
   private static cacheTimestamp: number = 0;
 
@@ -45,6 +48,10 @@ export class AIProviderFactory {
   }
 
   public static setActiveProvider(type: AIProviderType): void {
+    if (env.NODE_ENV === 'production' && type === 'ollama') {
+      console.warn('[AIProviderFactory] Provedor Ollama não pode ser ativado em produção.');
+      return;
+    }
     if (this.providers.has(type)) {
       this.activeProviderName = type;
       this.invalidateModelCache();
@@ -79,7 +86,7 @@ export class AIProviderFactory {
         where: { isActive: true },
       });
 
-      if (activeFromDb) {
+      if (activeFromDb && !(env.NODE_ENV === 'production' && activeFromDb.provider === 'ollama')) {
         this.cachedActiveModel = {
           id: activeFromDb.id,
           name: activeFromDb.name,
@@ -93,6 +100,9 @@ export class AIProviderFactory {
         this.activeProviderName = this.cachedActiveModel.provider;
         this.cacheTimestamp = now;
         return this.cachedActiveModel;
+      }
+      if (activeFromDb?.provider === 'ollama' && env.NODE_ENV === 'production') {
+        console.warn('[AIProviderFactory] Configuração Ollama ignorada em produção; usando o provedor Gemini configurado.');
       }
     } catch {
       // Fallback gracioso
@@ -139,9 +149,9 @@ export class AIProviderFactory {
         console.warn(`[AIProviderFactory] Falha no provedor primário ${activeModel.provider}: ${err.message}. Ativando cascata de resiliência...`);
       }
 
-      // Tentativa 2: Ollama Local (se o primário era Gemini)
+      // Ollama fica disponível como contingência somente em desenvolvimento.
       // AI-02: Garantir que o Ollama use parâmetros isolados (modelId e baseUrl) e nunca o modelId do Gemini
-      if (activeModel.provider === 'gemini') {
+      if (activeModel.provider === 'gemini' && env.NODE_ENV !== 'production') {
         try {
           const ollama = this.getProvider('ollama');
           let ollamaDbConfig = null;

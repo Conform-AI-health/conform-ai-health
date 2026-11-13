@@ -111,6 +111,9 @@ describe('NormController - Gestão e Auditoria das Coleções norms e norms_chun
           conteudoHigienizado: expect.stringContaining('órgãos públicos'),
         }),
       });
+      expect(prisma.norm.findFirst).toHaveBeenCalledWith({
+        where: { normId: 'CFM-RES-2336-2023' },
+      });
     });
 
     it('deve retornar 404 quando a norma não for encontrada', async () => {
@@ -131,6 +134,7 @@ describe('NormController - Gestão e Auditoria das Coleções norms e norms_chun
       req.params = { normId: 'CFM-RES-2336-2023' };
       req.query = { page: '1', limit: '20' };
 
+      vi.mocked(prisma.norm.findFirst).mockResolvedValueOnce({ id: 'db-id-1' } as any);
       vi.mocked(prisma.normChunk.count).mockResolvedValueOnce(2);
       vi.mocked(prisma.normChunk.findMany).mockResolvedValueOnce([
         {
@@ -159,6 +163,23 @@ describe('NormController - Gestão e Auditoria das Coleções norms e norms_chun
           totalPages: 1,
         },
       });
+      expect(prisma.normChunk.count).toHaveBeenCalledWith({ where: { normId: 'db-id-1' } });
+      expect(prisma.normChunk.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { normId: 'db-id-1' } })
+      );
+    });
+
+    it('deve retornar 404 sem consultar chunks quando a norma não existe', async () => {
+      req.params = { normId: 'NORM-INEXISTENTE' };
+      vi.mocked(prisma.norm.findFirst).mockResolvedValueOnce(null);
+
+      await NormController.getNormChunks(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'NORM_NOT_FOUND' })
+      );
+      expect(prisma.normChunk.count).not.toHaveBeenCalled();
     });
   });
 

@@ -5,6 +5,10 @@ import { env } from '../config/env.js';
 import { safeHttpGet, validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
 import { startSafeScrapingProxy } from '../shared/safeScrapingProxy.js';
 import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
+import {
+  validateContentHasTagAndLawData as validateContentTagAndLaw,
+  isExplicitlyRevokedNorm as isExplicitlyRevokedNormShared,
+} from '../shared/normTopics.js';
 
 export interface ScrapeResult {
   url: string;
@@ -17,6 +21,7 @@ export interface ScrapeResult {
   tokensSavedPercentage: number;
   detectedTags: string[];
   extractedEntities: {
+    extractionCompleted?: boolean;
     crms: string[];
     rqes: string[];
     states: string[];
@@ -27,6 +32,26 @@ export interface ScrapeResult {
 }
 
 export class ScraperService {
+  /**
+   * Valida se o conteúdo possui estrutura de lei/norma e dados dos temas (LGPD/CFM/ANVISA/ANS) solicitados.
+   * Implementação compartilhada em `shared/normTopics.ts`.
+   */
+  public static validateContentHasTagAndLawData(
+    title: string,
+    content: string,
+    targetTags?: string[],
+    url: string = ''
+  ): { isValid: boolean; hasLawData: boolean; hasTagData: boolean; matchedTags: string[] } {
+    return validateContentTagAndLaw(title, content, targetTags, url);
+  }
+
+  /**
+   * Revogação estrita (Regra 4.3): só aviso expresso sobre a própria norma.
+   */
+  public static isExplicitlyRevokedNorm(title: string, cleanMarkdown: string): boolean {
+    return isExplicitlyRevokedNormShared(title, cleanMarkdown);
+  }
+
   /**
    * Verifica se a URL informada aponta para uma árvore de diretório do GitHub
    */
@@ -152,6 +177,7 @@ export class ScraperService {
       fullText.includes('infalível');
 
     return {
+      extractionCompleted: true,
       crms: Array.from(new Set(crms)),
       rqes: Array.from(new Set(rqes)),
       states: detectedStates,
