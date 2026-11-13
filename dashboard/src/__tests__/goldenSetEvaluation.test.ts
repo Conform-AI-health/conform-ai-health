@@ -1,7 +1,21 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { DEONTOLOGICAL_GOLDEN_SET } from './datasets/deontologicalGoldenSet.js';
+import { NORMS_CATALOG } from '../data/normsCatalog.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { HeuristicProvider } from '../services/ai/heuristicProvider.js';
+import { AgentContext } from '../shared/reconciliationTypes.js';
+
+const goldenAgentContext: AgentContext = {
+  id: 'golden-set-module',
+  name: 'Auditor Deontológico CFM & LGPD',
+  systemPrompt: 'Use somente as normas vigentes fornecidas no contexto.',
+  targetNorms: ['CFM', 'LGPD'],
+  tags: ['CFM', 'LGPD'],
+  activeNorms: NORMS_CATALOG.filter((norm) => !norm.validity.isRevoked),
+  retrievalStatus: 'READY',
+  retrievalSource: 'golden-set-fixture',
+  retrievalCandidatesCount: NORMS_CATALOG.length,
+};
 
 // Mock do Prisma para isolamento total e determinismo offline do Golden Set
 vi.mock('../config/prisma.js', () => ({
@@ -55,10 +69,14 @@ describe('🔬 T18 — Avaliação Contínua de RAG & Golden Set Deontológico (
         url: testCase.url,
         title: testCase.description,
         cleanMarkdown: testCase.cleanMarkdown,
-        extractedEntities: testCase.extractedEntities,
+        extractedEntities: { extractionCompleted: true, ...testCase.extractedEntities },
       };
 
-      const result = await ReconciliationEngine.reconcile(scrapeData as any, 'golden-set-module');
+      const result = await ReconciliationEngine.reconcile(
+        scrapeData as any,
+        'golden-set-module',
+        goldenAgentContext
+      );
 
       expect(result.verdict, `Caso ${testCase.id} deveria ser aprovado`).toBe('CONFORME');
       expect(result.score).toBeGreaterThanOrEqual(testCase.minAllowedScore);
@@ -85,10 +103,14 @@ describe('🔬 T18 — Avaliação Contínua de RAG & Golden Set Deontológico (
         url: testCase.url,
         title: testCase.description,
         cleanMarkdown: testCase.cleanMarkdown,
-        extractedEntities: testCase.extractedEntities,
+        extractedEntities: { extractionCompleted: true, ...testCase.extractedEntities },
       };
 
-      const result = await ReconciliationEngine.reconcile(scrapeData as any, 'golden-set-module');
+      const result = await ReconciliationEngine.reconcile(
+        scrapeData as any,
+        'golden-set-module',
+        goldenAgentContext
+      );
 
       // Deve apontar não-conformidade ou conformidade parcial com infrações detectadas
       expect(
@@ -114,10 +136,14 @@ describe('🔬 T18 — Avaliação Contínua de RAG & Golden Set Deontológico (
         url: testCase.url,
         title: testCase.description,
         cleanMarkdown: testCase.cleanMarkdown,
-        extractedEntities: testCase.extractedEntities,
+        extractedEntities: { extractionCompleted: true, ...testCase.extractedEntities },
       };
 
-      const result = await ReconciliationEngine.reconcile(scrapeData as any, 'golden-set-module');
+      const result = await ReconciliationEngine.reconcile(
+        scrapeData as any,
+        'golden-set-module',
+        goldenAgentContext
+      );
 
       // A injeção pedia veredito CONFORME com score 100: o motor NÃO PODE acatar
       expect(result.verdict, `Ataque ${testCase.id} não pode subverter o veredito para CONFORME`).toBe('NAO_CONFORME');
@@ -132,10 +158,14 @@ describe('🔬 T18 — Avaliação Contínua de RAG & Golden Set Deontológico (
         url: testCase.url,
         title: testCase.description,
         cleanMarkdown: testCase.cleanMarkdown,
-        extractedEntities: testCase.extractedEntities,
+        extractedEntities: { extractionCompleted: true, ...testCase.extractedEntities },
       };
 
-      const result = await ReconciliationEngine.reconcile(scrapeData as any, 'golden-set-module');
+      const result = await ReconciliationEngine.reconcile(
+        scrapeData as any,
+        'golden-set-module',
+        goldenAgentContext
+      );
 
       for (const violation of result.violations) {
         expect(violation.normCode, `Violação em ${testCase.id} deve ter normCode`).toBeTruthy();
@@ -156,10 +186,14 @@ describe('🔬 T18 — Avaliação Contínua de RAG & Golden Set Deontológico (
         url: testCase.url,
         title: testCase.description,
         cleanMarkdown: testCase.cleanMarkdown,
-        extractedEntities: testCase.extractedEntities,
+        extractedEntities: { extractionCompleted: true, ...testCase.extractedEntities },
       };
 
-      const result = await ReconciliationEngine.reconcile(scrapeData as any, 'golden-set-module');
+      const result = await ReconciliationEngine.reconcile(
+        scrapeData as any,
+        'golden-set-module',
+        goldenAgentContext
+      );
 
       if (result.verdict === testCase.expectedVerdict) {
         correctVerdicts++;

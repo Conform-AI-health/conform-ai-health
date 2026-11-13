@@ -1280,19 +1280,8 @@ export class ScraperService {
       tags.push('ANS');
     }
 
-    // Tag REVOGADO (Norma ou ato normativo revogado)
-    const revogadoSignals = [
-      'revogado',
-      'revogada',
-      'revogados',
-      'revogadas',
-      'revoga-se',
-      'revogou',
-      'revogando',
-      'revogação',
-      'revogacao',
-    ];
-    if (revogadoSignals.some((sig) => textLower.includes(sig))) {
+    // Marque somente quando a própria norma estiver explicitamente revogada.
+    if (isExplicitlyRevokedNormShared(cleanMarkdown, rawHtml)) {
       tags.push('REVOGADO');
     }
 

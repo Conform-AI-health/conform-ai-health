@@ -89,15 +89,17 @@ describe('Auto-Tagging Regulatória & Proteção de Segurança', () => {
 
   it('deve classificar a tag REVOGADO caso o documento contenha termos de revogação normativa', () => {
     // 1. Resolução expressamente revogada
-    const revogadoText = 'Resolução CFM nº 1.974/2011. Revogado expressamente pela Resolução CFM nº 2.336/2023.';
+    const revogadoText =
+      'RESOLUÇÃO CFM Nº 1.974/2011\nSituação: Revogada pela Resolução CFM nº 2.336/2023.';
     const tags = ScraperService.detectRegulatoryTags(revogadoText, revogadoText);
     expect(tags).toContain('REVOGADO');
     expect(tags).toContain('CFM');
 
     // 2. Termo revogada ou revogação
-    const revogadaText = 'Art. 45. Fica expressamente revogada a resolução normativa anterior sobre telemedicina.';
+    const revogadaText =
+      'RESOLUÇÃO CFM Nº 2.336/2023\nArt. 45. Fica expressamente revogada a resolução normativa anterior sobre telemedicina.';
     const tags2 = ScraperService.detectRegulatoryTags(revogadaText, revogadaText);
-    expect(tags2).toContain('REVOGADO');
+    expect(tags2).not.toContain('REVOGADO');
 
     // 3. Documento vigente não deve conter tag REVOGADO
     const vigenteText = 'Resolução CFM nº 2.336/2023. Dispõe sobre a publicidade médica em pleno vigor.';
