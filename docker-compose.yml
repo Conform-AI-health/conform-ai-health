@@ -68,6 +68,9 @@ services:
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@conform.ai}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD é obrigatória}
       - MONITORING_API_KEY=${MONITORING_API_KEY:?MONITORING_API_KEY é obrigatória}
+      - CRAWL_MAX_PAGES=${CRAWL_MAX_PAGES:-1000}
+      - CRAWL_MAX_LINKS_PER_PAGE=${CRAWL_MAX_LINKS_PER_PAGE:-50}
+      - CRAWL_BATCH_SIZE=${CRAWL_BATCH_SIZE:-4}
     depends_on:
       redis:
         condition: service_healthy
@@ -126,6 +129,9 @@ services:
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@conform.ai}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD é obrigatória}
       - MONITORING_API_KEY=${MONITORING_API_KEY:?MONITORING_API_KEY é obrigatória}
+      - CRAWL_MAX_PAGES=${CRAWL_MAX_PAGES:-1000}
+      - CRAWL_MAX_LINKS_PER_PAGE=${CRAWL_MAX_LINKS_PER_PAGE:-50}
+      - CRAWL_BATCH_SIZE=${CRAWL_BATCH_SIZE:-4}
     depends_on:
       redis:
         condition: service_healthy

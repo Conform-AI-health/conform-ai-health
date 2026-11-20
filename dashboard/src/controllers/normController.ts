@@ -10,7 +10,7 @@ import { env } from '../config/env.js';
 const crawlInputSchema = z.object({
   url: z.string().url('URL inválida'),
   maxDepth: z.number().int().min(0).max(4).optional(),
-  maxPages: z.number().int().min(1).max(500).optional(),
+  maxPages: z.number().int().min(1).max(50000).optional(),
   tags: z.array(z.string()).optional(),
   allowedDomains: z.array(z.string()).optional(),
   force: z.boolean().optional(),

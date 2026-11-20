@@ -1888,7 +1888,7 @@ export class LegalNormCrawlerService {
 
     const jobId = options.jobId || `crawl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const maxDepth = options.maxDepth ?? 2;
-    const maxPages = options.maxPages ?? 100;
+    const maxPages = options.maxPages ?? env.CRAWL_MAX_PAGES ?? 1000;
     const allowedDomains = options.allowedDomains || [];
     const tags = options.tags || [];
     const force = options.force === true;
