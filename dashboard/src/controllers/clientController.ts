@@ -40,6 +40,26 @@ const clientSelfUpdateSchema = z.object({
 
 const updateClientSchema = createClientSchema.partial();
 
+function sanitizeClientSummary(summary?: string | null): string {
+  if (!summary) return 'Laudo preliminar de conformidade deontológica.';
+  const isTechnicalRagLeak =
+    summary.includes('A recuperação encontrou') ||
+    summary.includes('chunks indexados') ||
+    summary.includes('Modelo esperado') ||
+    summary.includes('npm run rag:reindex') ||
+    summary.includes('Sem embedding') ||
+    summary.includes('dimensão inválida') ||
+    summary.includes('modelo diferente') ||
+    summary.includes('metadado ausente') ||
+    summary.includes('norma-pai ausente') ||
+    summary.includes('A IA não foi chamada');
+
+  if (isTechnicalRagLeak) {
+    return 'Auditoria preliminar inconclusiva: O canal digital foi submetido à varredura preventiva e encontra-se em fase de validação complementar pela equipe de governança e auditoria regulatória. Revisão humana em andamento.';
+  }
+  return summary;
+}
+
 export class ClientController {
   /**
    * Listagem de clínicas com paginação e busca (ADMIN e AUDITOR)
@@ -192,6 +212,26 @@ export class ClientController {
         return acc + r.violations.filter((v) => v.severity === 'GRAVE' && !v.resolved).length;
       }, 0);
 
+      const sanitizedReports = reports.map((r) => ({
+        id: r.id,
+        clientId: r.clientId,
+        targetUrl: r.targetUrl,
+        verdict: r.verdict,
+        score: r.score,
+        summary: sanitizeClientSummary(r.summary),
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        violations: r.violations.map((v) => ({
+          id: v.id,
+          normArticle: v.normArticle,
+          normCode: v.normCode,
+          severity: v.severity,
+          detectedText: v.detectedText,
+          correctiveAdvice: v.correctiveAdvice,
+          resolved: v.resolved,
+        })),
+      }));
+
       res.status(200).json({
         client: {
           id: client.id,
@@ -213,7 +253,7 @@ export class ClientController {
           activeGraveViolations: graveViolationsCount,
           lastAuditDate: latestReport?.createdAt || null,
         },
-        recentReports: reports,
+        recentReports: sanitizedReports,
       });
     } catch (error) {
       next(error);
