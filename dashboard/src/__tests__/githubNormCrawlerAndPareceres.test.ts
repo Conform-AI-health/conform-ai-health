@@ -155,4 +155,67 @@ Aprovado em Sessão Plenária do Conselho Federal de Medicina em 15 de setembro 
       expect(contexts.some((ctx) => ctx.includes('CONCLUSÃO'))).toBe(true);
     });
   });
+
+  describe('4. Descarte Silencioso de Arquivos CSS e JS Antes da Telemetria', () => {
+    it('deve identificar assertivamente URLs de arquivos de estilo e scripts (.css, .js, .map, etc.)', () => {
+      expect(LegalNormCrawlerService.isScriptOrStyleUrl('https://example.com/assets/app.css')).toBe(true);
+      expect(LegalNormCrawlerService.isScriptOrStyleUrl('https://example.com/assets/app.min.js')).toBe(true);
+      expect(LegalNormCrawlerService.isScriptOrStyleUrl('https://example.com/assets/bundle.js?v=1.2.3')).toBe(true);
+      expect(LegalNormCrawlerService.isScriptOrStyleUrl('https://example.com/assets/theme.css#section')).toBe(true);
+      expect(LegalNormCrawlerService.isScriptOrStyleUrl('https://example.com/assets/runtime.mjs')).toBe(true);
+      expect(LegalNormCrawlerService.isScriptOrStyleUrl('https://example.com/assets/main.js.map')).toBe(true);
+
+      // URLs normativas ou documentos não devem ser consideradas CSS/JS
+      expect(LegalNormCrawlerService.isScriptOrStyleUrl('https://example.com/normas/resolucao-1985.pdf')).toBe(false);
+      expect(LegalNormCrawlerService.isScriptOrStyleUrl('https://example.com/normas/parecer-1.md')).toBe(false);
+      expect(LegalNormCrawlerService.isScriptOrStyleUrl('https://example.com/normas/pareceres/1985')).toBe(false);
+    });
+
+    it('deve descartar links para arquivos .css e .js no DOM antes de qualquer telemetria ou registro em skipped', () => {
+      const mockHtmlWithAssets = `
+        <html>
+          <head>
+            <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+            <script src="/static/js/jquery.min.js"></script>
+          </head>
+          <body>
+            <div>
+              <a href="/static/style/main.css">Download CSS</a>
+              <a href="/static/scripts/analytics.js">Script JS</a>
+              <a href="/static/bundle.js?hash=abc">Bundle JS</a>
+              <a href="/normas/pareceres/1985/CFM-PAR-1-1985.md">Parecer 1/1985</a>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const skipped: { url: string; reason: string }[] = [];
+      const discovered = LegalNormCrawlerService.discoverLinksFromHtml(
+        mockHtmlWithAssets,
+        'https://example.com/normas/pareceres/1985/',
+        0,
+        [],
+        ['example.com'],
+        skipped
+      );
+
+      // Apenas o parecer .md deve ser retornado
+      expect(discovered.length).toBe(1);
+      expect(discovered[0].url).toBe('https://example.com/normas/pareceres/1985/CFM-PAR-1-1985.md');
+
+      // Nenhum arquivo .css ou .js deve existir na telemetria de links pulados (skipped)
+      const skippedCssOrJs = skipped.filter(
+        (s) => s.url.endsWith('.css') || s.url.endsWith('.js') || s.url.includes('.js?')
+      );
+      expect(skippedCssOrJs.length).toBe(0);
+    });
+
+    it('deve rejeitar imediatamente a execução de crawl cuja URL inicial seja um arquivo .css ou .js sem registrar telemetria', async () => {
+      await expect(
+        LegalNormCrawlerService.executeCrawlJob({
+          url: 'https://example.com/static/style.css',
+        })
+      ).rejects.toThrow(/script ou folha de estilo/i);
+    });
+  });
 });

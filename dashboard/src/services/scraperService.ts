@@ -689,7 +689,13 @@ export class ScraperService {
     $('a[href*="/web/dou/-/"], a[href*="/en/web/dou/-/"]').each((_, el) => {
       const href = $(el).attr('href') || '';
       const text = $(el).text().trim();
-      if (href && text && !href.includes('#') && !href.startsWith('javascript:')) {
+      if (
+        href &&
+        text &&
+        !href.includes('#') &&
+        !href.startsWith('javascript:') &&
+        !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(href)
+      ) {
         const full = href.startsWith('http') ? href : `https://www.in.gov.br${href.startsWith('/') ? '' : '/'}${href}`;
         if (!discoveredLinks.some((d) => d.url === full)) {
           discoveredLinks.push({ url: full, title: text });
@@ -701,7 +707,12 @@ export class ScraperService {
     const paginationHrefs: string[] = [];
     $('a[href*="pagina="], a[href*="page="], ul.pagination a, .pagination a').each((_, el) => {
       const h = $(el).attr('href') || '';
-      if (h && !h.startsWith('#') && !h.startsWith('javascript:')) {
+      if (
+        h &&
+        !h.startsWith('#') &&
+        !h.startsWith('javascript:') &&
+        !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(h)
+      ) {
         const full = h.startsWith('http') ? h : `https://www.in.gov.br${h.startsWith('/') ? '' : '/'}${h}`;
         if (full !== targetUrl && !paginationHrefs.includes(full)) {
           paginationHrefs.push(full);
@@ -778,7 +789,12 @@ export class ScraperService {
     $('a').each((_, el) => {
       const href = $(el).attr('href') || '';
       const text = $(el).text().trim();
-      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+      if (
+        href &&
+        !href.startsWith('#') &&
+        !href.startsWith('javascript:') &&
+        !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(href)
+      ) {
         const absoluteUrl = href.startsWith('http') ? href : `${origin}${href.startsWith('/') ? '' : '/'}${href}`;
         if (
           docLinkRegex.test(absoluteUrl) &&
@@ -795,7 +811,12 @@ export class ScraperService {
     const paginationLinks: string[] = [];
     $('a[href*="page="], a[href*="pagina="], a[href*="p="], ul.pagination a, .pagination a, nav.submenu a, .sub-menu a').each((_, el) => {
       const href = $(el).attr('href') || '';
-      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+      if (
+        href &&
+        !href.startsWith('#') &&
+        !href.startsWith('javascript:') &&
+        !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(href)
+      ) {
         const absoluteUrl = href.startsWith('http') ? href : `${origin}${href.startsWith('/') ? '' : '/'}${href}`;
         if (absoluteUrl !== targetUrl && !paginationLinks.includes(absoluteUrl)) {
           paginationLinks.push(absoluteUrl);
@@ -814,7 +835,12 @@ export class ScraperService {
           pg$('a').each((_, el) => {
             const h = pg$(el).attr('href') || '';
             const t = pg$(el).text().trim();
-            if (h && !h.startsWith('#') && !h.startsWith('javascript:')) {
+            if (
+              h &&
+              !h.startsWith('#') &&
+              !h.startsWith('javascript:') &&
+              !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(h)
+            ) {
               const abs = h.startsWith('http') ? h : `${origin}${h.startsWith('/') ? '' : '/'}${h}`;
               if (
                 docLinkRegex.test(abs) &&

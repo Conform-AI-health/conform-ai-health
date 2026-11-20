@@ -170,6 +170,17 @@ export class LegalNormCrawlerService {
   }
 
   /**
+   * Identifica se uma URL aponta para arquivos de script, estilos ou mapas de código (.js, .css, etc.).
+   * Arquivos desse tipo são completamente descartados ANTES de qualquer registro de telemetria ou fila.
+   */
+  public static isScriptOrStyleUrl(url: string): boolean {
+    if (!url || typeof url !== 'string') return false;
+    const cleanUrl = url.trim().split('#')[0].split('?')[0].toLowerCase();
+    return /\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\/)/i.test(cleanUrl) ||
+           /\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)$/i.test(cleanUrl);
+  }
+
+  /**
    * Normaliza URL removendo fragmentos (#) e parâmetros de tracking, garantindo URL canônica
    */
   public static normalizeCanonicalUrl(rawUrl: string, baseUrl?: string): string | null {
@@ -364,8 +375,21 @@ export class LegalNormCrawlerService {
 
     $('a[href]').each((_, el) => {
       const rawHref = ($(el).attr('href') || '').trim();
+      if (!rawHref) return;
+
+      // Descarte imediato e silencioso de scripts e estilos (.css, .js) antes de qualquer telemetria
+      if (this.isScriptOrStyleUrl(rawHref)) {
+        return;
+      }
+
       let canonical = this.normalizeCanonicalUrl(rawHref, baseUrl);
       if (!canonical || seenUrls.has(canonical)) return;
+
+      // Descarte imediato e silencioso na URL normalizada antes de telemetria
+      if (this.isScriptOrStyleUrl(canonical)) {
+        seenUrls.add(canonical);
+        return;
+      }
 
       // Tratamento especializado para links de repositórios GitHub
       if (isCurrentBaseGithub) {
@@ -528,8 +552,16 @@ export class LegalNormCrawlerService {
     const seen = new Set<string>([this.normalizeCanonicalUrl(baseUrl) || baseUrl]);
 
     for (const raw of rawCandidates) {
+      if (!raw || this.isScriptOrStyleUrl(raw)) continue;
+
       const canonical = this.normalizeCanonicalUrl(raw, baseUrl);
       if (!canonical || seen.has(canonical)) continue;
+
+      // Descarte prévio e silencioso de scripts e estilos antes de telemetria
+      if (this.isScriptOrStyleUrl(canonical)) {
+        seen.add(canonical);
+        continue;
+      }
       if (this.isIgnoredCrawlerUrl(canonical)) {
         skipped?.push({ url: canonical, reason: 'Asset estático ou rota de framework/plugin' });
         seen.add(canonical);
@@ -1845,6 +1877,9 @@ export class LegalNormCrawlerService {
     if (!canonicalRoot) {
       throw new Error('URL inicial inválida para crawling.');
     }
+    if (this.isScriptOrStyleUrl(canonicalRoot)) {
+      throw new Error('A URL inicial aponta para um script ou folha de estilo (.js, .css) e foi descartada do scraping normativo.');
+    }
 
     const ssrfRoot = await validateSafeUrlAsync(canonicalRoot);
     if (!ssrfRoot.safe) {
@@ -1918,6 +1953,12 @@ export class LegalNormCrawlerService {
       let normUrl = this.normalizeCanonicalUrl(current.url) || current.url;
       // Normalização automática de URLs do GitHub para download do conteúdo bruto (raw)
       normUrl = this.convertGithubBlobToRawUrl(normUrl);
+
+      // Descarte prévio e silencioso de arquivos de script e estilos (.css, .js) antes de qualquer telemetria
+      if (this.isScriptOrStyleUrl(normUrl) || this.isScriptOrStyleUrl(current.url)) {
+        visitedUrls.add(normUrl);
+        continue;
+      }
       if (visitedUrls.has(normUrl)) {
         await LinkTraceService.record({
           jobId,
