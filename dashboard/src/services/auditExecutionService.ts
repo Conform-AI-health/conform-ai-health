@@ -6,6 +6,7 @@ import { EmailService } from './emailService.js';
 import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
 import { ExtractionMode } from '@prisma/client';
 import { ScraperService, ScrapeResult } from './scraperService.js';
+import { decryptSecret } from '../shared/encryption.js';
 
 export interface ExecuteAuditParams {
   auditReportId: string;
@@ -83,7 +84,7 @@ export class AuditExecutionService {
       const authConfig = params.auth || (mod?.hasAuth ? {
         hasAuth: true,
         username: mod.authUsername || undefined,
-        password: mod.authPassword || undefined,
+        password: mod.authPassword ? (decryptSecret(mod.authPassword) || undefined) : undefined,
       } : undefined);
 
       if (authConfig?.hasAuth) {

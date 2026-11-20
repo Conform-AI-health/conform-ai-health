@@ -9,6 +9,7 @@ import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { AuditExecutionService } from '../services/auditExecutionService.js';
 import { AuditSchedulerService } from '../services/auditSchedulerService.js';
 import { validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
+import { encryptSecret, decryptSecret, maskSecret } from '../shared/encryption.js';
 
 const createAgentSchema = z.object({
   name: z.string().min(2, 'Nome do Módulo é obrigatório'),
@@ -83,7 +84,11 @@ export class AgentController {
         : {};
 
       const sanitize = (m: any) => {
-        const item = { ...m, code: m.code || `agent-${m.id.slice(-6)}` };
+        const item = {
+          ...m,
+          code: m.code || `agent-${m.id.slice(-6)}`,
+          authPassword: m.authPassword ? maskSecret(m.authPassword) : null,
+        };
         if (isClient) {
           delete (item as any).systemPrompt;
         }
@@ -146,11 +151,17 @@ export class AgentController {
           return;
         }
         const { systemPrompt, ...sanitized } = mod;
-        res.status(200).json(sanitized);
+        res.status(200).json({
+          ...sanitized,
+          authPassword: sanitized.authPassword ? maskSecret(sanitized.authPassword) : null,
+        });
         return;
       }
 
-      res.status(200).json(mod);
+      res.status(200).json({
+        ...mod,
+        authPassword: mod.authPassword ? maskSecret(mod.authPassword) : null,
+      });
     } catch (error) {
       next(error);
     }
@@ -198,7 +209,7 @@ export class AgentController {
           cronSchedule: data.cronSchedule || '0 */6 * * *',
           hasAuth: data.hasAuth ?? false,
           authUsername: data.authUsername ? data.authUsername.trim() : null,
-          authPassword: data.authPassword ? data.authPassword.trim() : null,
+          authPassword: data.authPassword ? encryptSecret(data.authPassword.trim()) : null,
           enabled: data.enabled ?? true,
         },
       });
@@ -208,7 +219,10 @@ export class AgentController {
 
       res.status(201).json({
         message: 'Agente regulatório cadastrado com sucesso!',
-        agent,
+        agent: {
+          ...agent,
+          authPassword: agent.authPassword ? maskSecret(agent.authPassword) : null,
+        },
       });
     } catch (error) {
       next(error);
@@ -256,7 +270,11 @@ export class AgentController {
           ...(data.cronSchedule !== undefined && { cronSchedule: data.cronSchedule?.trim() || '0 */6 * * *' }),
           ...(data.hasAuth !== undefined && { hasAuth: data.hasAuth }),
           ...(data.authUsername !== undefined && { authUsername: data.authUsername ? data.authUsername.trim() : null }),
-          ...(data.authPassword !== undefined && { authPassword: data.authPassword ? data.authPassword.trim() : null }),
+          ...(data.authPassword !== undefined && {
+            authPassword: data.authPassword && data.authPassword.trim() !== ''
+              ? encryptSecret(data.authPassword.trim())
+              : null,
+          }),
         },
       });
 
@@ -265,7 +283,10 @@ export class AgentController {
 
       res.status(200).json({
         message: 'Módulo de agente atualizado com sucesso.',
-        agent: updated,
+        agent: {
+          ...updated,
+          authPassword: updated.authPassword ? maskSecret(updated.authPassword) : null,
+        },
       });
     } catch (error) {
       next(error);
@@ -445,7 +466,7 @@ export class AgentController {
             ? {
                 hasAuth: true,
                 username: mod.authUsername || undefined,
-                password: mod.authPassword || undefined,
+                password: mod.authPassword ? (decryptSecret(mod.authPassword) || undefined) : undefined,
               }
             : undefined);
 

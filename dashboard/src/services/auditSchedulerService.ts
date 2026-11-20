@@ -2,6 +2,7 @@ import parser from 'cron-parser';
 import { prisma } from '../config/prisma.js';
 import { auditQueue } from '../config/redis.js';
 import { AuditExecutionService } from './auditExecutionService.js';
+import { decryptSecret } from '../shared/encryption.js';
 
 interface ScheduledAgentState {
   agentId: string;
@@ -269,7 +270,7 @@ export class AuditSchedulerService {
         ? {
             hasAuth: true,
             username: agent.authUsername || undefined,
-            password: agent.authPassword || undefined,
+            password: agent.authPassword ? (decryptSecret(agent.authPassword) || undefined) : undefined,
           }
         : undefined;
 

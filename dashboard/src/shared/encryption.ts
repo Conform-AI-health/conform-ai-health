@@ -80,3 +80,18 @@ export function maskApiKey(rawKey: string | null | undefined): string | null {
   }
   return '••••••••';
 }
+
+/**
+ * T48: Mascara credenciais e senhas de agentes em repouso sem expor nenhum caractere
+ */
+export function maskPassword(rawPassword: string | null | undefined): string | null {
+  if (!rawPassword || typeof rawPassword !== 'string' || rawPassword.trim() === '') {
+    return null;
+  }
+  return '••••••••';
+}
+
+// Aliases genéricos para blindagem de segredos e senhas de agentes (T48)
+export const encryptSecret = encryptModelApiKey;
+export const decryptSecret = decryptModelApiKey;
+export const maskSecret = maskPassword;

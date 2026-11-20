@@ -39,16 +39,26 @@ export function errorHandler(
     return;
   }
 
-  // Log interno do erro
+  // Log interno do erro completo para observabilidade
   console.error('[Unhandled Error]:', err);
 
   const status = typeof err?.status === 'number' ? err.status : 500;
-  const message = err?.message || 'Erro interno no servidor.';
+  const isProduction = env.NODE_ENV === 'production';
+  const isInternalServerError = status >= 500;
+
+  // T49: Em produção, falhas internas 500+ nunca devem vazar stack traces, queries, nomes de tabelas ou exceptions brutas
+  const message = isProduction && isInternalServerError
+    ? 'Ocorreu um erro interno no servidor.'
+    : (err?.message || 'Erro interno no servidor.');
+
+  const code = isProduction && isInternalServerError
+    ? 'INTERNAL_SERVER_ERROR'
+    : (err?.code || 'INTERNAL_SERVER_ERROR');
 
   res.status(status).json({
     error: message,
-    code: err?.code || 'INTERNAL_SERVER_ERROR',
-    ...(env.NODE_ENV !== 'production' && { stack: err?.stack }),
+    code,
+    ...(!isProduction && { stack: err?.stack }),
   });
 }
 

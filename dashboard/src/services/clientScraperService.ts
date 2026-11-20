@@ -7,6 +7,7 @@ import { CircuitBreaker } from '../shared/circuitBreaker.js';
 import { Bulkhead } from '../shared/bulkhead.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
+import { decryptSecret } from '../shared/encryption.js';
 
 export interface ClientScrapeOptions {
   url: string;
@@ -97,7 +98,7 @@ export class ClientScraperService {
           authConfig = {
             hasAuth: true,
             username: mod.authUsername || undefined,
-            password: mod.authPassword || undefined,
+            password: mod.authPassword ? (decryptSecret(mod.authPassword) || undefined) : undefined,
           };
         }
       } catch (err: any) {
