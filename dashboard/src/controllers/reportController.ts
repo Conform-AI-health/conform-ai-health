@@ -503,5 +503,317 @@ export class ReportController {
       next(error);
     }
   }
+
+  /**
+   * Lista todos os laudos que aguardam revisão/homologação de um auditor humano
+   * (reviewStatus === 'PENDING_REVIEW' ou auditorReviewed === false)
+   */
+  public static async getPendingReview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+
+      const where: any = {
+        status: AuditStatus.COMPLETED,
+        OR: [
+          { reviewStatus: 'PENDING_REVIEW' },
+          { auditorReviewed: false },
+        ],
+      };
+
+      const [total, reports] = await Promise.all([
+        prisma.auditReport.count({ where }),
+        prisma.auditReport.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                tradeName: true,
+                crmResponsavel: true,
+                crmUf: true,
+                email: true,
+                users: { select: { email: true } },
+              },
+            },
+            violations: {
+              orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }],
+            },
+          },
+        }),
+      ]);
+
+      res.status(200).json({
+        data: reports.map((r) => ({
+          ...r,
+          targetUrl: r.targetUrl || 'URL não informada',
+          summary: r.summary || 'Laudo de conformidade deontológica.',
+        })),
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Lista todos os laudos que já foram processados/homologados pelo auditor humano
+   * (auditorReviewed === true ou reviewStatus !== 'PENDING_REVIEW')
+   */
+  public static async getProcessedReview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+
+      const where: any = {
+        OR: [
+          { auditorReviewed: true },
+          { reviewStatus: { in: ['APPROVED', 'REJECTED', 'CHANGES_REQUESTED'] } },
+        ],
+      };
+
+      const [total, reports] = await Promise.all([
+        prisma.auditReport.count({ where }),
+        prisma.auditReport.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { updatedAt: 'desc' },
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                tradeName: true,
+                crmResponsavel: true,
+                crmUf: true,
+                email: true,
+                users: { select: { email: true } },
+              },
+            },
+            violations: {
+              orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }],
+            },
+          },
+        }),
+      ]);
+
+      res.status(200).json({
+        data: reports.map((r) => ({
+          ...r,
+          targetUrl: r.targetUrl || 'URL não informada',
+          summary: r.summary || 'Laudo de conformidade deontológica.',
+        })),
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Homologa o laudo pelo auditor humano com checkbox obrigatório e dispara o e-mail oficial à clínica.
+   */
+  public static async confirmAndSendEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      const confirmSchema = z.object({
+        confirmed: z.boolean().refine((val) => val === true, {
+          message: 'A confirmação do auditor é obrigatória (a flag/checkbox deve estar selecionada).',
+        }),
+        decision: z.enum(['APPROVED', 'REJECTED', 'CHANGES_REQUESTED']).default('APPROVED'),
+        notes: z.string().optional(),
+        adjustedScore: z.number().min(0).max(100).optional(),
+        adjustedVerdict: z.nativeEnum(Verdict).optional(),
+      });
+
+      const { confirmed, decision, notes, adjustedScore, adjustedVerdict } = confirmSchema.parse(req.body);
+
+      const report = await prisma.auditReport.findUnique({
+        where: { id },
+        include: {
+          client: {
+            include: { users: { select: { email: true } } },
+          },
+          violations: true,
+        },
+      });
+
+      if (!report) {
+        res.status(404).json({ error: 'Laudo de auditoria não encontrado.' });
+        return;
+      }
+
+      const client = report.client;
+      const clientName = client?.tradeName || client?.name || 'Clínica Médica';
+      const reviewerIdentifier = req.user?.email || req.user?.userId || 'auditor';
+
+      // Atualiza o contrato estruturado com o bloco auditável de revisão humana
+      let contractObj: any = {};
+      if (report.structuredContract) {
+        try {
+          contractObj = JSON.parse(report.structuredContract);
+        } catch {}
+      }
+
+      contractObj.humanReview = {
+        decision,
+        confirmed,
+        reviewerId: req.user?.userId || 'system',
+        reviewerEmail: req.user?.email || 'auditor@conformia.med.br',
+        reviewedAt: new Date().toISOString(),
+        notes: notes || 'Laudo revisado e confirmado pelo auditor responsável.',
+        adjustedScore,
+        adjustedVerdict,
+      };
+
+      const finalScore = adjustedScore !== undefined ? adjustedScore : (report.score ?? 0);
+      const finalVerdict = adjustedVerdict !== undefined ? adjustedVerdict : report.verdict;
+
+      // 1. Atualiza dados do laudo
+      const updatedReport = await prisma.auditReport.update({
+        where: { id },
+        data: {
+          reviewStatus: decision,
+          auditorReviewed: true,
+          reviewedBy: reviewerIdentifier,
+          reviewedAt: new Date(),
+          auditorNotes: notes,
+          requiresHumanReview: decision === 'CHANGES_REQUESTED',
+          score: finalScore,
+          verdict: finalVerdict,
+          structuredContract: JSON.stringify(contractObj),
+        },
+      });
+
+      // 2. Registro no SystemLog da homologação humana
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'AUDIT_REVIEW',
+          correlationId: id,
+          message: `[AUDITOR_CONFIRMED] Laudo ${id} revisado e confirmado pelo auditor ${reviewerIdentifier} com decisão: ${decision}.`,
+          details: JSON.stringify({
+            auditReportId: id,
+            reviewer: reviewerIdentifier,
+            decision,
+            notes,
+            score: finalScore,
+            verdict: finalVerdict,
+          }),
+        },
+      }).catch(() => {});
+
+      // 3. Se aprovado, dispara o e-mail à clínica
+      let emailDispatched = false;
+
+      if (decision === 'APPROVED') {
+        const resolvedEmails: string[] = [];
+        if (client?.email && client.email.trim().length > 0) {
+          resolvedEmails.push(client.email.trim());
+        }
+        if (client?.users && client.users.length > 0) {
+          for (const u of client.users) {
+            if (u.email && u.email.trim().length > 0 && !resolvedEmails.includes(u.email.trim())) {
+              resolvedEmails.push(u.email.trim());
+            }
+          }
+        }
+
+        if (resolvedEmails.length === 0) {
+          await prisma.systemLog.create({
+            data: {
+              level: 'WARN',
+              module: 'EMAIL_NOTIFICATION',
+              correlationId: id,
+              message: `[EMAIL_WARN] Auditor confirmou o laudo ${id}, mas nenhum e-mail válido foi encontrado para a clínica "${clientName}".`,
+              details: JSON.stringify({ auditReportId: id, clientName }),
+            },
+          }).catch(() => {});
+        } else {
+          for (const email of resolvedEmails) {
+            try {
+              const emailResult = await EmailService.sendAuditReportCompletedEmail(email, clientName, {
+                id: report.id,
+                targetUrl: report.targetUrl || '',
+                score: finalScore,
+                verdict: finalVerdict,
+                summary: report.summary,
+                violationsCount: report.violations.length,
+              });
+
+              if (emailResult.success) {
+                emailDispatched = true;
+                await prisma.systemLog.create({
+                  data: {
+                    level: 'INFO',
+                    module: 'EMAIL_NOTIFICATION',
+                    correlationId: id,
+                    message: `[EMAIL_SUCCESS] E-mail de conclusão de laudo enviado com sucesso para ${email} (Clínica: ${clientName}) após confirmação do auditor ${reviewerIdentifier}. MessageId: ${emailResult.messageId || 'MOCK'}`,
+                    details: JSON.stringify({ auditReportId: id, email, messageId: emailResult.messageId, reviewer: reviewerIdentifier }),
+                  },
+                }).catch(() => {});
+              } else {
+                await prisma.systemLog.create({
+                  data: {
+                    level: 'WARN',
+                    module: 'EMAIL_NOTIFICATION',
+                    correlationId: id,
+                    message: `[EMAIL_WARN] Falha ao enviar e-mail para ${email} após confirmação do auditor: ${emailResult.error}`,
+                    details: JSON.stringify({ auditReportId: id, email, error: emailResult.error }),
+                  },
+                }).catch(() => {});
+              }
+            } catch (err: any) {
+              await prisma.systemLog.create({
+                data: {
+                  level: 'ERROR',
+                  module: 'EMAIL_NOTIFICATION',
+                  correlationId: id,
+                  message: `[EMAIL_ERROR] Exceção ao enviar e-mail para ${email}: ${err.message}`,
+                  details: JSON.stringify({ auditReportId: id, email, error: err.message }),
+                },
+              }).catch(() => {});
+            }
+          }
+
+          if (emailDispatched) {
+            await prisma.auditReport.update({
+              where: { id },
+              data: {
+                emailSent: true,
+                emailSentAt: new Date(),
+              },
+            });
+          }
+        }
+      }
+
+      res.status(200).json({
+        message: decision === 'APPROVED'
+          ? 'Laudo confirmado e homologado com sucesso! E-mail de notificação processado para a clínica.'
+          : `Revisão do auditor registrada com sucesso (${decision}).`,
+        report: updatedReport,
+        emailSent: emailDispatched,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 

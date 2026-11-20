@@ -13,6 +13,7 @@ import { AgentsPage } from './pages/AgentsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { LogsTelemetryPage } from './pages/LogsTelemetryPage';
 import { ScrapingPage } from './pages/ScrapingPage';
+import { AuditReviewPage } from './pages/AuditReviewPage';
 
 const RootRedirect: React.FC = () => {
   const { user } = useAuth();
@@ -37,6 +38,7 @@ export const App: React.FC = () => {
                 <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'AUDITOR']} />}>
                   <Route path="/cockpit" element={<DashboardPage />} />
                   <Route path="/scraping" element={<ScrapingPage />} />
+                  <Route path="/audit-review" element={<AuditReviewPage />} />
                   <Route path="/clients" element={<ClientsPage />} />
                   <Route path="/agents" element={<AgentsPage />} />
                   <Route path="/logs" element={<LogsTelemetryPage />} />

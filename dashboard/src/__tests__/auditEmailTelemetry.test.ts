@@ -13,6 +13,7 @@ vi.mock('../config/prisma.js', () => ({
       update: vi.fn(),
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
     },
     client: {
       findUnique: vi.fn(),
@@ -127,7 +128,7 @@ describe('📧 Notificações por E-mail & Registro de Falhas na Telemetria (Aud
       (prisma.systemLog.create as any).mockResolvedValue({});
     });
 
-    it('deve enviar e-mail com sucesso após a conclusão do laudo e registrar na telemetria (INFO)', async () => {
+    it('ao concluir a auditoria pela IA, NÃO deve enviar e-mail automaticamente e DEVE encaminhar para a fila de revisão do auditor (AUDIT_AWAITING_REVIEW)', async () => {
       (prisma.client.findUnique as any).mockResolvedValue({
         id: 'client-1',
         name: 'Clínica Oftalmológica Visão',
@@ -147,31 +148,21 @@ describe('📧 Notificações por E-mail & Registro de Falhas na Telemetria (Aud
       });
 
       expect(result.success).toBe(true);
-      expect(ReconciliationEngine.reconcile).toHaveBeenCalledWith(
-        expect.objectContaining({
-          extractedEntities: expect.objectContaining({
-            extractionCompleted: true,
-            crms: expect.arrayContaining([expect.stringContaining('123456')]),
-            rqes: expect.arrayContaining([expect.stringContaining('654321')]),
-          }),
-        }),
-        undefined,
-        expect.any(Object)
-      );
-      expect(sendEmailSpy).toHaveBeenCalledWith(
-        'diretoria@clinicavisao.med.br',
-        'Clínica Oftalmológica Visão',
-        expect.objectContaining({ id: 'rep-100', score: 92, verdict: 'CONFORME' })
-      );
+      expect(result.reviewStatus).toBe('PENDING_REVIEW');
+      expect(result.auditorReviewed).toBe(false);
+      expect(result.emailSent).toBe(false);
 
-      // Valida gravação do log de sucesso na telemetria
+      // O e-mail NÃO deve ser enviado pela IA de forma autônoma
+      expect(sendEmailSpy).not.toHaveBeenCalled();
+
+      // Valida gravação do log de encaminhamento para revisão na telemetria
       expect(prisma.systemLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             level: 'INFO',
-            module: 'EMAIL_NOTIFICATION',
+            module: 'AUDIT_WORKFLOW',
             correlationId: 'rep-100',
-            message: expect.stringContaining('enviado com sucesso'),
+            message: expect.stringContaining('[AUDIT_AWAITING_REVIEW]'),
           }),
         })
       );
@@ -225,108 +216,238 @@ describe('📧 Notificações por E-mail & Registro de Falhas na Telemetria (Aud
         })
       );
     });
+  });
 
-    it('quando o envio do e-mail falhar, NÃO deve quebrar o laudo concluído e DEVE registrar na telemetria (WARN)', async () => {
-      (prisma.client.findUnique as any).mockResolvedValue({
-        id: 'client-2',
-        name: 'Clínica Dermatológica Pele',
-        email: 'contato@clinica.com', // e-mail mock que é rejeitado
+  describe('3. Novo Menu e Fluxo de Revisão do Auditor (ReportController.getPendingReview & confirmAndSendEmail)', () => {
+    it('ReportController.getPendingReview: deve listar laudos pendentes de revisão do auditor humano', async () => {
+      (prisma.auditReport.count as any).mockResolvedValue(1);
+      (prisma.auditReport.findMany as any).mockResolvedValue([
+        {
+          id: 'rep-pending-1',
+          targetUrl: 'https://clinicapendente.med.br',
+          status: 'COMPLETED',
+          reviewStatus: 'PENDING_REVIEW',
+          auditorReviewed: false,
+          score: 85,
+          verdict: 'CONFORME',
+          violations: [],
+          client: {
+            name: 'Clínica Pendente',
+            tradeName: 'Pendente Saúde',
+            email: 'contato@clinicapendente.med.br',
+          },
+        },
+      ]);
+
+      const req: any = { query: { page: '1', limit: '10' } };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await ReportController.getPendingReview(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ id: 'rep-pending-1', reviewStatus: 'PENDING_REVIEW' }),
+          ]),
+          pagination: expect.objectContaining({ total: 1 }),
+        })
+      );
+    });
+
+    it('ReportController.getProcessedReview: deve listar laudos já processados/homologados pelo auditor humano', async () => {
+      (prisma.auditReport.count as any).mockResolvedValue(1);
+      (prisma.auditReport.findMany as any).mockResolvedValue([
+        {
+          id: 'rep-processed-1',
+          targetUrl: 'https://clinicaprocessada.med.br',
+          status: 'COMPLETED',
+          reviewStatus: 'APPROVED',
+          auditorReviewed: true,
+          reviewedBy: 'auditor.chefe@conformia.med.br',
+          reviewedAt: new Date(),
+          emailSent: true,
+          score: 95,
+          verdict: 'CONFORME',
+          violations: [],
+          client: {
+            name: 'Clínica Homologada',
+            email: 'contato@clinicahomologada.med.br',
+          },
+        },
+      ]);
+
+      const req: any = { query: { page: '1', limit: '10' } };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await ReportController.getProcessedReview(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ id: 'rep-processed-1', reviewStatus: 'APPROVED', auditorReviewed: true }),
+          ]),
+          pagination: expect.objectContaining({ total: 1 }),
+        })
+      );
+    });
+
+    it('ReportController.confirmAndSendEmail: deve rejeitar se a checkbox de confirmação do auditor não estiver marcada (confirmed: false)', async () => {
+      const req: any = {
+        params: { id: 'rep-pending-1' },
+        body: { confirmed: false, decision: 'APPROVED' },
+        user: { role: 'AUDITOR', email: 'auditor@conformia.med.br' },
+      };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await ReportController.confirmAndSendEmail(req, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('ReportController.confirmAndSendEmail: com checkbox marcada, deve homologar laudo e enviar e-mail oficial à clínica com logs auditáveis', async () => {
+      (prisma.auditReport.findUnique as any).mockResolvedValue({
+        id: 'rep-pending-1',
+        targetUrl: 'https://clinicapendente.med.br',
+        score: 90,
+        verdict: 'CONFORME',
+        summary: 'Resumo auditado pela IA',
+        violations: [],
+        structuredContract: JSON.stringify({ summary: 'Resumo inicial' }),
+        client: {
+          name: 'Clínica Aprovada',
+          email: 'diretoria@clinicaaprovada.med.br',
+          users: [{ email: 'medico@clinicaaprovada.med.br' }],
+        },
+      });
+
+      (prisma.auditReport.update as any).mockResolvedValue({
+        id: 'rep-pending-1',
+        reviewStatus: 'APPROVED',
+        auditorReviewed: true,
+        emailSent: true,
       });
 
       const sendEmailSpy = vi.spyOn(EmailService, 'sendAuditReportCompletedEmail').mockResolvedValue({
-        success: false,
-        error: 'E-mail de destino inválido ou mock genérico proibido',
+        success: true,
+        messageId: 'msg-auditor-approved-123',
       });
 
-      const result = await AuditExecutionService.execute({
-        auditReportId: 'rep-101',
-        clientId: 'client-2',
-        targetUrl: 'https://clinicapele.med.br',
-      });
+      const req: any = {
+        params: { id: 'rep-pending-1' },
+        body: {
+          confirmed: true,
+          decision: 'APPROVED',
+          notes: 'Revisão presencial dos apontamentos e conformidade com a Res. CFM 2.336/23.',
+        },
+        user: { role: 'AUDITOR', email: 'auditor.chefe@conformia.med.br' },
+      };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
 
-      // O laudo foi concluído com sucesso apesar da falha no e-mail
-      expect(result.success).toBe(true);
+      await ReportController.confirmAndSendEmail(req, res, next);
 
-      // Valida gravação do log de erro/aviso na telemetria
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Laudo confirmado e homologado com sucesso!'),
+          emailSent: true,
+        })
+      );
+
+      // Valida chamada de envio para o e-mail da clínica
+      expect(sendEmailSpy).toHaveBeenCalledWith(
+        'diretoria@clinicaaprovada.med.br',
+        'Clínica Aprovada',
+        expect.objectContaining({ id: 'rep-pending-1', score: 90, verdict: 'CONFORME' })
+      );
+
+      // Valida registros no SystemLog: confirmação do auditor e envio de email
       expect(prisma.systemLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            level: 'WARN',
+            module: 'AUDIT_REVIEW',
+            message: expect.stringContaining('[AUDITOR_CONFIRMED]'),
+          }),
+        })
+      );
+      expect(prisma.systemLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
             module: 'EMAIL_NOTIFICATION',
-            correlationId: 'rep-101',
-            message: expect.stringContaining('Falha ao enviar notificação de laudo por e-mail'),
-            details: expect.stringContaining('E-mail de destino inválido'),
+            message: expect.stringContaining('[EMAIL_SUCCESS]'),
           }),
         })
       );
     });
 
-    it('quando a clínica não possuir e-mail cadastrado, deve registrar na telemetria aviso de pendência de destinatário', async () => {
-      (prisma.client.findUnique as any).mockResolvedValue({
-        id: 'client-3',
-        name: 'Clínica Sem E-mail',
-        email: null,
-        users: [],
+    it('ReportController.confirmAndSendEmail: quando clínica não tem e-mail, deve registrar aviso WARN sem falhar homologação', async () => {
+      (prisma.auditReport.findUnique as any).mockResolvedValue({
+        id: 'rep-no-email',
+        targetUrl: 'https://clinicasememail.med.br',
+        score: 75,
+        verdict: 'PARCIALMENTE_CONFORME',
+        summary: 'Resumo',
+        violations: [],
+        client: {
+          name: 'Clínica Sem Contato',
+          email: null,
+          users: [],
+        },
+      });
+
+      (prisma.auditReport.update as any).mockResolvedValue({
+        id: 'rep-no-email',
+        reviewStatus: 'APPROVED',
+        auditorReviewed: true,
       });
 
       const sendEmailSpy = vi.spyOn(EmailService, 'sendAuditReportCompletedEmail');
 
-      const result = await AuditExecutionService.execute({
-        auditReportId: 'rep-102',
-        clientId: 'client-3',
-        targetUrl: 'https://clinicasememail.med.br',
-      });
+      const req: any = {
+        params: { id: 'rep-no-email' },
+        body: { confirmed: true, decision: 'APPROVED' },
+        user: { role: 'AUDITOR', email: 'auditor@conformia.med.br' },
+      };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
 
-      expect(result.success).toBe(true);
+      await ReportController.confirmAndSendEmail(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
       expect(sendEmailSpy).not.toHaveBeenCalled();
-
-      // Telemetria registra pendência
       expect(prisma.systemLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             level: 'WARN',
             module: 'EMAIL_NOTIFICATION',
-            correlationId: 'rep-102',
-            message: expect.stringContaining('Nenhum endereço de e-mail válido encontrado'),
-          }),
-        })
-      );
-    });
-
-    it('quando o provedor de mensageria lançar exceção não tratada, deve registrar na telemetria como ERROR', async () => {
-      (prisma.client.findUnique as any).mockResolvedValue({
-        id: 'client-4',
-        name: 'Clínica Exceção',
-        email: 'adm@clinicaexcecao.med.br',
-      });
-
-      vi.spyOn(EmailService, 'sendAuditReportCompletedEmail').mockRejectedValue(
-        new Error('Resend 500 Internal Server Error')
-      );
-
-      const result = await AuditExecutionService.execute({
-        auditReportId: 'rep-103',
-        clientId: 'client-4',
-        targetUrl: 'https://clinicaexcecao.med.br',
-      });
-
-      expect(result.success).toBe(true);
-
-      expect(prisma.systemLog.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            level: 'ERROR',
-            module: 'EMAIL_NOTIFICATION',
-            correlationId: 'rep-103',
-            message: expect.stringContaining('Erro inesperado durante o disparo de e-mail do laudo'),
-            details: expect.stringContaining('Resend 500 Internal Server Error'),
+            message: expect.stringContaining('[EMAIL_WARN]'),
           }),
         })
       );
     });
   });
 
-  describe('3. Endpoint ReportController.notifyClient (Reenvio Manual & Telemetria)', () => {
+  describe('4. Endpoint ReportController.notifyClient (Reenvio Manual & Telemetria)', () => {
     it('deve reenviar notificação com sucesso e gravar na telemetria', async () => {
       (prisma.auditReport.findUnique as any).mockResolvedValue({
         id: 'rep-200',
@@ -427,7 +548,7 @@ describe('📧 Notificações por E-mail & Registro de Falhas na Telemetria (Aud
     });
   });
 
-  describe('4. TelemetryController.getTelemetry: Agregação de Métricas de E-mail', () => {
+  describe('5. TelemetryController.getTelemetry: Agregação de Métricas de E-mail', () => {
     it('deve computar e expor métricas consolidadas de e-mails enviados e com falha', async () => {
       (prisma.auditReport.findMany as any).mockResolvedValue([
         {
