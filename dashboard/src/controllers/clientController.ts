@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import { prisma } from '../config/prisma.js';
 import { ClientStatus, Role, ExtractionMode } from '@prisma/client';
 import { ScraperService } from '../services/scraperService.js';
@@ -25,6 +26,8 @@ const createClientSchema = z.object({
   status: z.enum(['ATIVO', 'INATIVO', 'PENDENTE', 'SUSPENSO']).default('ATIVO'),
   phone: z.string().optional().nullable(),
   email: z.string().email('E-mail de Notificação / Compliance inválido').optional().nullable().or(z.literal('')),
+  accessEmail: z.string().email('E-mail de acesso inválido').optional().nullable().or(z.literal('')),
+  initialPassword: z.string().min(6, 'Senha inicial deve ter no mínimo 6 caracteres').optional().nullable().or(z.literal('')),
 });
 
 const clientSelfUpdateSchema = z.object({
@@ -69,6 +72,9 @@ export class ClientController {
           take: limit,
           orderBy: { createdAt: 'desc' },
           include: {
+            users: {
+              select: { id: true, email: true, name: true, mustChangePassword: true, role: true },
+            },
             _count: {
               select: { auditReports: true, users: true },
             },
@@ -219,20 +225,141 @@ export class ClientController {
    */
   public static async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const data = createClientSchema.parse(req.body);
+      const { accessEmail, initialPassword, ...clientFields } = createClientSchema.parse(req.body);
       const now = new Date();
 
       const client = await prisma.client.create({
         data: {
-          ...data,
+          ...clientFields,
           createdAt: now,
           updatedAt: now,
         },
       });
 
+      let createdUser = null;
+      const targetUserEmail = (accessEmail || clientFields.email)?.trim();
+      if (initialPassword && targetUserEmail) {
+        const passwordHash = await bcrypt.hash(initialPassword, 12);
+
+        // Verifica se já existe usuário com esse e-mail
+        const existingUser = await prisma.user.findUnique({
+          where: { email: targetUserEmail },
+        });
+
+        if (existingUser) {
+          createdUser = await prisma.user.update({
+            where: { id: existingUser.id },
+            data: {
+              passwordHash,
+              role: Role.CLIENT,
+              clientId: client.id,
+              mustChangePassword: true,
+            },
+            select: { id: true, email: true, name: true, role: true, mustChangePassword: true },
+          });
+        } else {
+          createdUser = await prisma.user.create({
+            data: {
+              email: targetUserEmail,
+              passwordHash,
+              name: clientFields.tradeName || clientFields.name,
+              role: Role.CLIENT,
+              clientId: client.id,
+              mustChangePassword: true,
+            },
+            select: { id: true, email: true, name: true, role: true, mustChangePassword: true },
+          });
+        }
+
+        await prisma.systemLog.create({
+          data: {
+            level: 'INFO',
+            module: 'CLIENT_MANAGEMENT',
+            message: `[CLIENT_ACCESS_CREATED] Usuário institucional ${targetUserEmail} criado com senha temporária para a clínica "${client.name}". Troca obrigatória no primeiro acesso.`,
+            details: JSON.stringify({ clientId: client.id, userEmail: targetUserEmail }),
+          },
+        }).catch(() => {});
+      }
+
       res.status(201).json({
-        message: 'Clínica cadastrada com sucesso.',
+        message: 'Clínica cadastrada com sucesso.' + (createdUser ? ' Usuário de acesso institucional gerado com troca de senha obrigatória no primeiro acesso.' : ''),
         client,
+        accessUser: createdUser,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Cria ou redefine credenciais institucionais (CLIENT) para uma clínica existente
+   */
+  public static async createOrUpdateAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      const accessSchema = z.object({
+        email: z.string().email('E-mail institucional inválido'),
+        password: z.string().min(6, 'Senha inicial deve ter no mínimo 6 caracteres'),
+        name: z.string().optional(),
+      });
+
+      const { email, password, name } = accessSchema.parse(req.body);
+
+      const client = await prisma.client.findUnique({
+        where: { id },
+      });
+
+      if (!client) {
+        res.status(404).json({ error: 'Clínica não encontrada.' });
+        return;
+      }
+
+      const passwordHash = await bcrypt.hash(password, 12);
+      const targetName = name || client.tradeName || client.name;
+
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      let user;
+      if (existingUser) {
+        user = await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            passwordHash,
+            clientId: client.id,
+            role: Role.CLIENT,
+            mustChangePassword: true,
+          },
+          select: { id: true, email: true, name: true, role: true, mustChangePassword: true },
+        });
+      } else {
+        user = await prisma.user.create({
+          data: {
+            email,
+            passwordHash,
+            name: targetName,
+            role: Role.CLIENT,
+            clientId: client.id,
+            mustChangePassword: true,
+          },
+          select: { id: true, email: true, name: true, role: true, mustChangePassword: true },
+        });
+      }
+
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'CLIENT_MANAGEMENT',
+          message: `[CLIENT_ACCESS_PROVISIONED] Acesso institucional concedido/redefinido para ${email} (Clínica: ${client.name}). Troca de senha obrigatória no primeiro acesso ativada.`,
+          details: JSON.stringify({ clientId: client.id, email, requestedBy: req.user?.email }),
+        },
+      }).catch(() => {});
+
+      res.status(200).json({
+        message: 'Credenciais de acesso institucional configuradas com sucesso! A clínica deverá alterar a senha no primeiro acesso.',
+        user,
       });
     } catch (error) {
       next(error);

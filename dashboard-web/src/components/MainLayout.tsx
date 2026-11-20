@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { FirstAccessModal } from './FirstAccessModal';
 
 export const MainLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -182,6 +183,9 @@ export const MainLayout: React.FC = () => {
           <Outlet />
         </div>
       </main>
+
+      {/* Modal Mandatório de Primeiro Acesso */}
+      <FirstAccessModal />
     </div>
   );
 };

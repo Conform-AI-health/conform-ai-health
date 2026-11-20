@@ -81,6 +81,7 @@ router.post('/forgot-password', forgotPasswordLimiter, AuthController.forgotPass
 router.post('/reset-password', resetPasswordLimiter, AuthController.resetPassword);
 router.get('/me', authenticate, AuthController.me);
 router.post('/change-password', authenticate, AuthController.changePassword);
+router.post('/first-access-password', authenticate, AuthController.firstAccessPassword);
 router.post('/logout', AuthController.logout);
 
 // Gestão de usuários administrativos / internos (SEC-01)

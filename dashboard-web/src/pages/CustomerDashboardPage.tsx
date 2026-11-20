@@ -290,6 +290,31 @@ export const CustomerDashboardPage: React.FC = () => {
               Orientações preventivas amigáveis para adequação imediata aos artigos do CFM
             </p>
           </div>
+
+          {/* Seletor de Laudos Auditados da Instituição */}
+          {portalData?.recentReports && portalData.recentReports.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
+              <span className="text-xs text-slate-400 font-semibold whitespace-nowrap">Laudos:</span>
+              {portalData.recentReports.map((r: any, idx: number) => {
+                const isSelected = selectedReport?.id === r.id;
+                const d = r.createdAt ? new Date(r.createdAt).toLocaleDateString('pt-BR') : `Laudo #${idx + 1}`;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => setSelectedReport(r)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition border ${
+                      isSelected
+                        ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 shadow-sm shadow-emerald-950/50'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                    }`}
+                  >
+                    <span>{d}</span>
+                    <span className="ml-1.5 opacity-75 font-mono">({r.score ?? 0} pts)</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {selectedReport ? (

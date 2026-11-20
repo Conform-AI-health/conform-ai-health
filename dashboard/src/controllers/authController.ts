@@ -46,6 +46,10 @@ const resetPasswordSchema = z.object({
   newPassword: z.string().min(8, 'Nova senha deve ter pelo menos 8 caracteres'),
 });
 
+const firstAccessPasswordSchema = z.object({
+  newPassword: z.string().min(8, 'Nova senha deve ter pelo menos 8 caracteres'),
+});
+
 export class AuthController {
   /**
    * Cadastro público de novos usuários (SEC-01)
@@ -265,6 +269,7 @@ export class AuthController {
           name: user.name,
           role: user.role,
           clientId: user.clientId,
+          mustChangePassword: user.mustChangePassword ?? false,
           client: user.client
             ? {
                 id: user.client.id,
@@ -519,6 +524,7 @@ export class AuthController {
           name: user.name,
           role: user.role,
           clientId: user.clientId,
+          mustChangePassword: user.mustChangePassword ?? false,
           client: user.client,
           createdAt: user.createdAt,
         },
@@ -566,11 +572,63 @@ export class AuthController {
       const newPasswordHash = await bcrypt.hash(newPassword, 12);
       await prisma.user.update({
         where: { id: user.id },
-        data: { passwordHash: newPasswordHash },
+        data: {
+          passwordHash: newPasswordHash,
+          mustChangePassword: false,
+        },
       });
 
       res.status(200).json({
         message: 'Senha alterada com sucesso.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Alteração obrigatória de senha no primeiro acesso institucional da clínica
+   */
+  public static async firstAccessPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' });
+        return;
+      }
+
+      const { newPassword } = firstAccessPasswordSchema.parse(req.body);
+
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.userId },
+      });
+
+      if (!user) {
+        res.status(404).json({ error: 'Usuário não encontrado.' });
+        return;
+      }
+
+      const newPasswordHash = await bcrypt.hash(newPassword, 12);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: newPasswordHash,
+          mustChangePassword: false,
+        },
+      });
+
+      // Registra evento de auditoria no log
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'AUTH',
+          message: `[FIRST_ACCESS_PASSWORD_CHANGED] Usuário institucional ${user.email} (Perfil: ${user.role}) definiu sua senha definitiva no primeiro acesso.`,
+          details: JSON.stringify({ userId: user.id, email: user.email, role: user.role, clientId: user.clientId }),
+        },
+      }).catch(() => {});
+
+      res.status(200).json({
+        message: 'Senha definitiva configurada com sucesso! Acesso ao Portal da Clínica liberado.',
+        mustChangePassword: false,
       });
     } catch (error) {
       next(error);

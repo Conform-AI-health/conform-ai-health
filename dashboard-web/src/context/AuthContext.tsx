@@ -14,6 +14,7 @@ export interface User {
   email: string;
   role: UserRole;
   clientId?: string | null;
+  mustChangePassword?: boolean;
   client?: {
     id: string;
     name: string;
