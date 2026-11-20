@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # -------------------------------------------------------------
   # Redis: Fila BullMQ e Cache Operacional com Autenticação e Proteção
@@ -6,6 +12,7 @@ services:
     image: redis:7-alpine
     container_name: conformia-redis
     restart: unless-stopped
+    logging: *default-logging
     command: >
       redis-server --appendonly yes
       --maxmemory 256mb
@@ -43,6 +50,7 @@ services:
       dockerfile: Dockerfile
     container_name: conformia-api
     restart: unless-stopped
+    logging: *default-logging
     ports:
       # Restrict plain HTTP to the host; expose it publicly only through a TLS-terminating reverse proxy.
       - "127.0.0.1:${API_PORT:-3333}:3000"
@@ -99,6 +107,7 @@ services:
       dockerfile: Dockerfile
     container_name: conformia-worker
     restart: unless-stopped
+    logging: *default-logging
     command: ["node", "dist/worker.js"]
     ports:
       # Exposição da porta de saúde e telemetria Prometheus do Worker no loopback
@@ -157,6 +166,7 @@ services:
       dockerfile: Dockerfile
     container_name: conformia-web
     restart: unless-stopped
+    logging: *default-logging
     ports:
       # Restrict plain HTTP to the host; expose it publicly only through a TLS-terminating reverse proxy.
       - "127.0.0.1:${WEB_PORT:-3000}:80"

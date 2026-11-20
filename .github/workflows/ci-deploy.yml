@@ -150,10 +150,15 @@ jobs:
             cd /opt/conformia
             echo "🔑 Autenticando no GitHub Container Registry (GHCR)..."
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            echo "🧹 Liberando espaço preventivo no Docker (imagens dangling e caches)..."
+            docker system prune -f || true
+            docker image prune -af --filter "until=24h" || true
             echo "📥 Atualizando imagens no servidor de produção..."
             APP_VERSION=latest docker compose pull || true
             echo "🔄 Reiniciando containers da ConformIA..."
             APP_VERSION=latest docker compose up -d --remove-orphans
+            echo "🧹 Purgando imagens antigas e camadas descontinuadas pós-deploy..."
+            docker image prune -af || true
             echo "⏳ Aguardando inicialização e estabilização dos serviços..."
             sleep 15
             echo "🩺 Verificando integridade dos serviços..."
