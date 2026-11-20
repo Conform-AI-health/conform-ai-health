@@ -125,13 +125,13 @@ jobs:
       - name: Checkout Repositório
         uses: actions/checkout@v4
 
-      - name: Sincronizar docker-compose.yml na EC2
+      - name: Sincronizar arquivos de deploy e scripts na EC2
         uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
           username: ${{ secrets.AWS_EC2_USER }}
           key: ${{ secrets.AWS_EC2_SSH_KEY }}
-          source: "docker-compose.yml"
+          source: "docker-compose.yml,scripts/ec2-disk-cleanup.sh"
           target: "/opt/conformia/"
           overwrite: true
 
@@ -151,25 +151,32 @@ jobs:
             echo "🔑 Autenticando no GitHub Container Registry (GHCR)..."
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-            echo "🧹 [1/4] Faxina preventiva: liberando espaço antes do download..."
-            docker image prune -f || true
-            docker volume prune -f || true
-            docker builder prune -af || true
+            echo "🧹 [1/4] Executando script de limpeza preventiva de disco no servidor..."
+            if [ -f "/opt/conformia/scripts/ec2-disk-cleanup.sh" ]; then
+              chmod +x /opt/conformia/scripts/ec2-disk-cleanup.sh
+              /opt/conformia/scripts/ec2-disk-cleanup.sh || sudo /opt/conformia/scripts/ec2-disk-cleanup.sh || true
+            elif [ -f "/usr/local/bin/ec2-disk-cleanup.sh" ]; then
+              chmod +x /usr/local/bin/ec2-disk-cleanup.sh
+              /usr/local/bin/ec2-disk-cleanup.sh || sudo /usr/local/bin/ec2-disk-cleanup.sh || true
+            else
+              docker image prune -af || sudo docker image prune -af || true
+              docker volume prune -f || sudo docker volume prune -f || true
+              docker builder prune -af || sudo docker builder prune -af || true
+            fi
 
             echo "📥 [2/4] Baixando novas imagens de produção..."
-            APP_VERSION=latest docker compose pull
+            APP_VERSION=latest docker compose pull || APP_VERSION=latest sudo docker compose pull
 
-            echo "🔄 [3/4] Subindo novos containers da ConformIA..."
-            APP_VERSION=latest docker compose up -d --remove-orphans
+            echo "🔄 [3/4] Reiniciando containers da ConformIA..."
+            APP_VERSION=latest docker compose up -d --remove-orphans || APP_VERSION=latest sudo docker compose up -d --remove-orphans
 
-            echo "🧹 [4/4] Faxina pós-deploy: expurgando imagens antigas descontinuadas e volumes órfãos..."
-            docker image prune -af || true
-            docker volume prune -f || true
-            docker system prune -f || true
+            echo "🧹 [4/4] Limpeza pós-deploy (purgando imagens substituídas e volumes órfãos)..."
+            docker image prune -af || sudo docker image prune -af || true
+            docker volume prune -f || sudo docker volume prune -f || true
 
-            echo "📊 Espaço em disco pós-deploy na EC2:"
+            echo "📊 Espaço em disco atualizado pós-deploy:"
             df -h /
-            docker system df
+            docker system df || sudo docker system df || true
 
             echo "⏳ Aguardando inicialização e estabilização dos serviços..."
             sleep 15
