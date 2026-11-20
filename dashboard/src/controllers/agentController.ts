@@ -29,6 +29,9 @@ const createAgentSchema = z.object({
     .refine((val) => !val || AuditSchedulerService.isValidCron(val), {
       message: 'Expressão cron inválida. Use o formato padrão de 5 campos (ex: 0 */6 * * *)',
     }),
+  hasAuth: z.boolean().optional().default(false),
+  authUsername: z.string().optional().nullable(),
+  authPassword: z.string().optional().nullable(),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -50,6 +53,9 @@ const updateAgentSchema = z.object({
     .refine((val) => !val || AuditSchedulerService.isValidCron(val), {
       message: 'Expressão cron inválida. Use o formato padrão de 5 campos (ex: 0 */6 * * *)',
     }),
+  hasAuth: z.boolean().optional(),
+  authUsername: z.string().optional().nullable(),
+  authPassword: z.string().optional().nullable(),
   enabled: z.boolean().optional(),
 });
 
@@ -58,6 +64,9 @@ const runAuditSchema = z.object({
   targetUrl: z.string().optional(),
   extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL', 'DATALINK']).optional(),
   skill: z.string().optional(),
+  hasAuth: z.boolean().optional(),
+  authUsername: z.string().optional().nullable(),
+  authPassword: z.string().optional().nullable(),
 });
 
 export class AgentController {
@@ -187,6 +196,9 @@ export class AgentController {
           clientId: data.clientId && data.clientId.trim().length > 0 ? data.clientId.trim() : null,
           regulatoryFramework: data.regulatoryFramework || 'Conformidade Deontológica em Saúde',
           cronSchedule: data.cronSchedule || '0 */6 * * *',
+          hasAuth: data.hasAuth ?? false,
+          authUsername: data.authUsername ? data.authUsername.trim() : null,
+          authPassword: data.authPassword ? data.authPassword.trim() : null,
           enabled: data.enabled ?? true,
         },
       });
@@ -242,6 +254,9 @@ export class AgentController {
           ...(data.extractionMode && { extractionMode: data.extractionMode as any }),
           ...(resolvedClientId !== undefined && { clientId: resolvedClientId }),
           ...(data.cronSchedule !== undefined && { cronSchedule: data.cronSchedule?.trim() || '0 */6 * * *' }),
+          ...(data.hasAuth !== undefined && { hasAuth: data.hasAuth }),
+          ...(data.authUsername !== undefined && { authUsername: data.authUsername ? data.authUsername.trim() : null }),
+          ...(data.authPassword !== undefined && { authPassword: data.authPassword ? data.authPassword.trim() : null }),
         },
       });
 
@@ -419,6 +434,21 @@ export class AgentController {
         },
       }).catch(() => {});
 
+      // Resolução de credenciais de autenticação
+      const authPayload = (parsedBody.hasAuth !== undefined || parsedBody.authUsername || parsedBody.authPassword)
+        ? {
+            hasAuth: parsedBody.hasAuth ?? false,
+            username: parsedBody.authUsername ? parsedBody.authUsername.trim() : undefined,
+            password: parsedBody.authPassword ? parsedBody.authPassword.trim() : undefined,
+          }
+        : (mod.hasAuth
+            ? {
+                hasAuth: true,
+                username: mod.authUsername || undefined,
+                password: mod.authPassword || undefined,
+              }
+            : undefined);
+
       // Tenta enfileirar no BullMQ
       let queuedViaRedis = false;
       try {
@@ -431,6 +461,7 @@ export class AgentController {
             extractionMode: effectiveMode,
             agentModuleId,
             skill: effectiveSkill,
+            auth: authPayload,
           },
           {
             jobId: `audit-${report.id}`,
@@ -452,6 +483,7 @@ export class AgentController {
               agentModuleId,
               skill: effectiveSkill,
               extractionMode: effectiveMode,
+              auth: authPayload,
             });
           } catch (execErr: any) {
             console.error(`[AgentController] Erro no pipeline de auditoria do módulo ${agentModuleId}:`, execErr);

@@ -15,6 +15,11 @@ export interface AuditJobData {
   extractionMode?: ExtractionMode;
   agentModuleId?: string;
   skill?: string;
+  auth?: {
+    hasAuth?: boolean;
+    username?: string;
+    password?: string;
+  };
 }
 
 export interface WorkerTelemetryMetrics {
@@ -264,7 +269,7 @@ export function startAuditWorker() {
           return res;
         }
 
-        const { auditReportId, clientId, targetUrl, extractionMode, agentModuleId, skill } = job.data;
+        const { auditReportId, clientId, targetUrl, extractionMode, agentModuleId, skill, auth } = job.data;
         if (!auditReportId) {
           console.warn(`[Job ${job.id}] Job de auditoria recebido sem auditReportId. Ignorando.`);
           return;
@@ -278,6 +283,7 @@ export function startAuditWorker() {
           extractionMode,
           agentModuleId,
           skill,
+          auth,
           jobId: job.id,
         });
 

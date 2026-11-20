@@ -100,28 +100,70 @@ export async function reindexNormEmbeddings(): Promise<number> {
         id: true,
         conteudoChunk: true,
         contextoSemantico: true,
+        embedding: true,
       },
     });
     if (batch.length === 0) {
       break;
     }
 
-    const embeddings = await SemanticEmbeddingService.embedDocuments(
-      batch.map((chunk) => getEmbeddingInput(chunk.contextoSemantico, chunk.conteudoChunk))
+    // Filtra exclusivamente chunks que ainda não possuem embeddings compatíveis com o modelo atual
+    const pendingChunks = batch.filter(
+      (chunk) =>
+        getStoredEmbeddingModel(chunk.contextoSemantico) !== SemanticEmbeddingService.embeddingModelId ||
+        !Array.isArray(chunk.embedding) ||
+        chunk.embedding.length !== SemanticEmbeddingService.vectorDimensions
     );
-    await Promise.all(batch.map((chunk, index) =>
-      prisma.normChunk.update({
-        where: { id: chunk.id },
-        data: {
-          embedding: embeddings[index],
-          contextoSemantico: updateEmbeddingMetadata(chunk.contextoSemantico),
-        },
-      })
-    ));
 
-    indexedCount += batch.length;
+    if (pendingChunks.length > 0) {
+      console.log(`[RAG Reindex] Processando lote de ${pendingChunks.length} chunks pendentes (de ${batch.length} no bloco)...`);
+      
+      let retries = 0;
+      while (true) {
+        try {
+          const embeddings = await SemanticEmbeddingService.embedDocuments(
+            pendingChunks.map((chunk) => getEmbeddingInput(chunk.contextoSemantico, chunk.conteudoChunk))
+          );
+          await Promise.all(
+            pendingChunks.map((chunk, index) =>
+              prisma.normChunk.update({
+                where: { id: chunk.id },
+                data: {
+                  embedding: embeddings[index],
+                  contextoSemantico: updateEmbeddingMetadata(chunk.contextoSemantico),
+                },
+              })
+            )
+          );
+          indexedCount += pendingChunks.length;
+          break;
+        } catch (err: any) {
+          const isRateLimit =
+            err?.message?.includes('429') ||
+            err?.message?.includes('RESOURCE_EXHAUSTED') ||
+            err?.message?.includes('Quota exceeded') ||
+            err?.status === 429;
+
+          if (isRateLimit && retries < 5) {
+            retries++;
+            const waitTimeMs = 30000;
+            console.warn(
+              `⏳ [RAG Reindex] Quota/Rate limit do Google Gemini atingido (429 Free Tier). Pausando por ${waitTimeMs / 1000}s para retentativa (${retries}/5)...`
+            );
+            await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // Intervalo preventivo de 1.5s entre lotes para respeitar a taxa do Free Tier (100 req/min)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    } else {
+      console.log(`[RAG Reindex] Bloco de ${batch.length} chunks já indexados e compatíveis com ${SemanticEmbeddingService.embeddingModelId}. Pulando.`);
+    }
+
     cursorId = batch[batch.length - 1].id;
-    console.log(`[RAG Reindex] ${indexedCount} chunks indexados com ${SemanticEmbeddingService.embeddingModelId}.`);
   }
 
   const verification = await verifyIndexedChunks();

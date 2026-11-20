@@ -20,6 +20,9 @@ import {
   Settings2,
   Globe,
   Radio,
+  Lock,
+  Key,
+  User,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
@@ -116,6 +119,9 @@ export const AgentsPage: React.FC = () => {
     tags: ['cfm'] as string[],
     clientId: '',
     cronSchedule: '0 */6 * * *',
+    hasAuth: false,
+    authUsername: '',
+    authPassword: '',
   });
   const [cockpitTagInput, setCockpitTagInput] = useState('');
   const [savingModule, setSavingModule] = useState(false);
@@ -129,6 +135,9 @@ export const AgentsPage: React.FC = () => {
     description: '',
     tags: ['cfm'] as string[],
     cronSchedule: '0 */6 * * *',
+    hasAuth: false,
+    authUsername: '',
+    authPassword: '',
   });
   const [newTagInput, setNewTagInput] = useState('');
   const [creatingAgent, setCreatingAgent] = useState(false);
@@ -234,6 +243,9 @@ export const AgentsPage: React.FC = () => {
           tags: mod.tags && mod.tags.length > 0 ? mod.tags : ['cfm'],
           clientId: mod.clientId || '',
           cronSchedule: mod.cronSchedule || '0 */6 * * *',
+          hasAuth: mod.hasAuth ?? false,
+          authUsername: mod.authUsername || '',
+          authPassword: mod.authPassword || '',
         });
       }
     }
@@ -257,6 +269,9 @@ export const AgentsPage: React.FC = () => {
           tags: freshMod.tags && freshMod.tags.length > 0 ? freshMod.tags : ['cfm'],
           clientId: freshMod.clientId || '',
           cronSchedule: freshMod.cronSchedule || '0 */6 * * *',
+          hasAuth: freshMod.hasAuth ?? false,
+          authUsername: freshMod.authUsername || '',
+          authPassword: freshMod.authPassword || '',
         });
         return;
       }
@@ -272,6 +287,9 @@ export const AgentsPage: React.FC = () => {
       tags: mod.tags && mod.tags.length > 0 ? mod.tags : ['cfm'],
       clientId: mod.clientId || '',
       cronSchedule: mod.cronSchedule || '0 */6 * * *',
+      hasAuth: mod.hasAuth ?? false,
+      authUsername: mod.authUsername || '',
+      authPassword: mod.authPassword || '',
     });
   };
 
@@ -331,6 +349,9 @@ export const AgentsPage: React.FC = () => {
         clientId: cockpitData.clientId && cockpitData.clientId.trim().length > 0 ? cockpitData.clientId.trim() : null,
         tags: cockpitData.tags,
         cronSchedule: cockpitData.cronSchedule || '0 */6 * * *',
+        hasAuth: cockpitData.hasAuth,
+        authUsername: cockpitData.authUsername?.trim() || null,
+        authPassword: cockpitData.authPassword?.trim() || null,
       });
 
       const updatedAgent = res.data?.agent;
@@ -348,6 +369,9 @@ export const AgentsPage: React.FC = () => {
           tags: updatedAgent.tags && updatedAgent.tags.length > 0 ? updatedAgent.tags : ['cfm'],
           clientId: updatedAgent.clientId || '',
           cronSchedule: updatedAgent.cronSchedule || '0 */6 * * *',
+          hasAuth: updatedAgent.hasAuth ?? false,
+          authUsername: updatedAgent.authUsername || '',
+          authPassword: updatedAgent.authPassword || '',
         });
       }
 
@@ -385,6 +409,9 @@ export const AgentsPage: React.FC = () => {
         clientId: cockpitData.clientId && cockpitData.clientId.trim().length > 0 ? cockpitData.clientId.trim() : null,
         tags: cockpitData.tags && cockpitData.tags.length > 0 ? cockpitData.tags : currentMod?.tags,
         cronSchedule: cockpitData.cronSchedule || currentMod?.cronSchedule || '0 */6 * * *',
+        hasAuth: cockpitData.hasAuth,
+        authUsername: cockpitData.authUsername?.trim() || null,
+        authPassword: cockpitData.authPassword?.trim() || null,
       });
 
       // Dispara a auditoria usando o corpo unificado de URL Alvo Oficial e Persona/Skill
@@ -393,6 +420,9 @@ export const AgentsPage: React.FC = () => {
         targetUrl: effectiveUrl,
         skill: cockpitData.description?.trim() || currentMod?.description,
         extractionMode: 'FIRECRAWL',
+        hasAuth: cockpitData.hasAuth,
+        authUsername: cockpitData.authUsername || undefined,
+        authPassword: cockpitData.authPassword || undefined,
       });
 
       toast.success('Auditoria deontológica disparada com sucesso! Acompanhe o processamento no Cockpit ou Laudos.');
@@ -535,6 +565,9 @@ export const AgentsPage: React.FC = () => {
         systemPrompt: newAgentData.description.trim(),
         tags: newAgentData.tags,
         cronSchedule: newAgentData.cronSchedule || '0 */6 * * *',
+        hasAuth: newAgentData.hasAuth,
+        authUsername: newAgentData.authUsername?.trim() || null,
+        authPassword: newAgentData.authPassword?.trim() || null,
       });
       setShowCreateAgentModal(false);
       setNewAgentData({
@@ -543,6 +576,9 @@ export const AgentsPage: React.FC = () => {
         description: '',
         tags: ['cfm'],
         cronSchedule: '0 */6 * * *',
+        hasAuth: false,
+        authUsername: '',
+        authPassword: '',
       });
       fetchData(currentPage, pageSize);
       toast.success('Módulo de agente cadastrado com sucesso!');
@@ -989,6 +1025,9 @@ export const AgentsPage: React.FC = () => {
                                 tags: freshMod.tags && freshMod.tags.length > 0 ? freshMod.tags : ['cfm'],
                                 clientId: freshMod.clientId || '',
                                 cronSchedule: freshMod.cronSchedule || '0 */6 * * *',
+                                hasAuth: freshMod.hasAuth ?? false,
+                                authUsername: freshMod.authUsername || '',
+                                authPassword: freshMod.authPassword || '',
                               });
                               return;
                             }
@@ -1005,6 +1044,9 @@ export const AgentsPage: React.FC = () => {
                               tags: mod.tags && mod.tags.length > 0 ? mod.tags : ['cfm'],
                               clientId: mod.clientId || '',
                               cronSchedule: mod.cronSchedule || '0 */6 * * *',
+                              hasAuth: mod.hasAuth ?? false,
+                              authUsername: mod.authUsername || '',
+                              authPassword: mod.authPassword || '',
                             });
                           }
                         }}
@@ -1050,6 +1092,71 @@ export const AgentsPage: React.FC = () => {
                       <p className="text-[10px] text-slate-400 mt-1">
                         Esta é a única URL de auditoria vinculada ao módulo. A raspagem limpa é executada via Firecrawl com hash SHA-256 e sem conflitos de múltiplos endereços.
                       </p>
+                    </div>
+
+                    {/* Flag: Possui Autenticação? */}
+                    <div className="md:col-span-2 bg-[#080d1a]/80 border border-slate-800/80 rounded-xl p-3.5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={cockpitData.hasAuth}
+                            onChange={(e) => setCockpitData({ ...cockpitData, hasAuth: e.target.checked })}
+                            className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500/20 focus:ring-offset-0 cursor-pointer"
+                          />
+                          <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                            <Lock className="h-3.5 w-3.5 text-cyan-400" />
+                            Possui autenticação?
+                          </span>
+                        </label>
+                        <span className="text-[10px] font-mono">
+                          {cockpitData.hasAuth ? (
+                            <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                              <ShieldCheck className="h-3 w-3" /> Autenticação Ativada
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">Acesso Público</span>
+                          )}
+                        </span>
+                      </div>
+
+                      {cockpitData.hasAuth && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/60">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                              Usuário / Login / Email
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={cockpitData.authUsername}
+                                onChange={(e) => setCockpitData({ ...cockpitData, authUsername: e.target.value })}
+                                placeholder="ex: usuario@sistema.com.br"
+                                className="w-full bg-[#050811] border border-slate-700/80 rounded-lg px-3 py-2 pl-8 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                              />
+                              <User className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                              Senha de Acesso
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="password"
+                                value={cockpitData.authPassword}
+                                onChange={(e) => setCockpitData({ ...cockpitData, authPassword: e.target.value })}
+                                placeholder="••••••••••••"
+                                className="w-full bg-[#050811] border border-slate-700/80 rounded-lg px-3 py-2 pl-8 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                              />
+                              <Key className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                            </div>
+                          </div>
+                          <p className="sm:col-span-2 text-[10px] text-slate-400">
+                            As credenciais são utilizadas exclusivamente para transposição de telas de login ou HTTP Basic Auth durante a extração segura via Puppeteer / Firecrawl.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -1472,6 +1579,68 @@ export const AgentsPage: React.FC = () => {
                 <p className="text-[10px] text-slate-400 mt-1">
                   A página será extraída exclusivamente em formato Markdown limpo via motor Firecrawl com verificação criptográfica SHA-256.
                 </p>
+              </div>
+
+              {/* Flag: Possui Autenticação? */}
+              <div className="bg-[#080d1a]/80 border border-slate-700/80 rounded-xl p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={newAgentData.hasAuth}
+                      onChange={(e) => setNewAgentData({ ...newAgentData, hasAuth: e.target.checked })}
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500/20 focus:ring-offset-0 cursor-pointer"
+                    />
+                    <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Lock className="h-3.5 w-3.5 text-cyan-400" />
+                      Possui autenticação?
+                    </span>
+                  </label>
+                  <span className="text-[10px] font-mono">
+                    {newAgentData.hasAuth ? (
+                      <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                        <ShieldCheck className="h-3 w-3" /> Autenticação Ativada
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">Acesso Público</span>
+                    )}
+                  </span>
+                </div>
+
+                {newAgentData.hasAuth && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/60">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Usuário / Login / Email
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={newAgentData.authUsername}
+                          onChange={(e) => setNewAgentData({ ...newAgentData, authUsername: e.target.value })}
+                          placeholder="ex: usuario@sistema.com.br"
+                          className="w-full bg-[#050811] border border-slate-700/80 rounded-lg px-3 py-2 pl-8 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                        />
+                        <User className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Senha de Acesso
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="password"
+                          value={newAgentData.authPassword}
+                          onChange={(e) => setNewAgentData({ ...newAgentData, authPassword: e.target.value })}
+                          placeholder="••••••••••••"
+                          className="w-full bg-[#050811] border border-slate-700/80 rounded-lg px-3 py-2 pl-8 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                        />
+                        <Key className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 3. Skill & Persona Deontológica da IA (Corpo Único) */}

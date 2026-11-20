@@ -14,6 +14,11 @@ export interface ClientScrapeOptions {
   moduleId?: string;
   tags?: string[];
   title?: string;
+  auth?: {
+    hasAuth?: boolean;
+    username?: string;
+    password?: string;
+  };
 }
 
 export interface ClientScrapeResult {
@@ -32,6 +37,8 @@ export interface ClientScrapeResult {
   tokensCount: number;
   tags: string[];
   error?: string;
+  authSuccess?: boolean;
+  loginDetected?: boolean;
 }
 
 /**
@@ -68,7 +75,7 @@ export class ClientScraperService {
    * conversão para Markdown limpo e integridade SHA-256.
    */
   public static async scrapeClientAsset(options: ClientScrapeOptions): Promise<ClientScrapeResult> {
-    const { url, clientId, moduleId, tags = [], title } = options;
+    const { url, clientId, moduleId, tags = [], title, auth } = options;
 
     // 1. Proteção anti-SSRF mandatória antes de qualquer tráfego externo
     const ssrfCheck = await validateSafeUrlAsync(url);
@@ -78,23 +85,55 @@ export class ClientScraperService {
       throw new Error(errorMsg);
     }
 
+    // Carrega credenciais de autenticação se não vierem explicitamente mas houver moduleId
+    let authConfig = auth;
+    if (!authConfig && moduleId && process.env.NODE_ENV !== 'test') {
+      try {
+        const mod = await prisma.agentModule.findFirst({
+          where: { OR: [{ id: moduleId }, { code: moduleId }] },
+          select: { hasAuth: true, authUsername: true, authPassword: true },
+        }).catch(() => null);
+        if (mod && mod.hasAuth) {
+          authConfig = {
+            hasAuth: true,
+            username: mod.authUsername || undefined,
+            password: mod.authPassword || undefined,
+          };
+        }
+      } catch (err: any) {
+        console.warn(`⚠️ [ClientScraperService] Falha ao recuperar credenciais do módulo ${moduleId}: ${err.message}`);
+      }
+    }
+
     const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || (env as any).FIRECRAWL_API_KEY;
     let markdown = '';
     let source: 'FIRECRAWL_API' | 'FIRECRAWL_FALLBACK_ENGINE' = 'FIRECRAWL_FALLBACK_ENGINE';
     let lastError: string | null = null;
+    let authSuccess = false;
+    let loginDetected = false;
 
     // 2. Scraping via Firecrawl API com proteção de Circuit Breaker e Bulkhead
     if (firecrawlApiKey && firecrawlApiKey !== 'mock-key' && !firecrawlApiKey.startsWith('mock')) {
       try {
-        console.log(`🔥 [ClientScraperService] Raspando ativo do cliente via Firecrawl API: ${url}`);
+        console.log(`🔥 [ClientScraperService] Raspando ativo do cliente via Firecrawl API: ${url} (Autenticado: ${!!authConfig?.hasAuth})`);
+        
+        const firecrawlPayload: any = {
+          url,
+          formats: ['markdown'],
+        };
+
+        if (authConfig?.hasAuth && (authConfig.username || authConfig.password)) {
+          const basicAuth = Buffer.from(`${authConfig.username || ''}:${authConfig.password || ''}`).toString('base64');
+          firecrawlPayload.headers = {
+            Authorization: `Basic ${basicAuth}`,
+          };
+        }
+
         const response = await this.clientBulkhead.execute(() =>
           this.clientCircuitBreaker.execute(() =>
             axios.post(
               'https://api.firecrawl.dev/v1/scrape',
-              {
-                url,
-                formats: ['markdown'],
-              },
+              firecrawlPayload,
               {
                 headers: {
                   Authorization: `Bearer ${firecrawlApiKey}`,
@@ -109,6 +148,9 @@ export class ClientScraperService {
         if (response.data?.success && (response.data?.data?.markdown || response.data?.markdown)) {
           markdown = (response.data?.data?.markdown || response.data?.markdown).trim();
           source = 'FIRECRAWL_API';
+          if (authConfig?.hasAuth) {
+            authSuccess = true;
+          }
           console.log(`✅ [ClientScraperService] Conteúdo do cliente extraído com sucesso (${markdown.length} chars)`);
         }
       } catch (err: any) {
@@ -117,18 +159,45 @@ export class ClientScraperService {
       }
     }
 
-    // 3. Fallback resiliente para motor Cheerio/nativo
+    // 3. Fallback resiliente para motor nativo (Cheerio / Puppeteer com autenticação)
     if (!markdown || markdown.trim().length === 0) {
       console.log(`ℹ️ [ClientScraperService] Processando extração limpa via motor nativo para cliente: ${url}`);
       try {
-        const scrapeResult = await ScraperService.scrape(url, 'CHEERIO');
+        // Se possui autenticação configurada, preferir PUPPETEER para cobrir tanto login HTTP Basic quanto formulários web
+        const preferredMode = (authConfig?.hasAuth && (authConfig.username || authConfig.password)) ? 'PUPPETEER' : 'CHEERIO';
+        const scrapeResult = await ScraperService.scrape(
+          url,
+          preferredMode,
+          undefined,
+          authConfig?.hasAuth ? { username: authConfig.username, password: authConfig.password } : undefined
+        );
         if (scrapeResult && scrapeResult.cleanMarkdown && scrapeResult.cleanMarkdown.trim().length > 0) {
           markdown = scrapeResult.cleanMarkdown.trim();
+          authSuccess = !!scrapeResult.authSuccess;
+          loginDetected = !!scrapeResult.loginDetected;
         } else {
-          lastError = lastError ? `${lastError} | Cheerio: Conteúdo vazio` : 'Cheerio: Conteúdo vazio';
+          lastError = lastError ? `${lastError} | ${preferredMode}: Conteúdo vazio` : `${preferredMode}: Conteúdo vazio`;
         }
       } catch (fallbackErr: any) {
-        lastError = lastError ? `${lastError} | Cheerio: ${fallbackErr.message}` : `Cheerio: ${fallbackErr.message}`;
+        lastError = lastError ? `${lastError} | Fallback: ${fallbackErr.message}` : `Fallback: ${fallbackErr.message}`;
+        // Se Puppeteer falhar e tiver auth, tentar Cheerio como último recurso com Basic Auth
+        if (authConfig?.hasAuth) {
+          try {
+            console.log(`ℹ️ [ClientScraperService] Tentando fallback secundário Cheerio com Basic Auth...`);
+            const cheerioResult = await ScraperService.scrape(
+              url,
+              'CHEERIO',
+              undefined,
+              { username: authConfig.username, password: authConfig.password }
+            );
+            if (cheerioResult && cheerioResult.cleanMarkdown && cheerioResult.cleanMarkdown.trim().length > 0) {
+              markdown = cheerioResult.cleanMarkdown.trim();
+              authSuccess = !!cheerioResult.authSuccess;
+            }
+          } catch (cErr: any) {
+            lastError = `${lastError} | CheerioSecundario: ${cErr.message}`;
+          }
+        }
       }
     }
 
@@ -173,7 +242,8 @@ export class ClientScraperService {
     }
 
     // 7. Persistência Isolada em ClientScrapedData (se vinculado a cliente)
-    const combinedTags = Array.from(new Set(['CLIENT_SCRAPE', 'AUDIT_ASSET', ...tags]));
+    const detectedContentTags = ScraperService.detectRegulatoryTags(cleanMarkdown, '');
+    const combinedTags = Array.from(new Set(['CLIENT_SCRAPE', 'AUDIT_ASSET', ...tags, ...detectedContentTags]));
 
     if (clientId) {
       try {
@@ -201,6 +271,29 @@ export class ClientScraperService {
       }
     }
 
+    // 8. Telemetria Forense: Registra no SystemLog quando o login/acesso autenticado é bem-sucedido
+    if (authConfig?.hasAuth && authSuccess) {
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'SCRAPER',
+          correlationId: moduleId || clientId || 'scraper-auth',
+          message: `[SCRAPER] [AUTH_SUCCESS] Login na página efetuado com sucesso para: ${url} (Usuário: ${authConfig.username || 'autenticado'})`,
+          details: JSON.stringify({
+            url,
+            username: authConfig.username,
+            moduleId,
+            clientId,
+            loginDetected,
+            engine: source,
+            charsExtracted: cleanMarkdown.length,
+            tokensCount,
+            timestamp: extractedAt,
+          }),
+        },
+      }).catch(() => {});
+    }
+
     return {
       status: extractionStatus,
       markdown: cleanMarkdown,
@@ -216,6 +309,8 @@ export class ClientScraperService {
       clientScrapedDataId,
       tokensCount,
       tags: combinedTags,
+      authSuccess,
+      loginDetected,
     };
   }
 }

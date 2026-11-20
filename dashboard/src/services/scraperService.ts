@@ -29,6 +29,8 @@ export interface ScrapeResult {
     hasPromotionalPricing: boolean;
     hasGuaranteedResultMention: boolean;
   };
+  authSuccess?: boolean;
+  loginDetected?: boolean;
 }
 
 export class ScraperService {
@@ -907,7 +909,12 @@ export class ScraperService {
   /**
    * Executa extração polimórfica com base no modo solicitado ou configurado
    */
-  public static async scrape(url: string, mode?: ExtractionMode): Promise<ScrapeResult> {
+  public static async scrape(
+    url: string,
+    mode?: ExtractionMode,
+    customTags?: string[],
+    auth?: { username?: string; password?: string }
+  ): Promise<ScrapeResult> {
     // Se for um link de PDF direto
     if (this.isPdfUrl(url)) {
       return await this.scrapePdf(url);
@@ -926,34 +933,40 @@ export class ScraperService {
     try {
       switch (selectedMode) {
         case 'PUPPETEER':
-          return await this.scrapeWithPuppeteer(url);
+          return await this.scrapeWithPuppeteer(url, auth);
         case 'FIRECRAWL':
           return await this.scrapeWithFirecrawl(url);
         case 'MCP':
           return await this.scrapeWithMcp(url);
         case 'CHEERIO':
         default:
-          return await this.scrapeWithCheerio(url);
+          return await this.scrapeWithCheerio(url, auth);
       }
     } catch (error: any) {
       console.warn(`[Scraper] Falha no modo ${selectedMode} (${error.message}). Tentando fallback para Cheerio/HTTP...`);
-      return await this.scrapeWithCheerio(url);
+      return await this.scrapeWithCheerio(url, auth);
     }
   }
 
   /**
-   * Extração com Cheerio (Ultra-rápido, páginas estáticas ou PDFs dinâmicos)
+   * Extração com Cheerio (Ultra-rápido, páginas estáticas ou PDFs dinâmicos) com suporte a autenticação autorizada
    */
-  private static async scrapeWithCheerio(url: string): Promise<ScrapeResult> {
+  private static async scrapeWithCheerio(url: string, auth?: { username?: string; password?: string }): Promise<ScrapeResult> {
+    const headers: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 (ConformIA Regulatory Auditor)',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,*/*;q=0.8',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    };
+
+    if (auth?.username && auth?.password) {
+      headers.Authorization = `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString('base64')}`;
+    }
+
     const response = await safeHttpGet(url, {
       responseType: 'arraybuffer',
       timeout: 25000,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 (ConformIA Regulatory Auditor)',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,*/*;q=0.8',
-        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-      },
+      headers,
     });
 
     const contentType = String(response.headers['content-type'] || '').toLowerCase();
@@ -964,13 +977,18 @@ export class ScraperService {
     const buf = Buffer.from(response.data);
     const rawHtml = TextEncodingSanitizer.decodeBufferWithAutoEncoding(buf, contentType);
 
-    return this.processHtml(url, rawHtml, 'CHEERIO');
+    const authSuccess = !!(auth?.username && auth?.password && response.status >= 200 && response.status < 400);
+    if (authSuccess) {
+      console.log(`✅ [Cheerio] [AUTH_SUCCESS] HTTP Basic Auth autorizada concluída com sucesso para: ${url} (Status: ${response.status})`);
+    }
+
+    return this.processHtml(url, rawHtml, 'CHEERIO', undefined, { authSuccess });
   }
 
   /**
-   * Extração com Puppeteer Headless (Páginas SPA, React/Vue/Angular) com blindagem anti-SSRF (T02/C07)
+   * Extração com Puppeteer Headless (Páginas SPA, React/Vue/Angular) com blindagem anti-SSRF e autenticação autorizada
    */
-  private static async scrapeWithPuppeteer(url: string): Promise<ScrapeResult> {
+  private static async scrapeWithPuppeteer(url: string, auth?: { username?: string; password?: string }): Promise<ScrapeResult> {
     // 1. Verificação SSRF assíncrona pré-navegação com proteção DNS Rebinding
     const targetCheck = await validateSafeUrlAsync(url);
     if (!targetCheck.safe) {
@@ -1005,6 +1023,11 @@ export class ScraperService {
       );
       await page.setViewport({ width: 1280, height: 800 });
 
+      // Suporte à autenticação HTTP Basic/Digest autorizada
+      if (auth?.username && auth?.password) {
+        await page.authenticate({ username: auth.username, password: auth.password });
+      }
+
       // Otimização e Segurança anti-SSRF: intercepta e valida todas as requisições subjacentes
       await page.setRequestInterception(true);
       page.on('request', (req: any) => {
@@ -1023,11 +1046,61 @@ export class ScraperService {
       });
 
       await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 });
+
+      // Se houver credenciais e formulário web de login for detectado, realiza login e aguarda
+      let authSuccess = false;
+      let loginDetected = false;
+      if (auth?.username && auth?.password) {
+        try {
+          const passwordInput = await page.$('input[type="password"]');
+          if (passwordInput) {
+            loginDetected = true;
+            console.log(`🔐 [Puppeteer] Formulário de login detectado para ${url}. Submetendo credenciais autorizadas...`);
+            const userInput = await page.$(
+              'input[type="text"], input[type="email"], input[name*="user" i], input[name*="login" i], input[name*="email" i], input[id*="user" i], input[id*="login" i]'
+            );
+            if (userInput) {
+              await userInput.type(auth.username, { delay: 25 });
+            }
+            await passwordInput.type(auth.password, { delay: 25 });
+
+            const submitBtn = await page.$(
+              'button[type="submit"], input[type="submit"], button:has-text("Entrar"), button:has-text("Login"), form button'
+            );
+            if (submitBtn) {
+              await Promise.all([
+                page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {}),
+                submitBtn.click(),
+              ]);
+            } else {
+              await Promise.all([
+                page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {}),
+                passwordInput.press('Enter'),
+              ]);
+            }
+
+            // Verifica se a tela de login foi transposta com sucesso (campo de senha não deve mais existir na página atual)
+            const remainingPasswordInput = await page.$('input[type="password"]');
+            if (!remainingPasswordInput) {
+              authSuccess = true;
+              console.log(`✅ [Puppeteer] [AUTH_SUCCESS] Login efetuado com sucesso na página autorizada: ${url} (Usuário: ${auth.username})`);
+            } else {
+              console.warn(`⚠️ [Puppeteer] Campo de senha ainda presente após submissão de credenciais para: ${url}`);
+            }
+          } else {
+            // Autenticação HTTP Basic ou página autorizada sem formulário de senha inicial
+            authSuccess = true;
+          }
+        } catch (formAuthErr: any) {
+          console.warn(`[Puppeteer] Tentativa de submissão de formulário de login: ${formAuthErr.message}`);
+        }
+      }
+
       const rawHtml = await page.content();
       await browser.close();
       await safeProxy.close();
 
-      return this.processHtml(url, rawHtml, 'PUPPETEER');
+      return this.processHtml(url, rawHtml, 'PUPPETEER', undefined, { authSuccess, loginDetected });
     } catch (err: any) {
       if (browser) await browser.close();
       if (safeProxy) await safeProxy.close();
@@ -1035,7 +1108,7 @@ export class ScraperService {
         throw err;
       }
       console.warn('[Puppeteer] Falha na execução headless, recorrendo ao Cheerio:', err.message);
-      return await this.scrapeWithCheerio(url);
+      return await this.scrapeWithCheerio(url, auth);
     }
   }
 
@@ -1114,7 +1187,8 @@ export class ScraperService {
     url: string,
     rawHtml: string,
     mode: ExtractionMode,
-    precomputedMarkdown?: string
+    precomputedMarkdown?: string,
+    authMeta?: { authSuccess?: boolean; loginDetected?: boolean }
   ): ScrapeResult {
     const $ = cheerio.load(rawHtml);
 
@@ -1191,6 +1265,8 @@ export class ScraperService {
       tokensSavedPercentage,
       detectedTags,
       extractedEntities,
+      authSuccess: authMeta?.authSuccess,
+      loginDetected: authMeta?.loginDetected,
     };
   }
 
@@ -1278,6 +1354,46 @@ export class ScraperService {
     ];
     if (ansSignals.some((sig) => textLower.includes(sig))) {
       tags.push('ANS');
+    }
+
+    // Tag PUBLICIDADE (Publicidade Médica e Vedação ao Sensacionalismo/Mercantilismo)
+    const publicidadeSignals = [
+      'antes e depois',
+      'antes/depois',
+      'preço promocional',
+      'preco promocional',
+      'desconto',
+      'promoção',
+      'promocao',
+      'resultado garantido',
+      'cura garantida',
+      'o melhor médico',
+      'a melhor clínica',
+      'sorteio',
+      'consórcio',
+      'consorcio',
+      'black friday',
+      'sensacionalista',
+      'publicidade',
+      'propaganda',
+    ];
+    if (publicidadeSignals.some((sig) => textLower.includes(sig))) {
+      tags.push('PUBLICIDADE');
+    }
+
+    // Tag TELEMEDICINA (Saúde Digital e Atendimento Remoto)
+    const telemedicinaSignals = [
+      'telemedicina',
+      'teleconsulta',
+      'consulta online',
+      'atendimento remoto',
+      'prescrição eletrônica',
+      'prescricao eletronica',
+      'receita digital',
+      'teleatendimento',
+    ];
+    if (telemedicinaSignals.some((sig) => textLower.includes(sig))) {
+      tags.push('TELEMEDICINA');
     }
 
     // Marque somente quando a própria norma estiver explicitamente revogada.
