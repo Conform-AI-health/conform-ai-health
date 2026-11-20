@@ -15,6 +15,7 @@ import {
   Sparkles,
   Terminal,
   Globe,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -38,6 +39,7 @@ export const MainLayout: React.FC = () => {
     : [
         { label: 'Cockpit do Auditor', path: '/cockpit', icon: LayoutDashboard },
         { label: 'Varredura & Tags', path: '/scraping', icon: Globe },
+        { label: 'Revisão de Laudos', path: '/audit-review', icon: ClipboardCheck },
         { label: 'Clínicas & Clientes', path: '/clients', icon: Building2 },
         { label: 'Módulos de Auditoria', path: '/agents', icon: Bot },
         { label: 'Laudos Deontológicos', path: '/reports', icon: FileCheck2 },

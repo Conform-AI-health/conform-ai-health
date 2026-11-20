@@ -39,6 +39,9 @@ export class AuditExecutionService {
     verdict?: string;
     score?: number;
     violationsCount?: number;
+    reviewStatus?: string;
+    auditorReviewed?: boolean;
+    emailSent?: boolean;
   }> {
     const { auditReportId, clientId, targetUrl, agentModuleId, jobId } = params;
     const startTime = Date.now();
@@ -338,7 +341,10 @@ export class AuditExecutionService {
             groundingScore: recon.groundingScore ?? null,
             hallucinationRisk: recon.hallucinationRisk ?? 'NOT_EVALUATED',
             guardrailsApplied: recon.guardrailsApplied ?? false,
-            requiresHumanReview,
+            requiresHumanReview: true,
+            reviewStatus: 'PENDING_REVIEW',
+            auditorReviewed: false,
+            emailSent: false,
             normSnapshots: normsSnapshotJson,
             rawContent: firecrawlResult.rawContent,
             cleanMarkdown: firecrawlResult.markdown,
@@ -393,112 +399,30 @@ export class AuditExecutionService {
         },
       }).catch(() => {});
 
-      // 7. Notificação por E-mail do Laudo Concluído para a Clínica (Resend Email API & Telemetria)
-      const resolvedEmails: string[] = [];
-      if (client?.email && client.email.trim().length > 0) {
-        resolvedEmails.push(client.email.trim());
-      }
-      if (client?.users && client.users.length > 0) {
-        for (const u of client.users) {
-          if (u.email && u.email.trim().length > 0 && !resolvedEmails.includes(u.email.trim())) {
-            resolvedEmails.push(u.email.trim());
-          }
-        }
-      }
+      // 7. Fluxo de Governança e Revisão do Auditor (HITL - Human-in-the-Loop)
+      // O laudo concluído pela IA é encaminhado para o Cockpit / Menu "Revisão de Laudos".
+      // O e-mail para a clínica NÃO é disparado automaticamente; aguarda revisão e confirmação do auditor.
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'AUDIT_WORKFLOW',
+          correlationId,
+          message: `[AUDIT_AWAITING_REVIEW] Laudo ${auditReportId} gerado pela IA com sucesso. Encaminhado para a fila de Revisão & Confirmação do Auditor (Menu Revisão de Laudos) antes do envio do e-mail oficial à clínica "${clientName}".`,
+          details: JSON.stringify({
+            auditReportId,
+            clientId: finalClientId,
+            clientName,
+            targetUrl,
+            score: recon.score,
+            verdict: recon.verdict,
+            reviewStatus: 'PENDING_REVIEW',
+            auditorReviewed: false,
+            emailSent: false,
+          }),
+        },
+      }).catch(() => {});
 
-      if (resolvedEmails.length === 0) {
-        console.warn(`⚠️ [AuditExecutionService] Nenhum e-mail de destinatário encontrado para a clínica "${clientName}" (Cliente ID: ${finalClientId || 'N/A'}).`);
-        await prisma.systemLog.create({
-          data: {
-            level: 'WARN',
-            module: 'EMAIL_NOTIFICATION',
-            correlationId,
-            message: `[EMAIL_WARN] Nenhum endereço de e-mail válido encontrado para a clínica "${clientName}". Notificação não enviada.`,
-            details: JSON.stringify({
-              auditReportId,
-              clientId: finalClientId,
-              clientName,
-              targetUrl,
-              score: recon.score,
-              verdict: recon.verdict,
-            }),
-          },
-        }).catch(() => {});
-      } else {
-        for (const recipientEmail of resolvedEmails) {
-          try {
-            const emailResult = await EmailService.sendAuditReportCompletedEmail(recipientEmail, clientName, {
-              id: auditReportId,
-              targetUrl,
-              score: recon.score,
-              verdict: recon.verdict,
-              summary: recon.summary,
-              violationsCount: recon.violations.length,
-            });
-
-            if (emailResult.success) {
-              await prisma.systemLog.create({
-                data: {
-                  level: 'INFO',
-                  module: 'EMAIL_NOTIFICATION',
-                  correlationId,
-                  message: `[EMAIL_SUCCESS] E-mail de conclusão de laudo enviado com sucesso para ${recipientEmail} (Clínica: ${clientName}) | MessageId: ${emailResult.messageId || 'MOCK'} | Veredito: ${recon.verdict}`,
-                  details: JSON.stringify({
-                    auditReportId,
-                    clientId: finalClientId,
-                    clientName,
-                    recipientEmail,
-                    messageId: emailResult.messageId,
-                    mocked: emailResult.mocked || false,
-                    score: recon.score,
-                    verdict: recon.verdict,
-                  }),
-                },
-              }).catch(() => {});
-            } else {
-              console.error(`❌ [AuditExecutionService] Falha ao enviar e-mail de laudo para ${recipientEmail}: ${emailResult.error}`);
-              await prisma.systemLog.create({
-                data: {
-                  level: 'WARN',
-                  module: 'EMAIL_NOTIFICATION',
-                  correlationId,
-                  message: `[EMAIL_WARN] Falha ao enviar notificação de laudo por e-mail para "${recipientEmail}" (Clínica: "${clientName}"): ${emailResult.error || 'Erro na API de e-mail'}`,
-                  details: JSON.stringify({
-                    auditReportId,
-                    clientId: finalClientId,
-                    clientName,
-                    recipientEmail,
-                    error: emailResult.error,
-                    score: recon.score,
-                    verdict: recon.verdict,
-                    targetUrl,
-                  }),
-                },
-              }).catch(() => {});
-            }
-          } catch (emailErr: any) {
-            console.error(`❌ [AuditExecutionService] Exceção ao enviar notificação de laudo para ${recipientEmail}: ${emailErr.message}`);
-            await prisma.systemLog.create({
-              data: {
-                level: 'ERROR',
-                module: 'EMAIL_NOTIFICATION',
-                correlationId,
-                message: `[EMAIL_ERROR] Erro inesperado durante o disparo de e-mail do laudo para "${recipientEmail}": ${emailErr.message}`,
-                details: JSON.stringify({
-                  auditReportId,
-                  clientId: finalClientId,
-                  clientName,
-                  recipientEmail,
-                  error: emailErr.message,
-                  stack: emailErr.stack,
-                }),
-              },
-            }).catch(() => {});
-          }
-        }
-      }
-
-      console.log(`✅ [AuditExecutionService] Concluído com sucesso para ${auditReportId} em ${executionTimeMs}ms (Veredito: ${recon.verdict}, Violações: ${recon.violations.length})`);
+      console.log(`✅ [AuditExecutionService] Concluído pela IA para ${auditReportId} em ${executionTimeMs}ms. Aguardando revisão do auditor na fila de governança.`);
 
       return {
         success: true,
@@ -506,6 +430,9 @@ export class AuditExecutionService {
         verdict: recon.verdict,
         score: recon.score,
         violationsCount: recon.violations.length,
+        reviewStatus: 'PENDING_REVIEW',
+        auditorReviewed: false,
+        emailSent: false,
       };
     } catch (error: any) {
       console.error(`❌ [AuditExecutionService] Falha na auditoria ${auditReportId}:`, error);
