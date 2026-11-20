@@ -18,6 +18,8 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { InfoTooltip } from '../components/Tooltip';
+import { METRIC_GLOSSARY } from '../utils/metricGlossary';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -95,9 +97,15 @@ export const DashboardPage: React.FC = () => {
             {/* Card 1: Clínicas */}
             <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-                  Clínicas Ativas
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                    Clínicas Ativas
+                  </span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.activeClients.title}
+                    content={METRIC_GLOSSARY.activeClients.description}
+                  />
+                </div>
                 <div className="h-8 w-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center">
                   <Building2 className="h-4 w-4" />
                 </div>
@@ -116,9 +124,15 @@ export const DashboardPage: React.FC = () => {
             {/* Card 2: Conformidade Média */}
             <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-                  Índice Deontológico
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                    Índice Deontológico
+                  </span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.deontologicalScore.title}
+                    content={METRIC_GLOSSARY.deontologicalScore.description}
+                  />
+                </div>
                 <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
                   <ShieldCheck className="h-4 w-4" />
                 </div>
@@ -135,9 +149,15 @@ export const DashboardPage: React.FC = () => {
             {/* Card 3: Não-Conformes Críticos */}
             <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-                  Violações Críticas
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                    Violações Críticas
+                  </span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.criticalViolations.title}
+                    content={METRIC_GLOSSARY.criticalViolations.description}
+                  />
+                </div>
                 <div className="h-8 w-8 rounded-lg bg-red-500/10 text-red-400 flex items-center justify-center">
                   <AlertTriangle className="h-4 w-4" />
                 </div>
@@ -154,9 +174,15 @@ export const DashboardPage: React.FC = () => {
             {/* Card 4: Economia de Tokens via Sanitização */}
             <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-                  Token Efficiency
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                    Token Efficiency
+                  </span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.contextSavings.title}
+                    content={METRIC_GLOSSARY.contextSavings.description}
+                  />
+                </div>
                 <div className="h-8 w-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center">
                   <Cpu className="h-4 w-4" />
                 </div>
@@ -181,6 +207,10 @@ export const DashboardPage: React.FC = () => {
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-emerald-400" />
                   <span>Distribuição Semáforo Deontológico</span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.trafficLightVerdict.title}
+                    content={METRIC_GLOSSARY.trafficLightVerdict.description}
+                  />
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
                   Classificação executiva de risco regulatório no ecossistema

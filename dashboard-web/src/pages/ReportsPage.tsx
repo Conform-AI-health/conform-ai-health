@@ -19,6 +19,8 @@ import {
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
 import { useToast } from '../context/ToastContext';
+import { InfoTooltip } from '../components/Tooltip';
+import { METRIC_GLOSSARY } from '../utils/metricGlossary';
 
 export const ReportsPage: React.FC = () => {
   const toast = useToast();
@@ -146,9 +148,33 @@ export const ReportsPage: React.FC = () => {
             <tr>
               <th className="py-3.5 px-4">Clínica / CRM</th>
               <th className="py-3.5 px-4">Canal / URL</th>
-              <th className="py-3.5 px-4">Veredito Semáforo</th>
-              <th className="py-3.5 px-4">Pontuação</th>
-              <th className="py-3.5 px-4">Economia Tokens</th>
+              <th className="py-3.5 px-4">
+                <span className="inline-flex items-center gap-1">
+                  Veredito Semáforo
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.trafficLightVerdict.title}
+                    content={METRIC_GLOSSARY.trafficLightVerdict.description}
+                  />
+                </span>
+              </th>
+              <th className="py-3.5 px-4">
+                <span className="inline-flex items-center gap-1">
+                  Pontuação
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.deontologicalScore.title}
+                    content={METRIC_GLOSSARY.deontologicalScore.description}
+                  />
+                </span>
+              </th>
+              <th className="py-3.5 px-4">
+                <span className="inline-flex items-center gap-1">
+                  Economia Tokens
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.contextSavings.title}
+                    content={METRIC_GLOSSARY.contextSavings.description}
+                  />
+                </span>
+              </th>
               <th className="py-3.5 px-4">Data & Horário</th>
               <th className="py-3.5 px-4 text-right">Ações</th>
             </tr>

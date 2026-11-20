@@ -16,6 +16,8 @@ import {
 import { api } from '../services/api';
 import { safeHttpUrl } from '../utils/urlSecurity';
 import { formatClientAuditSummary } from '../utils/summarySanitizer';
+import { InfoTooltip } from '../components/Tooltip';
+import { METRIC_GLOSSARY } from '../utils/metricGlossary';
 
 export const CustomerDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -209,9 +211,15 @@ export const CustomerDashboardPage: React.FC = () => {
           className={`border rounded-2xl p-6 shadow-lg flex flex-col justify-between ${cardBorderAndBg}`}
         >
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider block opacity-75">
-              Veredito Deontológico Geral
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider block opacity-75">
+                Veredito Deontológico Geral
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.trafficLightVerdict.title}
+                content={METRIC_GLOSSARY.trafficLightVerdict.description}
+              />
+            </div>
             <div className="flex items-center gap-3 mt-3">
               <span
                 className={`h-4 w-4 rounded-full animate-ping ${pingBg}`}
@@ -234,9 +242,15 @@ export const CustomerDashboardPage: React.FC = () => {
         {/* Score de Risco */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
           <div>
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Índice de Conformidade Ética
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Índice de Conformidade Ética
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.deontologicalScore.title}
+                content={METRIC_GLOSSARY.deontologicalScore.description}
+              />
+            </div>
             <div className="mt-3 flex items-baseline gap-2">
               <span
                 className={`text-4xl font-extrabold ${
@@ -264,9 +278,15 @@ export const CustomerDashboardPage: React.FC = () => {
         {/* Pendências Críticas */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
           <div>
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Pontos de Atenção Ativos
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Pontos de Atenção Ativos
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.criticalViolations.title}
+                content={METRIC_GLOSSARY.criticalViolations.description}
+              />
+            </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div className="p-3 bg-red-950/20 border border-red-900/30 rounded-xl">
                 <span className="text-2xl font-bold text-red-400 block">

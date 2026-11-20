@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
+import { InfoTooltip } from '../components/Tooltip';
+import { METRIC_GLOSSARY } from '../utils/metricGlossary';
 
 export const LogsTelemetryPage: React.FC = () => {
   const [telemetry, setTelemetry] = useState<any>(null);
@@ -132,9 +134,15 @@ export const LogsTelemetryPage: React.FC = () => {
         {/* Total Tokens Consumidos */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Tokens Consumidos
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Tokens Consumidos
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.totalTokens.title}
+                content={METRIC_GLOSSARY.totalTokens.description}
+              />
+            </div>
             <div className="h-8 w-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center">
               <Cpu className="h-4 w-4" />
             </div>
@@ -154,9 +162,15 @@ export const LogsTelemetryPage: React.FC = () => {
         {/* Tokens Economizados via Sanitização */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Economia de Contexto
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Economia de Contexto
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.contextSavings.title}
+                content={METRIC_GLOSSARY.contextSavings.description}
+              />
+            </div>
             <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
               <TrendingDown className="h-4 w-4" />
             </div>
@@ -177,9 +191,15 @@ export const LogsTelemetryPage: React.FC = () => {
         {/* Latência Média */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Latência de Inferência
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Latência de Inferência
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.inferenceLatency.title}
+                content={METRIC_GLOSSARY.inferenceLatency.description}
+              />
+            </div>
             <div className="h-8 w-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center">
               <Clock className="h-4 w-4" />
             </div>
@@ -198,9 +218,15 @@ export const LogsTelemetryPage: React.FC = () => {
         {/* Provedor e Modelo de IA Ativo */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Motor de Reconciliação
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Motor de Reconciliação
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.reconciliationEngine.title}
+                content={METRIC_GLOSSARY.reconciliationEngine.description}
+              />
+            </div>
             <div className="h-8 w-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center">
               <Zap className="h-4 w-4" />
             </div>
@@ -221,9 +247,15 @@ export const LogsTelemetryPage: React.FC = () => {
         {/* Custo Médio e Total por Auditoria */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Custo por Auditoria
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Custo por Auditoria
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.costPerAudit.title}
+                content={METRIC_GLOSSARY.costPerAudit.description}
+              />
+            </div>
             <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
               <DollarSign className="h-4 w-4" />
             </div>
@@ -245,9 +277,15 @@ export const LogsTelemetryPage: React.FC = () => {
         {/* Taxa de Respostas sem Evidências */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Taxa Sem Evidências
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Taxa Sem Evidências
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.evidenceMissingRate.title}
+                content={METRIC_GLOSSARY.evidenceMissingRate.description}
+              />
+            </div>
             <div className="h-8 w-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center">
               <ShieldAlert className="h-4 w-4" />
             </div>
@@ -266,9 +304,15 @@ export const LogsTelemetryPage: React.FC = () => {
         {/* Taxa de Citações Inválidas */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Citações Inválidas
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Citações Inválidas
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.invalidCitationsRate.title}
+                content={METRIC_GLOSSARY.invalidCitationsRate.description}
+              />
+            </div>
             <div className="h-8 w-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center">
               <AlertTriangle className="h-4 w-4" />
             </div>
@@ -287,9 +331,15 @@ export const LogsTelemetryPage: React.FC = () => {
         {/* Taxa de Divergência Humano vs IA */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Divergência Humano vs IA
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Divergência Humano vs IA
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.humanAiDivergenceRate.title}
+                content={METRIC_GLOSSARY.humanAiDivergenceRate.description}
+              />
+            </div>
             <div className="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
               <Scale className="h-4 w-4" />
             </div>
@@ -486,14 +536,78 @@ export const LogsTelemetryPage: React.FC = () => {
             <thead className="text-[11px] uppercase tracking-wider font-bold text-slate-400 border-b border-slate-800 bg-slate-900/50">
               <tr>
                 <th className="py-3 px-4">Clínica & Canal</th>
-                <th className="py-3 px-4">Modelo IA</th>
-                <th className="py-3 px-4">Prompt Tokens</th>
-                <th className="py-3 px-4">Completion Tokens</th>
-                <th className="py-3 px-4">Total Tokens</th>
-                <th className="py-3 px-4">Economia</th>
-                <th className="py-3 px-4">Fontes / Normas Utilizadas</th>
-                <th className="py-3 px-4">Latência</th>
-                <th className="py-3 px-4">Custo</th>
+                <th className="py-3 px-4">
+                  <span className="inline-flex items-center gap-1">
+                    Modelo IA
+                    <InfoTooltip
+                      title={METRIC_GLOSSARY.reconciliationEngine.title}
+                      content={METRIC_GLOSSARY.reconciliationEngine.description}
+                    />
+                  </span>
+                </th>
+                <th className="py-3 px-4">
+                  <span className="inline-flex items-center gap-1">
+                    Prompt Tokens
+                    <InfoTooltip
+                      title="Tokens de Entrada (Prompt)"
+                      content="Tokens transmitidos na chamada do agente, incluindo diretrizes do CFM, contexto raspado e instruções deontológicas."
+                    />
+                  </span>
+                </th>
+                <th className="py-3 px-4">
+                  <span className="inline-flex items-center gap-1">
+                    Completion Tokens
+                    <InfoTooltip
+                      title="Tokens de Saída (Completion)"
+                      content="Tokens gerados na resposta da IA: veredito, enumeração de artigos violados e recomendações corretivas."
+                    />
+                  </span>
+                </th>
+                <th className="py-3 px-4">
+                  <span className="inline-flex items-center gap-1">
+                    Total Tokens
+                    <InfoTooltip
+                      title={METRIC_GLOSSARY.totalTokens.title}
+                      content={METRIC_GLOSSARY.totalTokens.description}
+                    />
+                  </span>
+                </th>
+                <th className="py-3 px-4">
+                  <span className="inline-flex items-center gap-1">
+                    Economia
+                    <InfoTooltip
+                      title={METRIC_GLOSSARY.contextSavings.title}
+                      content={METRIC_GLOSSARY.contextSavings.description}
+                    />
+                  </span>
+                </th>
+                <th className="py-3 px-4">
+                  <span className="inline-flex items-center gap-1">
+                    Fontes / Normas Utilizadas
+                    <InfoTooltip
+                      title={METRIC_GLOSSARY.ragChunks.title}
+                      content={METRIC_GLOSSARY.ragChunks.description}
+                    />
+                  </span>
+                </th>
+                <th className="py-3 px-4">
+                  <span className="inline-flex items-center gap-1">
+                    Latência
+                    <InfoTooltip
+                      title={METRIC_GLOSSARY.inferenceLatency.title}
+                      content={METRIC_GLOSSARY.inferenceLatency.description}
+                    />
+                  </span>
+                </th>
+                <th className="py-3 px-4">
+                  <span className="inline-flex items-center gap-1">
+                    Custo
+                    <InfoTooltip
+                      title={METRIC_GLOSSARY.costPerAudit.title}
+                      content={METRIC_GLOSSARY.costPerAudit.description}
+                    />
+                  </span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium">

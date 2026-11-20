@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
+import { InfoTooltip } from '../components/Tooltip';
+import { METRIC_GLOSSARY } from '../utils/metricGlossary';
 
 interface ReportItem {
   id: string;
@@ -245,8 +247,12 @@ export const AuditReviewPage: React.FC = () => {
             <div>
               <h1 className="text-xl md:text-2xl font-black text-slate-100 tracking-tight flex items-center gap-2">
                 Revisão & Homologação de Laudos
-                <span className="text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-700/60">
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 inline-flex items-center gap-1">
                   HITL • CFM
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.auditorReviewHITL.title}
+                    content={METRIC_GLOSSARY.auditorReviewHITL.description}
+                  />
                 </span>
               </h1>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -384,8 +390,12 @@ export const AuditReviewPage: React.FC = () => {
                             {clientName}
                           </h3>
                           {getVerdictBadge(report.verdict)}
-                          <span className="text-xs px-2 py-0.5 rounded-md font-mono bg-slate-800/90 text-slate-300 border border-slate-700/60">
+                          <span className="text-xs px-2 py-0.5 rounded-md font-mono bg-slate-800/90 text-slate-300 border border-slate-700/60 inline-flex items-center gap-1">
                             Score: {report.score ?? 0}/100
+                            <InfoTooltip
+                              title={METRIC_GLOSSARY.deontologicalScore.title}
+                              content={METRIC_GLOSSARY.deontologicalScore.description}
+                            />
                           </span>
                         </div>
 
@@ -606,8 +616,12 @@ export const AuditReviewPage: React.FC = () => {
                             {clientName}
                           </h3>
                           {getVerdictBadge(report.verdict)}
-                          <span className="text-xs px-2 py-0.5 rounded-md font-mono bg-slate-800/90 text-slate-300 border border-slate-700/60">
+                          <span className="text-xs px-2 py-0.5 rounded-md font-mono bg-slate-800/90 text-slate-300 border border-slate-700/60 inline-flex items-center gap-1">
                             Score: {report.score ?? 0}/100
+                            <InfoTooltip
+                              title={METRIC_GLOSSARY.deontologicalScore.title}
+                              content={METRIC_GLOSSARY.deontologicalScore.description}
+                            />
                           </span>
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
                             <CheckCheck className="w-3.5 h-3.5" />
