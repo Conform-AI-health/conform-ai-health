@@ -13,6 +13,7 @@ router.get('/portal/me', authorize(Role.CLIENT), ClientController.portalMe);
 // Rotas administrativas / auditoria
 router.get('/', authorize(Role.ADMIN, Role.AUDITOR), ClientController.list);
 router.post('/', authorize(Role.ADMIN, Role.AUDITOR), ClientController.create);
+router.post('/:id/access', authorize(Role.ADMIN, Role.AUDITOR), ClientController.createOrUpdateAccess);
 router.get('/:id', authorize(Role.ADMIN, Role.AUDITOR, Role.CLIENT), enforceTenantIsolation('id'), ClientController.getById);
 router.put('/:id', authorize(Role.ADMIN, Role.AUDITOR, Role.CLIENT), enforceTenantIsolation('id'), ClientController.update);
 router.delete('/:id', authorize(Role.ADMIN), ClientController.delete);

@@ -15,6 +15,9 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { safeHttpUrl } from '../utils/urlSecurity';
+import { formatClientAuditSummary } from '../utils/summarySanitizer';
+import { InfoTooltip } from '../components/Tooltip';
+import { METRIC_GLOSSARY } from '../utils/metricGlossary';
 
 export const CustomerDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -94,6 +97,31 @@ export const CustomerDashboardPage: React.FC = () => {
 
   const isConforme = verdict === 'CONFORME';
   const isParcial = verdict === 'PARCIALMENTE_CONFORME';
+  const isInconclusivo = verdict === 'INCONCLUSIVO';
+
+  const cardBorderAndBg = isConforme
+    ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-300'
+    : isParcial || isInconclusivo
+    ? 'bg-amber-950/20 border-amber-800/40 text-amber-300'
+    : 'bg-red-950/20 border-red-800/40 text-red-300';
+
+  const pingBg = isConforme ? 'bg-emerald-400' : isParcial || isInconclusivo ? 'bg-amber-400' : 'bg-red-400';
+
+  const verdictTitle = isConforme
+    ? '🟢 CONFORME (REGULAR)'
+    : isParcial
+    ? '🟡 PARCIALMENTE CONFORME'
+    : isInconclusivo
+    ? '🟡 ANÁLISE PRELIMINAR (EM REVISÃO)'
+    : '🔴 NÃO CONFORME (CRÍTICO)';
+
+  const verdictDescription = isConforme
+    ? 'Sua clínica atende integralmente às normas do CFM e diretrizes da LGPD.'
+    : isParcial
+    ? 'Identificamos oportunidades de adequação técnica recomendadas para prevenir autuações.'
+    : isInconclusivo
+    ? 'Auditoria preventiva realizada. O relatório preliminar aguarda conferência final da auditoria regulatória.'
+    : 'Atenção imediata requerida: infrações de severidade alta ou crítica identificadas em seus canais.';
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -180,38 +208,28 @@ export const CustomerDashboardPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Veredito Semáforo */}
         <div
-          className={`border rounded-2xl p-6 shadow-lg flex flex-col justify-between ${
-            isConforme
-              ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-300'
-              : isParcial
-              ? 'bg-amber-950/20 border-amber-800/40 text-amber-300'
-              : 'bg-red-950/20 border-red-800/40 text-red-300'
-          }`}
+          className={`border rounded-2xl p-6 shadow-lg flex flex-col justify-between ${cardBorderAndBg}`}
         >
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider block opacity-75">
-              Veredito Deontológico Geral
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider block opacity-75">
+                Veredito Deontológico Geral
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.trafficLightVerdict.title}
+                content={METRIC_GLOSSARY.trafficLightVerdict.description}
+              />
+            </div>
             <div className="flex items-center gap-3 mt-3">
               <span
-                className={`h-4 w-4 rounded-full animate-ping ${
-                  isConforme ? 'bg-emerald-400' : isParcial ? 'bg-amber-400' : 'bg-red-400'
-                }`}
+                className={`h-4 w-4 rounded-full animate-ping ${pingBg}`}
               ></span>
               <h2 className="text-xl font-extrabold tracking-tight">
-                {isConforme
-                  ? '🟢 CONFORME (REGULAR)'
-                  : isParcial
-                  ? '🟡 PARCIALMENTE CONFORME'
-                  : '🔴 NÃO CONFORME (CRÍTICO)'}
+                {verdictTitle}
               </h2>
             </div>
             <p className="text-xs mt-2 opacity-90">
-              {isConforme
-                ? 'Sua clínica atende integralmente à Resolução CFM nº e diretrizes da LGPD.'
-                : isParcial
-                ? 'Identificamos oportunidades de adequação técnica recomendadas para prevenir autuações.'
-                : 'Atenção imediata requerida: infrações de severidade alta ou crítica identificadas em seus canais.'}
+              {verdictDescription}
             </p>
           </div>
 
@@ -224,9 +242,15 @@ export const CustomerDashboardPage: React.FC = () => {
         {/* Score de Risco */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
           <div>
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Índice de Conformidade Ética
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Índice de Conformidade Ética
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.deontologicalScore.title}
+                content={METRIC_GLOSSARY.deontologicalScore.description}
+              />
+            </div>
             <div className="mt-3 flex items-baseline gap-2">
               <span
                 className={`text-4xl font-extrabold ${
@@ -254,9 +278,15 @@ export const CustomerDashboardPage: React.FC = () => {
         {/* Pendências Críticas */}
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
           <div>
-            <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Pontos de Atenção Ativos
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                Pontos de Atenção Ativos
+              </span>
+              <InfoTooltip
+                title={METRIC_GLOSSARY.criticalViolations.title}
+                content={METRIC_GLOSSARY.criticalViolations.description}
+              />
+            </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div className="p-3 bg-red-950/20 border border-red-900/30 rounded-xl">
                 <span className="text-2xl font-bold text-red-400 block">
@@ -290,6 +320,31 @@ export const CustomerDashboardPage: React.FC = () => {
               Orientações preventivas amigáveis para adequação imediata aos artigos do CFM
             </p>
           </div>
+
+          {/* Seletor de Laudos Auditados da Instituição */}
+          {portalData?.recentReports && portalData.recentReports.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
+              <span className="text-xs text-slate-400 font-semibold whitespace-nowrap">Laudos:</span>
+              {portalData.recentReports.map((r: any, idx: number) => {
+                const isSelected = selectedReport?.id === r.id;
+                const d = r.createdAt ? new Date(r.createdAt).toLocaleDateString('pt-BR') : `Laudo #${idx + 1}`;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => setSelectedReport(r)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition border ${
+                      isSelected
+                        ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 shadow-sm shadow-emerald-950/50'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                    }`}
+                  >
+                    <span>{d}</span>
+                    <span className="ml-1.5 opacity-75 font-mono">({r.score ?? 0} pts)</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {selectedReport ? (
@@ -297,7 +352,7 @@ export const CustomerDashboardPage: React.FC = () => {
             {/* Resumo do laudo */}
             <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-300 leading-relaxed">
               <span className="font-semibold text-white block mb-1">Síntese do Auditor IA:</span>
-              {selectedReport.summary}
+              {formatClientAuditSummary(selectedReport.summary)}
             </div>
 
             {/* Lista de Violações */}

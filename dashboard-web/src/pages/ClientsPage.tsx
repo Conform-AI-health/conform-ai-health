@@ -18,6 +18,9 @@ import {
   Sparkles,
   Eye,
   RefreshCw,
+  KeyRound,
+  Shield,
+  Lock,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
@@ -70,7 +73,16 @@ export const ClientsPage: React.FC = () => {
     status: 'ATIVO',
     email: '',
     phone: '',
+    accessEmail: '',
+    initialPassword: '',
   });
+
+  // Gestão de Acesso / Usuário da Clínica (CLIENT)
+  const [showAccessModal, setShowAccessModal] = useState(false);
+  const [clientForAccess, setClientForAccess] = useState<any>(null);
+  const [modalAccessEmail, setModalAccessEmail] = useState('');
+  const [modalAccessPassword, setModalAccessPassword] = useState('');
+  const [savingAccess, setSavingAccess] = useState(false);
 
   // Formulário de Edição
   const [editFormData, setEditFormData] = useState({
@@ -140,8 +152,10 @@ export const ClientsPage: React.FC = () => {
       if (formData.rqeResponsavel?.trim()) payload.rqeResponsavel = formData.rqeResponsavel.trim();
       if (formData.especialidade?.trim()) payload.especialidade = formData.especialidade.trim();
       if (formData.websiteUrl?.trim()) payload.websiteUrl = formData.websiteUrl.trim();
+      if (formData.accessEmail?.trim()) payload.accessEmail = formData.accessEmail.trim();
+      if (formData.initialPassword?.trim()) payload.initialPassword = formData.initialPassword.trim();
 
-      await api.post('/clients', payload);
+      const res = await api.post('/clients', payload);
       setShowCreateModal(false);
       setFormData({
         name: '',
@@ -155,13 +169,48 @@ export const ClientsPage: React.FC = () => {
         status: 'ATIVO',
         email: '',
         phone: '',
+        accessEmail: '',
+        initialPassword: '',
       });
       fetchClients();
-      toast.success('Clínica médica cadastrada e vinculada com sucesso!');
+      toast.success(
+        res.data?.accessUser
+          ? 'Clínica cadastrada e credencial de acesso gerada! A senha deverá ser alterada no primeiro acesso.'
+          : 'Clínica médica cadastrada com sucesso!'
+      );
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.message, 'Erro ao cadastrar clínica');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Gerenciamento de Acesso de Clínica Existente
+  const handleOpenAccessModal = (client: any) => {
+    setClientForAccess(client);
+    setModalAccessEmail(client.users?.[0]?.email || client.email || '');
+    setModalAccessPassword('');
+    setShowAccessModal(true);
+  };
+
+  const handleSaveAccess = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientForAccess?.id) return;
+    try {
+      setSavingAccess(true);
+      await api.post(`/clients/${clientForAccess.id}/access`, {
+        email: modalAccessEmail.trim(),
+        password: modalAccessPassword.trim(),
+      });
+      toast.success(
+        `Acesso institucional configurado para "${clientForAccess.name}". A senha deverá ser alterada no primeiro acesso.`
+      );
+      setShowAccessModal(false);
+      fetchClients();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message, 'Erro ao configurar acesso da clínica');
+    } finally {
+      setSavingAccess(false);
     }
   };
 
@@ -347,6 +396,7 @@ export const ClientsPage: React.FC = () => {
             <thead className="text-[11px] uppercase tracking-wider font-bold text-slate-400 border-b border-slate-800 bg-slate-900/60">
               <tr>
                 <th className="py-3.5 px-4">Clínica & Nome Fantasia</th>
+                <th className="py-3.5 px-4">Acesso ao Portal</th>
                 <th className="py-3.5 px-4">Responsável Técnico</th>
                 <th className="py-3.5 px-4">Especialidade / RQE</th>
                 <th className="py-3.5 px-4">Website Oficial</th>
@@ -373,6 +423,23 @@ export const ClientsPage: React.FC = () => {
                     <td className="py-3.5 px-4">
                       <span className="font-semibold text-white block">{c.name}</span>
                       <span className="text-xs text-slate-400">{c.tradeName || c.email || 'Sem nome fantasia'}</span>
+                    </td>
+                    <td className="py-3.5 px-4 text-xs">
+                      {c.users && c.users.length > 0 ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-cyan-300 font-semibold bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-800/60">
+                            <KeyRound className="w-3 h-3 text-cyan-400" />
+                            {c.users[0].email}
+                          </span>
+                          {c.users[0].mustChangePassword && (
+                            <span className="block text-[9.5px] text-amber-400 font-bold uppercase tracking-wider">
+                              (Troca Obrigatória Pendente)
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-500 italic text-[11px]">Sem acesso configurado</span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-xs">
                       {c.crmResponsavel ? (
@@ -444,6 +511,13 @@ export const ClientsPage: React.FC = () => {
                           title="Ver informações e documentos coletados desta clínica"
                         >
                           <FileText className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenAccessModal(c)}
+                          className="bg-slate-800 hover:bg-cyan-600 text-cyan-400 hover:text-white p-1.5 rounded-lg text-xs transition border border-cyan-800/40"
+                          title="Gerenciar credenciais de acesso / Redefinir senha da clínica"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => handleOpenEdit(c)}
@@ -657,6 +731,45 @@ export const ClientsPage: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, websiteUrl: e.target.value })}
                     className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-cyan-500"
                   />
+                </div>
+              </div>
+
+              {/* Acesso Institucional ao Portal (CLIENT) */}
+              <div className="pt-3 border-t border-slate-800/80 space-y-3">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-cyan-400" />
+                  <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">
+                    Acesso Institucional da Clínica (Portal CLIENT)
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-800/40 text-[11px] text-slate-300 leading-relaxed">
+                  Cadastre um usuário e senha inicial. A clínica poderá acompanhar seus respectivos laudos deontológicos no portal e <strong className="text-cyan-300">será obrigada a alterar a senha no primeiro acesso</strong>.
+                </div>
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      E-mail de Acesso (Login)
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="acesso@clinica.com.br"
+                      value={formData.accessEmail}
+                      onChange={(e) => setFormData({ ...formData, accessEmail: e.target.value })}
+                      className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      Senha Inicial Temporária
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Mínimo 6 caracteres"
+                      value={formData.initialPassword}
+                      onChange={(e) => setFormData({ ...formData, initialPassword: e.target.value })}
+                      className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 font-mono"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1216,6 +1329,103 @@ export const ClientsPage: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 5: GERENCIAR CREDENCIAIS DE ACESSO DA CLÍNICA (CLIENT)   */}
+      {/* ============================================================== */}
+      {showAccessModal && clientForAccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#0b132b] border border-cyan-800/60 rounded-3xl w-full max-w-md p-6 shadow-2xl relative text-left space-y-5">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800/80">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-950/80 border border-cyan-800/60 text-cyan-400">
+                  <KeyRound className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">Acesso Institucional</h2>
+                  <span className="text-xs text-slate-400 truncate block max-w-xs">{clientForAccess.name}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAccessModal(false)}
+                className="text-slate-400 hover:text-white transition p-1 rounded-lg hover:bg-slate-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#080e22] border border-slate-800 text-xs text-slate-300 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-bold text-cyan-300">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Troca Obrigatória no Primeiro Acesso</span>
+              </div>
+              <p className="leading-relaxed text-slate-400">
+                Ao configurar ou redefinir a senha inicial temporária, a clínica receberá a permissão de acompanhamento
+                dos laudos institucionais e <strong>será forçada a cadastrar uma nova senha pessoal no primeiro login</strong>.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveAccess} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  E-mail de Acesso da Instituição *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="acesso@clinica.med.br"
+                  value={modalAccessEmail}
+                  onChange={(e) => setModalAccessEmail(e.target.value)}
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Nova Senha Temporária Inicial *
+                </label>
+                <input
+                  type="text"
+                  required
+                  minLength={6}
+                  placeholder="Ex: Clinica@2026"
+                  value={modalAccessPassword}
+                  onChange={(e) => setModalAccessPassword(e.target.value)}
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Mínimo de 6 caracteres. Forneça esta senha provisória ao responsável da clínica.
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setShowAccessModal(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingAccess}
+                  className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs py-2.5 px-6 rounded-xl transition shadow-lg shadow-cyan-950/60 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {savingAccess ? (
+                    <span>Salvando Credenciais...</span>
+                  ) : (
+                    <>
+                      <KeyRound className="h-3.5 w-3.5" />
+                      <span>Salvar Acesso & Forçar Troca</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

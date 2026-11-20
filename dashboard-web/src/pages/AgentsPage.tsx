@@ -27,6 +27,8 @@ import {
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
 import { useToast } from '../context/ToastContext';
+import { InfoTooltip } from '../components/Tooltip';
+import { METRIC_GLOSSARY } from '../utils/metricGlossary';
 
 export const SKILL_PERSONA_TEMPLATES = [
   {
@@ -2131,9 +2133,15 @@ export const AgentsPage: React.FC = () => {
                     </div>
 
                     <div className="p-3 bg-[#080d1a] border border-slate-800 rounded-xl">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                        Latência
-                      </span>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">
+                          Latência
+                        </span>
+                        <InfoTooltip
+                          title={METRIC_GLOSSARY.inferenceLatency.title}
+                          content={METRIC_GLOSSARY.inferenceLatency.description}
+                        />
+                      </div>
                       <span className="text-xs font-mono font-bold text-white flex items-center justify-center gap-1">
                         <Clock className="h-3 w-3 text-purple-400" />
                         {testResult.latencyMs} ms

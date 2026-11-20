@@ -1,26 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   ShieldCheck,
   AlertTriangle,
   Building2,
-  FileCheck2,
   Cpu,
-  Play,
   TrendingUp,
   Sparkles,
-  ExternalLink,
   RefreshCw,
-  Clock,
-  CheckCircle2,
-  LayoutDashboard,
-  Layers,
-  ArrowRight,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { InfoTooltip } from '../components/Tooltip';
+import { METRIC_GLOSSARY } from '../utils/metricGlossary';
 
 export const DashboardPage: React.FC = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -93,11 +85,17 @@ export const DashboardPage: React.FC = () => {
           {/* KPI Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             {/* Card 1: Clínicas */}
-            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-                  Clínicas Ativas
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                    Clínicas Ativas
+                  </span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.activeClients.title}
+                    content={METRIC_GLOSSARY.activeClients.description}
+                  />
+                </div>
                 <div className="h-8 w-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center">
                   <Building2 className="h-4 w-4" />
                 </div>
@@ -114,11 +112,17 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             {/* Card 2: Conformidade Média */}
-            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-                  Índice Deontológico
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                    Índice Deontológico
+                  </span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.deontologicalScore.title}
+                    content={METRIC_GLOSSARY.deontologicalScore.description}
+                  />
+                </div>
                 <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
                   <ShieldCheck className="h-4 w-4" />
                 </div>
@@ -133,11 +137,17 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             {/* Card 3: Não-Conformes Críticos */}
-            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-                  Violações Críticas
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                    Violações Críticas
+                  </span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.criticalViolations.title}
+                    content={METRIC_GLOSSARY.criticalViolations.description}
+                  />
+                </div>
                 <div className="h-8 w-8 rounded-lg bg-red-500/10 text-red-400 flex items-center justify-center">
                   <AlertTriangle className="h-4 w-4" />
                 </div>
@@ -152,11 +162,17 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             {/* Card 4: Economia de Tokens via Sanitização */}
-            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-                  Token Efficiency
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                    Token Efficiency
+                  </span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.contextSavings.title}
+                    content={METRIC_GLOSSARY.contextSavings.description}
+                  />
+                </div>
                 <div className="h-8 w-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center">
                   <Cpu className="h-4 w-4" />
                 </div>
@@ -174,13 +190,17 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           {/* Semáforo & Status Overview */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Distribuição Semáforo */}
             <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-emerald-400" />
                   <span>Distribuição Semáforo Deontológico</span>
+                  <InfoTooltip
+                    title={METRIC_GLOSSARY.trafficLightVerdict.title}
+                    content={METRIC_GLOSSARY.trafficLightVerdict.description}
+                  />
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
                   Classificação executiva de risco regulatório no ecossistema
@@ -249,43 +269,6 @@ export const DashboardPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Ação Rápida Integrada */}
-            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
-              <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <Play className="h-4 w-4 text-emerald-400 fill-emerald-400" />
-                  <span>Auditoria Preventiva Contínua</span>
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Dispare varreduras imediatas em websites ou canais digitais para prevenir não conformidades deontológicas e regulatórias.
-                </p>
-
-                <div className="mt-5 space-y-3">
-                  <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-xs">
-                    <span className="text-slate-300 font-semibold block mb-0.5">Catálogo Deontológico em Saúde:</span>
-                    <span className="text-slate-400 text-[11px]">
-                      Auditoria de material educativo, identificação de responsável técnico e ausência de práticas mercantis vedadas.
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-xs">
-                    <span className="text-slate-300 font-semibold block mb-0.5">LGPD em Saúde:</span>
-                    <span className="text-slate-400 text-[11px]">
-                      Verificação de conformidade na captação de dados biométricos e histórico clínico de pacientes.
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => navigate('/agents')}
-                className="mt-6 w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-2 transition"
-              >
-                <span>Ir para Cockpit de Agentes & Disparo</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-
             {/* Destaque de Clínicas */}
             <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
               <div>
@@ -297,8 +280,8 @@ export const DashboardPage: React.FC = () => {
                   Últimas clínicas registradas no ecossistema
                 </p>
 
-                <div className="mt-4 space-y-2.5 max-h-56 overflow-y-auto pr-1">
-                  {clients.slice(0, 4).map((c) => (
+                <div className="mt-4 space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                  {clients.slice(0, 5).map((c) => (
                     <div
                       key={c.id}
                       className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800 text-xs flex items-center justify-between"

@@ -60,6 +60,7 @@ model User {
   role                 Role      @default(CLIENT)
   clientId             String?   @db.ObjectId
   client               Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  mustChangePassword   Boolean?  @default(false)
   refreshToken         String?
   resetPasswordToken   String?
   resetPasswordExpires DateTime?
