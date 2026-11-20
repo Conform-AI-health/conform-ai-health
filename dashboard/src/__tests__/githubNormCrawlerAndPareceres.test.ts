@@ -218,4 +218,46 @@ Aprovado em Sessão Plenária do Conselho Federal de Medicina em 15 de setembro 
       ).rejects.toThrow(/script ou folha de estilo/i);
     });
   });
+
+  describe('5. Filtragem de Links de Entrada vs Captura de Arquivos em scraped_pages', () => {
+    it('deve classificar páginas de listagem/repositório (link de entrada) como não-norma para não poluir scraped_pages', async () => {
+      const mockListingHtml = `
+        <html>
+          <head><title>Repositório de Pareceres CFM 1985</title></head>
+          <body>
+            <h1>md-augustolinhares/cfm-normas</h1>
+            <div class="repository-content">
+              <a href="/md-augustolinhares/cfm-normas/blob/main/normas/pareceres/1985/CFM-PAR-1-1985.md">CFM-PAR-1-1985.md</a>
+              <a href="/md-augustolinhares/cfm-normas/blob/main/normas/pareceres/1985/CFM-PAR-2-1985.md">CFM-PAR-2-1985.md</a>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const extractedListing = LegalNormCrawlerService.extractCleanMarkdownFromHtml(
+        'https://github.com/md-augustolinhares/cfm-normas/tree/main/normas/pareceres/1985',
+        mockListingHtml
+      );
+
+      const classification = await LegalNormCrawlerService.classifyLegalNorm(extractedListing, ['CFM']);
+
+      // Página de entrada / listagem não é norma e, portanto, não é elegível para scraped_pages
+      expect(classification.isNorm).toBe(false);
+      expect(classification.reason).toBeDefined();
+    });
+
+    it('deve validar que a URL canônica de um arquivo normativo específico é normalizada para garantia de unicidade', () => {
+      const entryUrl = 'https://github.com/md-augustolinhares/cfm-normas/tree/main/normas/pareceres/1985/';
+      const rawBlobUrl = 'https://github.com/md-augustolinhares/cfm-normas/blob/main/normas/pareceres/1985/CFM-PAR-1-1985.md#heading';
+
+      const canonicalEntry = LegalNormCrawlerService.normalizeCanonicalUrl(entryUrl);
+      const canonicalFile = LegalNormCrawlerService.convertGithubBlobToRawUrl(
+        LegalNormCrawlerService.normalizeCanonicalUrl(rawBlobUrl) || rawBlobUrl
+      );
+
+      expect(canonicalEntry).toBe('https://github.com/md-augustolinhares/cfm-normas/tree/main/normas/pareceres/1985');
+      expect(canonicalFile).toBe('https://raw.githubusercontent.com/md-augustolinhares/cfm-normas/main/normas/pareceres/1985/CFM-PAR-1-1985.md');
+      expect(canonicalFile).not.toBe(canonicalEntry);
+    });
+  });
 });

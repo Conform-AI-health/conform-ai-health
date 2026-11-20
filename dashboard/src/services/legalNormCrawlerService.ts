@@ -2187,7 +2187,6 @@ export class LegalNormCrawlerService {
 
         // Deduplicação em memória por content_hash dentro do mesmo job
         if (visitedContentHashes.has(extracted.contentHash) && !force) {
-          await this.upsertScrapedPage(extracted, normUrl, tags);
           await LinkTraceService.record({
             jobId,
             url: normUrl,
@@ -2210,7 +2209,7 @@ export class LegalNormCrawlerService {
         const topicsInScope = detectedTopics.filter((t) => allowedTopics.includes(t));
 
         if (!classification.isNorm) {
-          await this.upsertScrapedPage(extracted, normUrl, [...tags, ...detectedTopics]);
+          // Links de entrada, índices e páginas de navegação que não são normas não são salvos em scraped_pages
           jobState.counters.discarded++;
           jobState.discards.push({
             url: normUrl,
