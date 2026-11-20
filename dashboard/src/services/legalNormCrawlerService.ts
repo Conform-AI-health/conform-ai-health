@@ -1293,6 +1293,25 @@ export class LegalNormCrawlerService {
           })
         : existing;
       await this.upsertScrapedPage(doc, canonicalUrl, scrapedPageTags);
+
+      // Commit individual registrado na telemetria por arquivo processado (idempotente)
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'LEGAL_NORM_CRAWLER',
+          correlationId: norm.id,
+          message: `[FILE_COMMIT_SUCCESS] Arquivo normativo processado e sincronizado no banco (idempotente): "${doc.title}" (${norm.normId}) com ${existing.totalChunks || 0} chunks [ação: skipped_idempotent].`,
+          details: JSON.stringify({
+            normId: norm.id,
+            normCode: norm.normId,
+            url: canonicalUrl,
+            fileType: doc.fileType,
+            action: 'skipped_idempotent',
+            chunksCount: existing.totalChunks || 0,
+          }),
+        },
+      }).catch(() => {});
+
       return {
         action: 'skipped_idempotent',
         norm,
@@ -1301,11 +1320,22 @@ export class LegalNormCrawlerService {
     }
 
     const articleChunks = this.chunkLegalNormByArticle(doc.title, doc.activeContentMd);
-    const chunkEmbeddings = dbStatus === 'REVOGADA'
-      ? []
-      : await SemanticEmbeddingService.embedDocuments(
+    let chunkEmbeddings: number[][] = [];
+    let embeddingPending = false;
+    let embeddingErrorMessage = '';
+    if (dbStatus !== 'REVOGADA') {
+      try {
+        chunkEmbeddings = await SemanticEmbeddingService.embedDocuments(
           articleChunks.map((chunk) => `${chunk.headingContext}\n${chunk.text}`)
         );
+      } catch (embErr: any) {
+        // O arquivo é commitado mesmo assim (texto + hierarquia), mas os chunks ficam marcados como
+        // EMBEDDING_PENDING: não travam o commit por arquivo e o reindex os detecta
+        embeddingPending = true;
+        embeddingErrorMessage = embErr?.message || String(embErr);
+        chunkEmbeddings = articleChunks.map(() => []);
+      }
+    }
 
     let previousVersion = 0;
     if (existing?.metadadosRAG) {
@@ -1421,13 +1451,14 @@ export class LegalNormCrawlerService {
                   year: classification.year,
                   status: classification.status,
                   source_url: canonicalUrl,
-                  embedding_model: SemanticEmbeddingService.embeddingModelId,
+                  // Modelo marcado como pendente => searchNormChunksVector ignora o chunk e o reindex o detecta
+                  embedding_model: embeddingPending ? 'PENDING_REINDEX' : SemanticEmbeddingService.embeddingModelId,
                   content_hash: ch.contentHash,
                 }),
                 overlapTokens: 0,
                 maxChunkTokens: 650,
                 embedding,
-                tags: combinedTags,
+                tags: embeddingPending ? [...combinedTags, 'EMBEDDING_PENDING'] : combinedTags,
               };
             });
 
@@ -1437,13 +1468,31 @@ export class LegalNormCrawlerService {
 
       await this.upsertScrapedPage(doc, canonicalUrl, scrapedPageTags);
 
+      if (embeddingPending) {
+        await prisma.systemLog.create({
+          data: {
+            level: 'WARN',
+            module: 'LEGAL_NORM_CRAWLER',
+            correlationId: savedNorm.id,
+            message: `[EMBEDDING_PENDING] "${doc.title}" (${savedNorm.normId}) commitada com ${chunkRecords.length} chunks SEM vetor (falha no Gemini: ${embeddingErrorMessage}). Execute o reindex para habilitar na busca vetorial.`,
+            details: JSON.stringify({
+              normId: savedNorm.id,
+              normCode: savedNorm.normId,
+              url: canonicalUrl,
+              chunksCount: chunkRecords.length,
+              error: embeddingErrorMessage,
+            }),
+          },
+        }).catch(() => {});
+      }
+
       // Commit individual registrado na telemetria por arquivo processado
       await prisma.systemLog.create({
         data: {
           level: 'INFO',
           module: 'LEGAL_NORM_CRAWLER',
           correlationId: savedNorm.id,
-          message: `[FILE_COMMIT_SUCCESS] Arquivo normativo processado e commitado no banco: "${doc.title}" (${savedNorm.normId}) com ${chunkRecords.length} chunks [ação: ${action}, versão: ${nextVersion}].`,
+          message: `[FILE_COMMIT_SUCCESS] Arquivo normativo processado e commitado no banco: "${doc.title}" (${savedNorm.normId}) com ${chunkRecords.length} chunks [ação: ${action}, versão: ${nextVersion}, embeddings: ${embeddingPending ? 'PENDENTES' : dbStatus === 'REVOGADA' ? 'N/A (revogada)' : 'OK'}].`,
           details: JSON.stringify({
             normId: savedNorm.id,
             normCode: savedNorm.normId,
@@ -1452,6 +1501,7 @@ export class LegalNormCrawlerService {
             action,
             version: nextVersion,
             chunksCount: chunkRecords.length,
+            embeddingPending,
           }),
         },
       }).catch(() => {});
@@ -1615,6 +1665,7 @@ export class LegalNormCrawlerService {
         continue;
       }
 
+      let pendingChildEnqueue: (() => Promise<void>) | null = null;
       try {
         let extracted: ExtractedDocumentContent | null = null;
         let engine: 'firecrawl' | 'http' = 'http';
@@ -1732,65 +1783,70 @@ export class LegalNormCrawlerService {
           }
         }
 
-        // Telemetria: links ignorados na descoberta (assets, redes sociais, fora da allowlist)
-        for (const skippedLink of extracted.skippedLinks || []) {
-          await LinkTraceService.record({
-            jobId,
-            url: skippedLink.url,
-            status: skippedLink.reason.includes('allowlist') ? 'SKIPPED_DOMAIN' : 'SKIPPED_IRRELEVANT',
-            parentUrl: normUrl,
-            depth: current.depth + 1,
-            reason: skippedLink.reason,
-          });
-        }
-
-        // Enfileira links descobertos na página/PDF (inclui links de outras leis dentro de arquivos) se dentro de maxDepth
-        for (const childLink of extracted.discoveredLinks) {
-          const childCanonical = this.normalizeCanonicalUrl(childLink.url);
-          if (!childCanonical) continue;
-
-          if (visitedUrls.has(childCanonical) || queuedUrls.has(childCanonical)) {
-            await LinkTraceService.record({
+        // Prepara função para enfileirar links filhos após a conclusão e commit do arquivo atual
+        const enqueueChildLinks = async () => {
+          const traceBatch: any[] = [];
+          for (const skippedLink of extracted.skippedLinks || []) {
+            traceBatch.push({
               jobId,
-              url: childCanonical,
-              status: 'SKIPPED_DUPLICATE',
+              url: skippedLink.url,
+              status: skippedLink.reason.includes('allowlist') ? 'SKIPPED_DOMAIN' : 'SKIPPED_IRRELEVANT',
               parentUrl: normUrl,
               depth: current.depth + 1,
-              anchorText: childLink.anchorText,
-              fileType: childLink.fileType,
-              reason: 'Link já descoberto/visitado neste job',
+              reason: skippedLink.reason,
             });
-            continue;
           }
 
-          if (current.depth >= maxDepth) {
+          for (const childLink of extracted.discoveredLinks) {
+            const childCanonical = this.normalizeCanonicalUrl(childLink.url);
+            if (!childCanonical) continue;
+
+            if (visitedUrls.has(childCanonical) || queuedUrls.has(childCanonical)) {
+              traceBatch.push({
+                jobId,
+                url: childCanonical,
+                status: 'SKIPPED_DUPLICATE',
+                parentUrl: normUrl,
+                depth: current.depth + 1,
+                anchorText: childLink.anchorText,
+                fileType: childLink.fileType,
+                reason: 'Link já descoberto/visitado neste job',
+              });
+              continue;
+            }
+
+            if (current.depth >= maxDepth) {
+              queuedUrls.add(childCanonical);
+              traceBatch.push({
+                jobId,
+                url: childCanonical,
+                status: 'SKIPPED_MAX_DEPTH',
+                parentUrl: normUrl,
+                depth: current.depth + 1,
+                anchorText: childLink.anchorText,
+                fileType: childLink.fileType,
+                reason: `Profundidade máxima (${maxDepth}) atingida`,
+              });
+              continue;
+            }
+
             queuedUrls.add(childCanonical);
-            await LinkTraceService.record({
+            queue.push(childLink);
+            jobState.counters.discovered++;
+            traceBatch.push({
               jobId,
               url: childCanonical,
-              status: 'SKIPPED_MAX_DEPTH',
+              status: 'DISCOVERED',
               parentUrl: normUrl,
               depth: current.depth + 1,
               anchorText: childLink.anchorText,
               fileType: childLink.fileType,
-              reason: `Profundidade máxima (${maxDepth}) atingida`,
             });
-            continue;
           }
 
-          queuedUrls.add(childCanonical);
-          queue.push(childLink);
-          jobState.counters.discovered++;
-          await LinkTraceService.record({
-            jobId,
-            url: childCanonical,
-            status: 'DISCOVERED',
-            parentUrl: normUrl,
-            depth: current.depth + 1,
-            anchorText: childLink.anchorText,
-            fileType: childLink.fileType,
-          });
-        }
+          await LinkTraceService.recordMany(traceBatch);
+        };
+        pendingChildEnqueue = enqueueChildLinks;
 
         // Deduplicação em memória por content_hash dentro do mesmo job
         if (visitedContentHashes.has(extracted.contentHash) && !force) {
@@ -1805,22 +1861,19 @@ export class LegalNormCrawlerService {
             engine,
             reason: 'Conteúdo idêntico (mesmo SHA-256) já processado neste job',
           });
+          await enqueueChildLinks();
           continue;
         }
         visitedContentHashes.add(extracted.contentHash);
 
         // Classifica "é norma legal?" (estrutura jurídica) e, separadamente, os temas aceitos
-        const classification = await this.classifyLegalNorm(extracted, []);
+        const classification = await this.classifyLegalNorm(extracted, tags);
         const topicMatches = classifyNormTopics(extracted.title, extracted.activeContentMd);
         const detectedTopics = topicMatches.map((m) => m.topic);
         const topicsInScope = detectedTopics.filter((t) => allowedTopics.includes(t));
 
-        if (!classification.isNorm || topicsInScope.length === 0) {
-          await this.upsertScrapedPage(extracted, normUrl, [...tags, ...detectedTopics]);
-        }
-
         if (!classification.isNorm) {
-          // Registra motivo do descarte para auditoria sem salvar o conteúdo em norms
+          await this.upsertScrapedPage(extracted, normUrl, [...tags, ...detectedTopics]);
           jobState.counters.discarded++;
           jobState.discards.push({
             url: normUrl,
@@ -1845,42 +1898,23 @@ export class LegalNormCrawlerService {
             score: classification.score,
             reason: classification.reason,
           });
-        } else if (topicsInScope.length === 0) {
-          // É norma, mas não pertence aos temas (privacidade/CFM/ANVISA/ANS): descarta sem salvar
-          const reason = `Norma fora dos temas aceitos [${allowedTopics.join(', ')}]${
-            detectedTopics.length > 0 ? ` (temas detectados: ${detectedTopics.join(', ')})` : ' (nenhum tema detectado)'
-          }`;
-          jobState.counters.discarded++;
-          jobState.discards.push({
-            url: normUrl,
-            title: extracted.title,
-            status: 'discarded',
-            reason,
-            score: classification.score,
-            layer: classification.layer,
-            discoveredFrom: current.discoveredFrom,
-            timestamp: new Date().toISOString(),
-          });
-          await LinkTraceService.record({
-            jobId,
-            url: normUrl,
-            status: 'DISCARDED_NO_TOPIC',
-            parentUrl: current.discoveredFrom,
-            depth: current.depth,
-            fileType: extracted.fileType,
-            title: extracted.title,
-            engine,
-            topics: detectedTopics,
-            score: classification.score,
-            reason,
-          });
         } else {
+          // Arquivo normativo válido identificado: executa imediatamente todo o processo de RAG, chunk e persistência
+          const effectiveTopics =
+            topicsInScope.length > 0
+              ? topicsInScope
+              : detectedTopics.length > 0
+                ? detectedTopics
+                : tags.length > 0
+                  ? tags
+                  : [classification.issuingBody || 'GERAL'];
+
           const persisted = await this.persistNormWithIdempotency({
             doc: extracted,
             classification,
             discoveredFrom: current.discoveredFrom,
             originChain: current.originChain,
-            tags: Array.from(new Set([...tags, ...topicsInScope])),
+            tags: Array.from(new Set([...tags, ...effectiveTopics])),
             force,
           });
 
@@ -1906,7 +1940,7 @@ export class LegalNormCrawlerService {
             fileType: extracted.fileType,
             title: extracted.title,
             engine,
-            topics: topicsInScope.map((t) => `${t} (${TOPIC_LABELS[t]})`),
+            topics: effectiveTopics.map((t) => (TOPIC_LABELS[t as NormTopic] ? `${t} (${TOPIC_LABELS[t as NormTopic]})` : t)),
             normId: persisted.norm?.id,
             chunksCount: persisted.chunksCount,
             score: classification.score,
@@ -1918,7 +1952,16 @@ export class LegalNormCrawlerService {
                 : 'Norma já existente com mesmo SHA-256 (idempotente)',
           });
         }
+
+        // Arquivo atual já está commitado (ou descartado); só agora segue para os links filhos
+        pendingChildEnqueue = null;
+        await enqueueChildLinks();
       } catch (err: any) {
+        if (pendingChildEnqueue) {
+          const enqueueAfterError: () => Promise<void> = pendingChildEnqueue;
+          pendingChildEnqueue = null;
+          await enqueueAfterError().catch(() => {});
+        }
         await LinkTraceService.record({
           jobId,
           url: normUrl,

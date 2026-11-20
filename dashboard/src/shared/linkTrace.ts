@@ -76,6 +76,28 @@ export class LinkTraceService {
   }
 
   /**
+   * Registra múltiplos eventos de rastreio em lote (batch) em uma única operação.
+   * Evita centenas de round-trips sequenciais no MongoDB durante o crawling.
+   */
+  public static async recordMany(entries: LinkTraceEntry[]): Promise<void> {
+    if (!entries || entries.length === 0) return;
+    try {
+      const now = new Date().toISOString();
+      await prisma.systemLog.createMany({
+        data: entries.map((entry) => ({
+          level: levelFor(entry.status),
+          module: LINK_TRACE_MODULE,
+          correlationId: entry.jobId,
+          message: `[LINK_TRACE:${entry.status}] ${entry.url}`,
+          details: JSON.stringify({ ...entry, recordedAt: now }),
+        })),
+      });
+    } catch (err: any) {
+      console.warn(`⚠️ [LinkTrace] Falha ao registrar lote de telemetria de links (${entries.length} itens): ${err?.message}`);
+    }
+  }
+
+  /**
    * Consulta registros de rastreio, opcionalmente filtrados por job/status, e devolve o resumo por status.
    */
   public static async query(params: {
