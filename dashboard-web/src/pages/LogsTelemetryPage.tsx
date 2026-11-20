@@ -132,7 +132,7 @@ export const LogsTelemetryPage: React.FC = () => {
       {/* KPI Cards de Telemetria de Tokens */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* Total Tokens Consumidos */}
-        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -160,7 +160,7 @@ export const LogsTelemetryPage: React.FC = () => {
         </div>
 
         {/* Tokens Economizados via Sanitização */}
-        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -189,7 +189,7 @@ export const LogsTelemetryPage: React.FC = () => {
         </div>
 
         {/* Latência Média */}
-        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -216,7 +216,7 @@ export const LogsTelemetryPage: React.FC = () => {
         </div>
 
         {/* Provedor e Modelo de IA Ativo */}
-        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -245,7 +245,7 @@ export const LogsTelemetryPage: React.FC = () => {
       {/* Linha 2 de KPIs: Custo Financeiro, Confiabilidade de Guardrails e Divergência Humana */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* Custo Médio e Total por Auditoria */}
-        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -275,7 +275,7 @@ export const LogsTelemetryPage: React.FC = () => {
         </div>
 
         {/* Taxa de Respostas sem Evidências */}
-        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -302,7 +302,7 @@ export const LogsTelemetryPage: React.FC = () => {
         </div>
 
         {/* Taxa de Citações Inválidas */}
-        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -329,7 +329,7 @@ export const LogsTelemetryPage: React.FC = () => {
         </div>
 
         {/* Taxa de Divergência Humano vs IA */}
-        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">

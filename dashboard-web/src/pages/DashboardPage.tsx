@@ -95,7 +95,7 @@ export const DashboardPage: React.FC = () => {
           {/* KPI Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             {/* Card 1: Clínicas */}
-            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -122,7 +122,7 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             {/* Card 2: Conformidade Média */}
-            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -147,7 +147,7 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             {/* Card 3: Não-Conformes Críticos */}
-            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
@@ -172,7 +172,7 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             {/* Card 4: Economia de Tokens via Sanitização */}
-            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+            <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">

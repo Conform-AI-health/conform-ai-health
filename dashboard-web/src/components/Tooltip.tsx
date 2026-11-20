@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { HelpCircle, Info } from 'lucide-react';
 
 export type TooltipPosition = 'top' | 'bottom' | 'left' | 'right';
@@ -18,40 +19,99 @@ export const Tooltip: React.FC<TooltipProps> = ({
   position = 'top',
   children,
   className = '',
-  maxWidth = 'max-w-xs w-72',
+  maxWidth = 'max-w-[calc(100vw-24px)] w-72 sm:w-80',
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
-  // Fecha o tooltip caso o usuário clique fora no mobile
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    arrowLeft: number;
+    actualPosition: 'top' | 'bottom';
+  }>({
+    top: 0,
+    left: 0,
+    arrowLeft: 144,
+    actualPosition: 'top',
+  });
+
+  const updatePosition = () => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const tooltipEl = tooltipRef.current;
+    const tooltipWidth = tooltipEl ? tooltipEl.offsetWidth : 288;
+    const tooltipHeight = tooltipEl ? tooltipEl.offsetHeight : 100;
+
+    const gap = 8;
+    let actualPos: 'top' | 'bottom' = position === 'bottom' ? 'bottom' : 'top';
+
+    // Se preferido for 'top', mas não houver espaço suficiente acima da viewport, inverte para 'bottom'
+    if (position === 'top' && rect.top - tooltipHeight - gap < 12) {
+      actualPos = 'bottom';
+    } else if (position === 'bottom' && rect.bottom + tooltipHeight + gap > window.innerHeight - 12) {
+      actualPos = 'top';
+    }
+
+    const top = actualPos === 'top' ? rect.top - tooltipHeight - gap : rect.bottom + gap;
+
+    // Alinhamento horizontal centralizado no elemento âncora
+    const anchorCenterX = rect.left + rect.width / 2;
+    let left = anchorCenterX - tooltipWidth / 2;
+
+    // Evita corte nas bordas laterais da tela (viewport clamping)
+    const margin = 12;
+    const minLeft = margin;
+    const maxLeft = Math.max(margin, window.innerWidth - tooltipWidth - margin);
+    const clampedLeft = Math.max(minLeft, Math.min(maxLeft, left));
+
+    // Posição horizontal da seta apontando para a âncora
+    const arrowLeft = Math.max(16, Math.min(tooltipWidth - 16, anchorCenterX - clampedLeft));
+
+    setCoords({
+      top,
+      left: clampedLeft,
+      arrowLeft,
+      actualPosition: actualPos,
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (isVisible) {
+      updatePosition();
+    }
+  }, [isVisible]);
+
   useEffect(() => {
+    if (!isVisible) return;
+
+    const handleScrollOrResize = () => {
+      updatePosition();
+    };
+
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node) &&
+        tooltipRef.current &&
+        !tooltipRef.current.contains(event.target as Node)
+      ) {
         setIsVisible(false);
       }
     };
 
-    if (isVisible) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    document.addEventListener('mousedown', handleClickOutside);
+
     return () => {
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isVisible]);
-
-  const positionClasses: Record<TooltipPosition, string> = {
-    top: 'bottom-full left-1/2 -translate-x-1/2 mb-2',
-    bottom: 'top-full left-1/2 -translate-x-1/2 mt-2',
-    left: 'right-full top-1/2 -translate-y-1/2 mr-2',
-    right: 'left-full top-1/2 -translate-y-1/2 ml-2',
-  };
-
-  const arrowClasses: Record<TooltipPosition, string> = {
-    top: 'top-full left-1/2 -translate-x-1/2 border-t-slate-800 border-x-transparent border-b-transparent',
-    bottom: 'bottom-full left-1/2 -translate-x-1/2 border-b-slate-800 border-x-transparent border-t-transparent',
-    left: 'left-full top-1/2 -translate-y-1/2 border-l-slate-800 border-y-transparent border-r-transparent',
-    right: 'right-full top-1/2 -translate-y-1/2 border-r-slate-800 border-y-transparent border-l-transparent',
-  };
 
   return (
     <div
@@ -78,28 +138,43 @@ export const Tooltip: React.FC<TooltipProps> = ({
         {children}
       </div>
 
-      {isVisible && (
-        <div
-          role="tooltip"
-          className={`absolute z-50 ${positionClasses[position]} ${maxWidth} pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95`}
-        >
-          <div className="bg-[#0b1329] border border-slate-700/80 rounded-xl p-3 shadow-2xl shadow-black/90 backdrop-blur-md text-left">
-            {title && (
-              <div className="flex items-center gap-1.5 text-xs font-bold text-white mb-1.5 border-b border-slate-800 pb-1">
-                <Info className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
-                <span>{title}</span>
-              </div>
-            )}
-            <div className="text-[11px] leading-relaxed text-slate-300 font-normal">
-              {content}
-            </div>
-          </div>
-          {/* Seta do tooltip */}
+      {isVisible &&
+        typeof document !== 'undefined' &&
+        createPortal(
           <div
-            className={`absolute w-0 h-0 border-4 ${arrowClasses[position]}`}
-          />
-        </div>
-      )}
+            ref={tooltipRef}
+            role="tooltip"
+            style={{
+              position: 'fixed',
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              zIndex: 99999,
+            }}
+            className={`${maxWidth} pointer-events-none transition-opacity duration-150 animate-in fade-in zoom-in-95`}
+          >
+            <div className="bg-[#0b1329] border border-slate-700/90 rounded-xl p-3.5 shadow-2xl shadow-black/95 backdrop-blur-md text-left">
+              {title && (
+                <div className="flex items-center gap-1.5 text-xs font-bold text-white mb-1.5 border-b border-slate-800 pb-1.5">
+                  <Info className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
+                  <span>{title}</span>
+                </div>
+              )}
+              <div className="text-[11px] leading-relaxed text-slate-300 font-normal break-words whitespace-normal">
+                {content}
+              </div>
+            </div>
+            {/* Seta indicadora do tooltip */}
+            <div
+              style={{ left: `${coords.arrowLeft}px` }}
+              className={`absolute w-0 h-0 -translate-x-1/2 border-4 ${
+                coords.actualPosition === 'top'
+                  ? 'top-full border-t-[#0b1329] border-x-transparent border-b-transparent'
+                  : 'bottom-full border-b-[#0b1329] border-x-transparent border-t-transparent'
+              }`}
+            />
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
