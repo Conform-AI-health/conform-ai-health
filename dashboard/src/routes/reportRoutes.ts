@@ -9,6 +9,7 @@ router.use(authenticate);
 
 router.get('/', ReportController.list);
 router.get('/pending-review', authorize(Role.ADMIN, Role.AUDITOR), ReportController.getPendingReview);
+router.get('/processed-review', authorize(Role.ADMIN, Role.AUDITOR), ReportController.getProcessedReview);
 router.get('/:id/contract', ReportController.getContract);
 router.get('/:id', ReportController.getById);
 router.get('/:id/export', ReportController.exportMarkdown);

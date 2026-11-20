@@ -259,6 +259,48 @@ describe('📧 Notificações por E-mail & Registro de Falhas na Telemetria (Aud
       );
     });
 
+    it('ReportController.getProcessedReview: deve listar laudos já processados/homologados pelo auditor humano', async () => {
+      (prisma.auditReport.count as any).mockResolvedValue(1);
+      (prisma.auditReport.findMany as any).mockResolvedValue([
+        {
+          id: 'rep-processed-1',
+          targetUrl: 'https://clinicaprocessada.med.br',
+          status: 'COMPLETED',
+          reviewStatus: 'APPROVED',
+          auditorReviewed: true,
+          reviewedBy: 'auditor.chefe@conformia.med.br',
+          reviewedAt: new Date(),
+          emailSent: true,
+          score: 95,
+          verdict: 'CONFORME',
+          violations: [],
+          client: {
+            name: 'Clínica Homologada',
+            email: 'contato@clinicahomologada.med.br',
+          },
+        },
+      ]);
+
+      const req: any = { query: { page: '1', limit: '10' } };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await ReportController.getProcessedReview(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ id: 'rep-processed-1', reviewStatus: 'APPROVED', auditorReviewed: true }),
+          ]),
+          pagination: expect.objectContaining({ total: 1 }),
+        })
+      );
+    });
+
     it('ReportController.confirmAndSendEmail: deve rejeitar se a checkbox de confirmação do auditor não estiver marcada (confirmed: false)', async () => {
       const req: any = {
         params: { id: 'rep-pending-1' },

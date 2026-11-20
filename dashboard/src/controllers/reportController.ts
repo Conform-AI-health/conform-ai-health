@@ -566,6 +566,66 @@ export class ReportController {
   }
 
   /**
+   * Lista todos os laudos que já foram processados/homologados pelo auditor humano
+   * (auditorReviewed === true ou reviewStatus !== 'PENDING_REVIEW')
+   */
+  public static async getProcessedReview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+
+      const where: any = {
+        OR: [
+          { auditorReviewed: true },
+          { reviewStatus: { in: ['APPROVED', 'REJECTED', 'CHANGES_REQUESTED'] } },
+        ],
+      };
+
+      const [total, reports] = await Promise.all([
+        prisma.auditReport.count({ where }),
+        prisma.auditReport.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { updatedAt: 'desc' },
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                tradeName: true,
+                crmResponsavel: true,
+                crmUf: true,
+                email: true,
+                users: { select: { email: true } },
+              },
+            },
+            violations: {
+              orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }],
+            },
+          },
+        }),
+      ]);
+
+      res.status(200).json({
+        data: reports.map((r) => ({
+          ...r,
+          targetUrl: r.targetUrl || 'URL não informada',
+          summary: r.summary || 'Laudo de conformidade deontológica.',
+        })),
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Homologa o laudo pelo auditor humano com checkbox obrigatório e dispara o e-mail oficial à clínica.
    */
   public static async confirmAndSendEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
