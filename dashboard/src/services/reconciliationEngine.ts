@@ -84,7 +84,11 @@ export class ReconciliationEngine {
     return await AIProviderFactory.testModelResponse(customPrompt, targetModelId);
   }
 
-  public static async resolveAgentContext(agentModuleId?: string, queryText?: string): Promise<AgentContext> {
+  public static async resolveAgentContext(
+    agentModuleId?: string,
+    queryText?: string,
+    extraTags?: string[]
+  ): Promise<AgentContext> {
     if (agentModuleId) {
       const agent = await prisma.agentModule.findFirst({
         where: { OR: [{ id: agentModuleId }, { code: agentModuleId }] },
@@ -96,6 +100,7 @@ export class ReconciliationEngine {
       const agentTags = Array.from(new Set([
         ...(agent.tags || []),
         ...(agent.targetNorms || []),
+        ...(extraTags || []),
       ].map((tag) => tag.trim()).filter(Boolean)));
       const retrieval = queryText
         ? await NormsResolver.retrieveRelevantByTags(agentTags, queryText)
@@ -143,7 +148,10 @@ Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da audit
     const defaultAgent = await prisma.agentDefinition.findFirst({
       orderBy: { createdAt: 'desc' },
     });
-    const defaultTags = defaultAgent?.targetNorm ? [defaultAgent.targetNorm] : [];
+    const defaultTags = Array.from(new Set([
+      ...(defaultAgent?.targetNorm ? [defaultAgent.targetNorm] : []),
+      ...(extraTags || []),
+    ].map((tag) => tag.trim()).filter(Boolean)));
     const retrieval = queryText
       ? await NormsResolver.retrieveRelevantByTags(defaultTags, queryText)
       : {
@@ -179,7 +187,11 @@ Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da audit
     agentModuleId?: string,
     resolvedContext?: AgentContext
   ): Promise<ReconciliationOutput> {
-    const agentContext = resolvedContext || await this.resolveAgentContext(agentModuleId, scrape.cleanMarkdown);
+    const agentContext = resolvedContext || await this.resolveAgentContext(
+      agentModuleId,
+      scrape.cleanMarkdown,
+      scrape.detectedTags
+    );
     if (agentContext.activeNorms.length === 0) {
       const retrievalStatus = agentContext.retrievalStatus || 'NO_MATCH';
       const diagnostics = agentContext.retrievalDiagnostics;

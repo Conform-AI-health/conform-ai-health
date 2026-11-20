@@ -15,6 +15,11 @@ export interface ExecuteAuditParams {
   skill?: string;
   extractionMode?: ExtractionMode;
   jobId?: string | number;
+  auth?: {
+    hasAuth?: boolean;
+    username?: string;
+    password?: string;
+  };
 }
 
 export class AuditExecutionService {
@@ -71,22 +76,62 @@ export class AuditExecutionService {
       const moduleName = mod?.name || 'Módulo Geral';
       const effectiveSkill = params.skill || mod?.description || 'compliance-specialist';
 
+      // Determina configuração de autenticação (passada explicitamente ou recuperada do módulo)
+      const authConfig = params.auth || (mod?.hasAuth ? {
+        hasAuth: true,
+        username: mod.authUsername || undefined,
+        password: mod.authPassword || undefined,
+      } : undefined);
+
+      if (authConfig?.hasAuth) {
+        await prisma.systemLog.create({
+          data: {
+            level: 'INFO',
+            module: 'SCRAPER',
+            correlationId,
+            message: `[SCRAPER] [AUTH] Extração configurada com credenciais de autenticação para: ${targetUrl} (Usuário: ${authConfig.username || 'autenticado'})`,
+          },
+        }).catch(() => {});
+      }
+
       // Log operacional: Início da extração
       await prisma.systemLog.create({
         data: {
           level: 'INFO',
           module: 'SCRAPER',
           correlationId,
-          message: `[SCRAPER] [FIRECRAWL] Acionando extração de página via Firecrawl para: ${targetUrl} (Cliente: ${clientName})`,
+          message: `[SCRAPER] [FIRECRAWL] Acionando extração de página via Firecrawl para: ${targetUrl} (Cliente: ${clientName})${authConfig?.hasAuth ? ' [COM AUTENTICAÇÃO]' : ''}`,
         },
       }).catch(() => {});
 
       // 2 & 3. Scraping Exclusivo via Firecrawl + Hash SHA-256 + MongoDB
-      const firecrawlResult = await FirecrawlService.scrape(targetUrl, agentModuleId, clientId);
+      const firecrawlResult = await FirecrawlService.scrape(targetUrl, agentModuleId, clientId, authConfig);
 
       // T04: Validação estrita de integridade do conteúdo extraído
       if (!firecrawlResult || !firecrawlResult.markdown || firecrawlResult.markdown.trim().length === 0) {
         throw new Error('Conteúdo extraído vazio ou inexistente. Auditoria deontológica abortada para evitar geração de laudo inconsequente.');
+      }
+
+      // Telemetria forense: Registra êxito de login / acesso restrito autorizado
+      if (authConfig?.hasAuth && firecrawlResult.authSuccess) {
+        await prisma.systemLog.create({
+          data: {
+            level: 'INFO',
+            module: 'SCRAPER',
+            correlationId,
+            message: `[SCRAPER] [AUTH_SUCCESS] Login na página efetuado com sucesso: sessão autorizada confirmada e conteúdo restrito extraído (${firecrawlResult.markdown.length} caracteres) para ${targetUrl} (Usuário: ${authConfig.username || 'autenticado'})`,
+            details: JSON.stringify({
+              url: targetUrl,
+              username: authConfig.username,
+              source: firecrawlResult.source,
+              loginDetected: firecrawlResult.loginDetected ?? true,
+              charsExtracted: firecrawlResult.markdown.length,
+              tokensCount: firecrawlResult.tokensCount,
+              contentHash: firecrawlResult.contentHash,
+              timestamp: new Date().toISOString(),
+            }),
+          },
+        }).catch(() => {});
       }
 
       await prisma.systemLog.create({
@@ -105,9 +150,52 @@ export class AuditExecutionService {
         },
       }).catch(() => {});
 
-      // 4. Resolução Dinâmica de Normas no Banco de Dados através das Tags do Módulo
+      // 4. Detecção e Adição de Tags a partir do Scrap da URL Alvo Oficial para Otimização de Busca dos Chunks
+      const scrapedPageTags = ScraperService.detectRegulatoryTags(firecrawlResult.markdown, '');
+      const rawModuleTags = (mod?.tags || []).map((t) => t.trim().toLowerCase()).filter(Boolean);
+      const combinedAuditTags = Array.from(new Set([
+        ...rawModuleTags,
+        ...scrapedPageTags.map((t) => t.trim().toLowerCase()),
+        ...(firecrawlResult.tags || []).map((t) => t.trim().toLowerCase()).filter((t) => !['client_scrape', 'audit_asset'].includes(t)),
+      ]));
+
+      const newlyDiscoveredTags = combinedAuditTags.filter((t) => !rawModuleTags.includes(t));
+
+      // Atualiza o módulo de agente no banco se novas tags forem detectadas no canal digital auditado
+      if (newlyDiscoveredTags.length > 0 && mod?.id) {
+        await prisma.agentModule.update({
+          where: { id: mod.id },
+          data: {
+            tags: combinedAuditTags,
+            rulesCount: combinedAuditTags.length * 4,
+          },
+        }).catch(() => {});
+      }
+
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'SCRAPER',
+          correlationId,
+          message: `🏷️ [SCRAPER] [AUTO_TAGGING] Tags adicionadas após scraping da URL Alvo: [${scrapedPageTags.join(', ')}] | Escopo otimizado para busca de chunks: [${combinedAuditTags.join(', ')}]${newlyDiscoveredTags.length > 0 ? ` (+${newlyDiscoveredTags.length} novas tags vinculadas ao módulo)` : ''}`,
+          details: JSON.stringify({
+            url: targetUrl,
+            configuredModuleTags: rawModuleTags,
+            scrapedPageTags,
+            newlyDiscoveredTags,
+            effectiveAuditTags: combinedAuditTags,
+            timestamp: new Date().toISOString(),
+          }),
+        },
+      }).catch(() => {});
+
+      // 5. Resolução Dinâmica de Normas no Banco de Dados através das Tags Otimizadas
       const retrievalStartedAt = Date.now();
-      const agentContext = await ReconciliationEngine.resolveAgentContext(agentModuleId, firecrawlResult.markdown);
+      const agentContext = await ReconciliationEngine.resolveAgentContext(
+        agentModuleId,
+        firecrawlResult.markdown,
+        combinedAuditTags
+      );
       const retrievalTimeMs = Date.now() - retrievalStartedAt;
       const moduleTags = agentContext.tags || [];
       const retrievalDiagnostics = agentContext.retrievalDiagnostics;

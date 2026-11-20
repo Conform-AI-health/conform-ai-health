@@ -130,15 +130,20 @@ function rankCandidates(
   candidates: RankedNormCandidate[],
   queryText: string,
   queryEmbedding: number[],
-  topK: number
+  topK: number,
+  targetTags: string[] = []
 ): ResolvedNorm[] {
+  const normalizedTargetTags = new Set(targetTags.map((t) => t.toLowerCase().trim()));
   return candidates
     .map(({ norm, embedding }) => {
       const semanticScore = Math.max(0, cosineSimilarity(queryEmbedding, embedding));
       const lexical = lexicalScore(queryText, `${norm.title}\n${norm.content}`);
+      const tagMatches = norm.tags.filter((t) => normalizedTargetTags.has(t.toLowerCase().trim())).length;
+      const tagBonus = tagMatches > 0 ? Math.min(0.10, tagMatches * 0.05) : 0;
+      const combinedScore = semanticScore * 0.70 + lexical * 0.20 + tagBonus;
       return {
         ...norm,
-        relevanceScore: Number((semanticScore * 0.75 + lexical * 0.25).toFixed(4)),
+        relevanceScore: Number(combinedScore.toFixed(4)),
       };
     })
     .sort((left, right) => (right.relevanceScore || 0) - (left.relevanceScore || 0))
@@ -336,7 +341,7 @@ export class NormsResolver {
 
     try {
       const queryEmbedding = await SemanticEmbeddingService.embedQuery(queryText.slice(0, 8000));
-      const rankedNorms = rankCandidates(candidates, queryText, queryEmbedding, safeTopK);
+      const rankedNorms = rankCandidates(candidates, queryText, queryEmbedding, safeTopK, cleanTags);
       return {
         norms: rankedNorms,
         status: rankedNorms.length > 0 ? 'READY' : 'NO_MATCH',

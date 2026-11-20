@@ -109,6 +109,9 @@ model AgentModule {
   regulatoryFramework String?             @default("Deontologia e Conformidade em Saúde")
   cronSchedule        String?             @default("0 */6 * * *")
   targetUrl           String?
+  hasAuth             Boolean             @default(false)
+  authUsername        String?
+  authPassword        String?
   scrapeData          ModuleScrapeData[]
   createdAt           DateTime?           @default(now())
   updatedAt           DateTime?           @updatedAt

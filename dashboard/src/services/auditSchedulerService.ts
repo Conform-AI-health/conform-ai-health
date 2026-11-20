@@ -265,6 +265,14 @@ export class AuditSchedulerService {
 
       // 4. Executa a auditoria assíncrona (via BullMQ ou direta com fallback)
       let executionResult = null;
+      const authPayload = agent.hasAuth
+        ? {
+            hasAuth: true,
+            username: agent.authUsername || undefined,
+            password: agent.authPassword || undefined,
+          }
+        : undefined;
+
       try {
         await auditQueue.add(
           'auditJob',
@@ -275,6 +283,7 @@ export class AuditSchedulerService {
             extractionMode: agent.extractionMode,
             agentModuleId: agent.id,
             skill: agent.description || undefined,
+            auth: authPayload,
           },
           { jobId: `audit-${report.id}` }
         );
@@ -288,6 +297,7 @@ export class AuditSchedulerService {
           extractionMode: agent.extractionMode,
           agentModuleId: agent.id,
           skill: agent.description || undefined,
+          auth: authPayload,
           jobId: `direct-cron-${report.id}`,
         });
       }

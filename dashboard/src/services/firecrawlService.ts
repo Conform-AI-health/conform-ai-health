@@ -24,11 +24,17 @@ export class FirecrawlService {
   /**
    * Delega a raspagem do cliente diretamente para o ClientScraperService
    */
-  public static async scrape(url: string, moduleId?: string, clientId?: string): Promise<FirecrawlScrapeResult> {
+  public static async scrape(
+    url: string,
+    moduleId?: string,
+    clientId?: string,
+    auth?: { hasAuth?: boolean; username?: string; password?: string }
+  ): Promise<FirecrawlScrapeResult> {
     return ClientScraperService.scrapeClientAsset({
       url,
       moduleId,
       clientId,
+      auth,
     });
   }
 }
