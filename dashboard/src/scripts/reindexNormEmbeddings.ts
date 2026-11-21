@@ -1,7 +1,7 @@
 import { prisma } from '../config/prisma.js';
 import { SemanticEmbeddingService } from '../services/semanticEmbeddingService.js';
 
-const BATCH_SIZE = 32;
+const BATCH_SIZE = 16;
 
 function updateEmbeddingMetadata(value: string | null): string {
   let metadata: Record<string, unknown> = {};
@@ -142,23 +142,29 @@ export async function reindexNormEmbeddings(): Promise<number> {
             err?.message?.includes('429') ||
             err?.message?.includes('RESOURCE_EXHAUSTED') ||
             err?.message?.includes('Quota exceeded') ||
+            err?.message?.includes('CircuitBreakerOpenError') ||
+            err?.message?.includes('está ABERTO') ||
             err?.status === 429;
 
-          if (isRateLimit && retries < 5) {
+          if (isRateLimit && retries < 50) {
             retries++;
-            const waitTimeMs = 30000;
+            // 65 segundos de sleep para que a janela de 1 minuto (TPM / RPM) do Google Gemini renove totalmente a quota
+            const waitTimeMs = 65000;
             console.warn(
-              `⏳ [RAG Reindex] Quota/Rate limit do Google Gemini atingido (429 Free Tier). Pausando por ${waitTimeMs / 1000}s para retentativa (${retries}/5)...`
+              `⏳ [RAG Reindex] Quota por minuto atingida no Google Gemini (429 Rate Limit). Entrando em sleep preventivo de ${waitTimeMs / 1000}s para renovação da janela de tokens (tentativa ${retries}/50)...`
             );
             await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
+            // Restabelece o CircuitBreaker após aguardar a janela de quota
+            SemanticEmbeddingService.resetCircuitBreaker();
+            console.log(`🔄 [RAG Reindex] Janela de tokens renovada. Retomando processamento do lote...`);
           } else {
             throw err;
           }
         }
       }
 
-      // Intervalo preventivo de 1.5s entre lotes para respeitar a taxa do Free Tier (100 req/min)
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Intervalo preventivo de 3.0s entre lotes para respeitar a taxa do Free Tier (TPM / RPM)
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     } else {
       console.log(`[RAG Reindex] Bloco de ${batch.length} chunks já indexados e compatíveis com ${SemanticEmbeddingService.embeddingModelId}. Pulando.`);
     }
