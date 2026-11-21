@@ -71,6 +71,7 @@ services:
       - CRAWL_MAX_PAGES=${CRAWL_MAX_PAGES:-1000}
       - CRAWL_MAX_LINKS_PER_PAGE=${CRAWL_MAX_LINKS_PER_PAGE:-50}
       - CRAWL_BATCH_SIZE=${CRAWL_BATCH_SIZE:-4}
+      - RAG_MAX_CANDIDATE_CHUNKS=${RAG_MAX_CANDIDATE_CHUNKS:-10000}
     depends_on:
       redis:
         condition: service_healthy
@@ -132,6 +133,7 @@ services:
       - CRAWL_MAX_PAGES=${CRAWL_MAX_PAGES:-1000}
       - CRAWL_MAX_LINKS_PER_PAGE=${CRAWL_MAX_LINKS_PER_PAGE:-50}
       - CRAWL_BATCH_SIZE=${CRAWL_BATCH_SIZE:-4}
+      - RAG_MAX_CANDIDATE_CHUNKS=${RAG_MAX_CANDIDATE_CHUNKS:-10000}
     depends_on:
       redis:
         condition: service_healthy

@@ -53,6 +53,7 @@ const envSchema = z
     CRAWL_MAX_LINKS_PER_PAGE: z.coerce.number().int().positive().default(50),
     CRAWL_BATCH_SIZE: z.coerce.number().int().positive().default(4),
     CRAWL_MAX_PAGES: z.coerce.number().int().positive().default(1000),
+    RAG_MAX_CANDIDATE_CHUNKS: z.coerce.number().int().positive().default(10000),
     MCP_SERVER_URL: z.string().optional().default('http://localhost:8080/mcp'),
     CORS_ORIGIN: z.string().default('http://localhost:5173'),
     MONITORING_API_KEY: z.string().optional().default(''),

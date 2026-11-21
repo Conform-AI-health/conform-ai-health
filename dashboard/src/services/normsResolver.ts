@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { prisma } from '../config/prisma.js';
+import { env } from '../config/env.js';
 import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
 import { cosineSimilarity, SemanticEmbeddingService } from './semanticEmbeddingService.js';
 
-const MAX_RAG_CANDIDATE_CHUNKS = 2000;
+const DEFAULT_MAX_RAG_CANDIDATE_CHUNKS = 10000;
 const DEFAULT_RAG_TOP_K = 8;
 
 export interface NormRetrievalResult {
@@ -188,11 +189,12 @@ export class NormsResolver {
     let dbDiagnostics: NormRetrievalDiagnostics | undefined;
 
     if (dbNorms.length > 0) {
+      const maxCandidateChunks = env.RAG_MAX_CANDIDATE_CHUNKS || DEFAULT_MAX_RAG_CANDIDATE_CHUNKS;
       const normById = new Map(dbNorms.map((norm) => [norm.id, norm]));
       const chunks = await prisma.normChunk.findMany({
         where: { normId: { in: dbNorms.map((norm) => norm.id) } },
         orderBy: [{ normId: 'asc' }, { chunkIndex: 'asc' }],
-        take: MAX_RAG_CANDIDATE_CHUNKS + 1,
+        take: maxCandidateChunks,
         select: {
           id: true,
           normId: true,
@@ -205,12 +207,10 @@ export class NormsResolver {
         },
       });
 
-      if (chunks.length > MAX_RAG_CANDIDATE_CHUNKS) {
-        return {
-          norms: [],
-          status: 'CANDIDATE_LIMIT_EXCEEDED',
-          candidatesCount: chunks.length,
-        };
+      if (chunks.length >= maxCandidateChunks) {
+        console.warn(
+          `⚠️ [NormsResolver] Grande volume de normas (${chunks.length} chunks). RAG processará os ${maxCandidateChunks} chunks prioritários para manter a auditoria ágil sem interrupção.`
+        );
       }
 
       const activeChunks = chunks.filter(
