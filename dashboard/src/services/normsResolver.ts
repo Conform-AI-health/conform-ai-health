@@ -285,13 +285,19 @@ export class NormsResolver {
         }];
       });
 
-      if (diagnostics.indexedChunksCount !== activeChunks.length) {
+      if (diagnostics.indexedChunksCount === 0 || diagnostics.modelMismatchCount > 0) {
         return {
           norms: [],
           status: 'UNINDEXED',
           candidatesCount: activeChunks.length,
           diagnostics,
         };
+      }
+
+      if (diagnostics.missingEmbeddingCount > 0) {
+        console.warn(
+          `⚠️ [NormsResolver] Recuperação RAG resiliente: ${diagnostics.indexedChunksCount}/${activeChunks.length} chunks indexados. ${diagnostics.missingEmbeddingCount} chunks recém-inseridos estão pendentes de vetor. Prosseguindo auditoria com os ${candidates.length} chunks indexados disponíveis.`
+        );
       }
       dbDiagnostics = diagnostics;
     } else {
