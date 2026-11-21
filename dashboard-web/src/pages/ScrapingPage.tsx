@@ -99,6 +99,9 @@ export const ScrapingPage: React.FC = () => {
   const [normsTipoFilter, setNormsTipoFilter] = useState('');
   const [normsStatusFilter, setNormsStatusFilter] = useState('');
   const [normsTagFilter, setNormsTagFilter] = useState('');
+  const [normsEmbeddingFilter, setNormsEmbeddingFilter] = useState('');
+  const [availableNormTags, setAvailableNormTags] = useState<{ tag: string; count: number }[]>([]);
+  const [loadingTags, setLoadingTags] = useState(false);
 
   // Modal de Detalhes da Norma e Chunks RAG
   const [selectedNormModal, setSelectedNormModal] = useState<any>(null);
@@ -133,6 +136,21 @@ export const ScrapingPage: React.FC = () => {
     }
   };
 
+  // Busca todas as tags distintas presentes nos documentos da coleção norms
+  const fetchAvailableTags = async () => {
+    try {
+      setLoadingTags(true);
+      const res = await api.get('/norms/tags');
+      if (Array.isArray(res.data?.tags)) {
+        setAvailableNormTags(res.data.tags);
+      }
+    } catch (err) {
+      console.warn('Tags distintas da coleção norms indisponíveis:', err);
+    } finally {
+      setLoadingTags(false);
+    }
+  };
+
   // Carrega a coleção 'norms' do MongoDB Atlas
   const fetchNorms = async (page = normsCurrentPage, limit = normsPageSize) => {
     try {
@@ -144,6 +162,7 @@ export const ScrapingPage: React.FC = () => {
       if (normsTipoFilter) params.append('tipo', normsTipoFilter);
       if (normsStatusFilter) params.append('status', normsStatusFilter);
       if (normsTagFilter) params.append('tag', normsTagFilter);
+      if (normsEmbeddingFilter) params.append('hasEmbeddings', normsEmbeddingFilter);
 
       const res = await api.get(`/norms?${params.toString()}`);
       if (res.data?.data && res.data?.pagination) {
@@ -196,6 +215,7 @@ export const ScrapingPage: React.FC = () => {
 
   useEffect(() => {
     fetchStats();
+    fetchAvailableTags();
     fetchNorms(1, normsPageSize);
     fetchPages(1, pageSize);
   }, []);
@@ -211,7 +231,7 @@ export const ScrapingPage: React.FC = () => {
   useEffect(() => {
     setNormsCurrentPage(1);
     fetchNorms(1, normsPageSize);
-  }, [normsTipoFilter, normsStatusFilter, normsTagFilter]);
+  }, [normsTipoFilter, normsStatusFilter, normsTagFilter, normsEmbeddingFilter]);
 
   useEffect(() => {
     fetchNorms(normsCurrentPage, normsPageSize);
@@ -642,26 +662,49 @@ export const ScrapingPage: React.FC = () => {
                 <Search className="h-3.5 w-3.5 text-slate-500 absolute left-2.5 top-2" />
               </div>
 
-              {/* Filtro por Tag Regulatória */}
+              {/* Filtro por Tag dos Documentos */}
               <div className="flex items-center gap-1.5">
                 <select
                   value={normsTagFilter}
                   onChange={(e) => setNormsTagFilter(e.target.value)}
-                  className={`bg-slate-900 border rounded-xl px-3 py-1.5 text-xs focus:outline-none transition ${
+                  className={`bg-slate-900 border rounded-xl px-3 py-1.5 text-xs focus:outline-none transition max-w-[210px] truncate ${
                     normsTagFilter
                       ? 'border-emerald-500 text-emerald-300 bg-emerald-950/40 font-semibold'
                       : 'border-slate-700/80 text-white focus:border-emerald-500'
                   }`}
-                  title="Filtrar tabela por Tag"
+                  title="Filtrar tabela por qualquer Tag presente nos documentos"
                 >
-                  <option value="">🏷️ Todas as Tags</option>
-                  <option value="CFM">🩺 CFM (Médico)</option>
-                  <option value="LGPD">🔒 LGPD (Privacidade)</option>
-                  <option value="ANVISA">💊 ANVISA (Sanitário)</option>
-                  <option value="ANS">🏥 ANS (Saúde Suplementar)</option>
-                  <option value="PARECER">⚖️ PARECER</option>
-                  <option value="RAG_READY">⚡ RAG_READY</option>
-                  <option value="REVOGADO">🚫 REVOGADO</option>
+                  <option value="">
+                    🏷️ {loadingTags ? 'Carregando tags...' : `Todas as Tags (${availableNormTags.length})`}
+                  </option>
+                  {normsTagFilter && !availableNormTags.some((t) => t.tag.toUpperCase() === normsTagFilter.toUpperCase()) && (
+                    <option value={normsTagFilter}>
+                      🏷️ {normsTagFilter} (Filtro Ativo)
+                    </option>
+                  )}
+                  {availableNormTags.map(({ tag, count }) => (
+                    <option key={tag} value={tag}>
+                      {tag} ({count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filtro Flag de Embeddings */}
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={normsEmbeddingFilter}
+                  onChange={(e) => setNormsEmbeddingFilter(e.target.value)}
+                  className={`bg-slate-900 border rounded-xl px-3 py-1.5 text-xs focus:outline-none transition ${
+                    normsEmbeddingFilter
+                      ? 'border-purple-500 text-purple-300 bg-purple-950/40 font-semibold'
+                      : 'border-slate-700/80 text-white focus:border-purple-500'
+                  }`}
+                  title="Filtrar por Status de Embeddings"
+                >
+                  <option value="">⚡ Embeddings (Todos)</option>
+                  <option value="true">🟢 Com Embeddings (Indexados)</option>
+                  <option value="false">⚪ Sem Embeddings (Pendentes)</option>
                 </select>
               </div>
 
@@ -686,7 +729,7 @@ export const ScrapingPage: React.FC = () => {
                 <option value="REVOGADA">🔴 Revogada</option>
               </select>
 
-              {(normsSearch || normsTipoFilter || normsStatusFilter || normsTagFilter) && (
+              {(normsSearch || normsTipoFilter || normsStatusFilter || normsTagFilter || normsEmbeddingFilter) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -694,6 +737,7 @@ export const ScrapingPage: React.FC = () => {
                     setNormsTipoFilter('');
                     setNormsStatusFilter('');
                     setNormsTagFilter('');
+                    setNormsEmbeddingFilter('');
                     setNormsCurrentPage(1);
                   }}
                   className="px-2.5 py-1 text-[11px] font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition flex items-center gap-1 border border-slate-700/60"
@@ -808,11 +852,54 @@ export const ScrapingPage: React.FC = () => {
                           {norm.ementaHigienizada || 'Sem ementa cadastrada.'}
                         </p>
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-purple-300">
-                        <span className="px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800/40 text-[11px] font-semibold inline-flex items-center gap-1">
-                          <Layers className="h-3 w-3" />
-                          <span>{norm.totalChunks || 0} chunks</span>
-                        </span>
+                      <td className="py-3.5 px-4 font-mono">
+                        {norm.hasEmbeddings ? (
+                          <div className="flex flex-col gap-1 items-start">
+                            <span
+                              className={`px-2 py-0.5 rounded border text-[10px] font-bold inline-flex items-center gap-1.5 ${
+                                norm.embeddingStatus === 'FULL' || (norm.indexedChunks && norm.indexedChunks >= norm.totalChunks)
+                                  ? 'bg-emerald-950/60 border-emerald-800/40 text-emerald-400'
+                                  : 'bg-amber-950/60 border-amber-800/40 text-amber-300'
+                              }`}
+                              title={
+                                norm.embeddingStatus === 'FULL'
+                                  ? 'Todos os chunks possuem embeddings vetorizados no banco'
+                                  : 'Norma parcialmente indexada com embeddings'
+                              }
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  norm.embeddingStatus === 'FULL'
+                                    ? 'bg-emerald-400 animate-pulse'
+                                    : 'bg-amber-400'
+                                }`}
+                              />
+                              <span>
+                                {norm.embeddingStatus === 'FULL'
+                                  ? '🟢 Embeddings OK'
+                                  : `🟡 Parcial (${norm.indexedChunks || '?'}/${norm.totalChunks})`}
+                              </span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                              <Layers className="h-2.5 w-2.5 text-purple-400" />
+                              <span>{norm.totalChunks || 0} chunks</span>
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1 items-start">
+                            <span
+                              className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700/80 text-slate-400 text-[10px] font-bold inline-flex items-center gap-1.5"
+                              title="Norma sem embeddings gerados (aguardando reindex)"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                              <span>⚪ Sem Embeddings</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                              <Layers className="h-2.5 w-2.5 text-purple-400" />
+                              <span>{norm.totalChunks || 0} chunks</span>
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-right space-x-2">
                         <button
