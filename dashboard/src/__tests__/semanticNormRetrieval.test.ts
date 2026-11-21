@@ -123,4 +123,34 @@ describe('Semantic tag-scoped norm retrieval', () => {
     });
     expect(embedQuery).not.toHaveBeenCalled();
   });
+
+  it('deve utilizar os chunks indexados existentes no banco quando houver chunks com PENDING_REINDEX sem abortar com UNINDEXED', async () => {
+    // Configura chunk 0 como PENDING_REINDEX (sem vetor)
+    chunks[0].embedding = [];
+    chunks[0].contextoSemantico = JSON.stringify({
+      embedding_model: 'PENDING_REINDEX',
+      article: 'Art. 1º',
+      heading_context: 'Identificação',
+    });
+    // Chunk 1 permanece indexado e válido
+    chunks[1].embedding = [0, 1];
+    chunks[1].contextoSemantico = JSON.stringify({
+      embedding_model: 'gemini-embedding-001:2',
+      article: 'Art. 20',
+      heading_context: 'Tema distinto',
+    });
+
+    const result = await NormsResolver.retrieveRelevantByTags(['CFM'], 'CRM');
+
+    // Não deve abortar; deve utilizar o chunk indexado disponível
+    expect(result.status).toBe('READY');
+    expect(result.norms.length).toBeGreaterThan(0);
+    expect(result.diagnostics).toMatchObject({
+      activeChunksCount: 2,
+      indexedChunksCount: 1,
+      missingEmbeddingCount: 1,
+      modelMismatchCount: 0,
+    });
+    expect(embedQuery).toHaveBeenCalled();
+  });
 });

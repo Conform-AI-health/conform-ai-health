@@ -242,14 +242,19 @@ export class NormsResolver {
           diagnostics.missingNormParentCount += 1;
           isIndexed = false;
         }
-        if (embedding.length === 0) {
+
+        // Chunks pendentes de vetor ou vazios são apenas missingEmbeddingCount (não modelMismatch)
+        const isPendingOrEmpty =
+          embedding.length === 0 ||
+          metadata.embedding_model === 'PENDING_REINDEX';
+
+        if (isPendingOrEmpty) {
           diagnostics.missingEmbeddingCount += 1;
           isIndexed = false;
         } else if (embedding.length !== SemanticEmbeddingService.vectorDimensions) {
           diagnostics.invalidDimensionCount += 1;
           isIndexed = false;
-        }
-        if (typeof metadata.embedding_model !== 'string' || !metadata.embedding_model) {
+        } else if (typeof metadata.embedding_model !== 'string' || !metadata.embedding_model) {
           diagnostics.missingModelMetadataCount += 1;
           isIndexed = false;
         } else if (metadata.embedding_model !== SemanticEmbeddingService.embeddingModelId) {
