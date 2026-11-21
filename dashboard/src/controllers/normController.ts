@@ -122,7 +122,9 @@ export class NormController {
       if (tipo) where.tipo = { equals: tipo, mode: 'insensitive' };
       if (status) where.status = { equals: status, mode: 'insensitive' };
       if (ano) where.ano = ano;
-      if (tag) where.tags = { has: tag };
+      if (tag) {
+        where.tags = { hasSome: [tag, tag.toUpperCase(), tag.toLowerCase()] };
+      }
 
       if (search) {
         where.OR = [

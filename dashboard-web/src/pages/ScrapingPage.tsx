@@ -98,6 +98,7 @@ export const ScrapingPage: React.FC = () => {
   const [normsSearch, setNormsSearch] = useState('');
   const [normsTipoFilter, setNormsTipoFilter] = useState('');
   const [normsStatusFilter, setNormsStatusFilter] = useState('');
+  const [normsTagFilter, setNormsTagFilter] = useState('');
 
   // Modal de Detalhes da Norma e Chunks RAG
   const [selectedNormModal, setSelectedNormModal] = useState<any>(null);
@@ -142,6 +143,7 @@ export const ScrapingPage: React.FC = () => {
       if (normsSearch) params.append('search', normsSearch);
       if (normsTipoFilter) params.append('tipo', normsTipoFilter);
       if (normsStatusFilter) params.append('status', normsStatusFilter);
+      if (normsTagFilter) params.append('tag', normsTagFilter);
 
       const res = await api.get(`/norms?${params.toString()}`);
       if (res.data?.data && res.data?.pagination) {
@@ -207,8 +209,13 @@ export const ScrapingPage: React.FC = () => {
   }, [currentPage, pageSize]);
 
   useEffect(() => {
+    setNormsCurrentPage(1);
+    fetchNorms(1, normsPageSize);
+  }, [normsTipoFilter, normsStatusFilter, normsTagFilter]);
+
+  useEffect(() => {
     fetchNorms(normsCurrentPage, normsPageSize);
-  }, [normsCurrentPage, normsPageSize, normsTipoFilter, normsStatusFilter]);
+  }, [normsCurrentPage, normsPageSize]);
 
   const toggleTag = (tagId: string) => {
     setSelectedTags((prev) =>
@@ -624,12 +631,38 @@ export const ScrapingPage: React.FC = () => {
                   value={normsSearch}
                   onChange={(e) => setNormsSearch(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') fetchNorms(1, normsPageSize);
+                    if (e.key === 'Enter') {
+                      setNormsCurrentPage(1);
+                      fetchNorms(1, normsPageSize);
+                    }
                   }}
                   placeholder="Buscar norma, ano ou tema..."
-                  className="bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 pl-8 w-48"
+                  className="bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 pl-8 w-44"
                 />
                 <Search className="h-3.5 w-3.5 text-slate-500 absolute left-2.5 top-2" />
+              </div>
+
+              {/* Filtro por Tag Regulatória */}
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={normsTagFilter}
+                  onChange={(e) => setNormsTagFilter(e.target.value)}
+                  className={`bg-slate-900 border rounded-xl px-3 py-1.5 text-xs focus:outline-none transition ${
+                    normsTagFilter
+                      ? 'border-emerald-500 text-emerald-300 bg-emerald-950/40 font-semibold'
+                      : 'border-slate-700/80 text-white focus:border-emerald-500'
+                  }`}
+                  title="Filtrar tabela por Tag"
+                >
+                  <option value="">🏷️ Todas as Tags</option>
+                  <option value="CFM">🩺 CFM (Médico)</option>
+                  <option value="LGPD">🔒 LGPD (Privacidade)</option>
+                  <option value="ANVISA">💊 ANVISA (Sanitário)</option>
+                  <option value="ANS">🏥 ANS (Saúde Suplementar)</option>
+                  <option value="PARECER">⚖️ PARECER</option>
+                  <option value="RAG_READY">⚡ RAG_READY</option>
+                  <option value="REVOGADO">🚫 REVOGADO</option>
+                </select>
               </div>
 
               <select
@@ -652,6 +685,24 @@ export const ScrapingPage: React.FC = () => {
                 <option value="VIGENTE">🟢 Vigente</option>
                 <option value="REVOGADA">🔴 Revogada</option>
               </select>
+
+              {(normsSearch || normsTipoFilter || normsStatusFilter || normsTagFilter) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNormsSearch('');
+                    setNormsTipoFilter('');
+                    setNormsStatusFilter('');
+                    setNormsTagFilter('');
+                    setNormsCurrentPage(1);
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition flex items-center gap-1 border border-slate-700/60"
+                  title="Limpar todos os filtros da tabela de normas"
+                >
+                  <X className="h-3 w-3" />
+                  <span>Limpar Filtros</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-3">
@@ -711,18 +762,29 @@ export const ScrapingPage: React.FC = () => {
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="flex flex-wrap gap-1 max-w-[220px]">
-                          {norm.tags?.map((tag: string) => (
-                            <span
-                              key={tag}
-                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
-                                tag === 'RAG_READY'
-                                  ? 'bg-purple-950/50 text-purple-300 border-purple-800/40'
-                                  : 'bg-slate-800 text-slate-300 border-slate-700'
-                              }`}
-                            >
-                              {tag === 'RAG_READY' ? 'RAG' : tag}
-                            </span>
-                          ))}
+                          {norm.tags?.map((tag: string) => {
+                            const isCurrentTagFilter = normsTagFilter.toUpperCase() === tag.toUpperCase();
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => setNormsTagFilter(isCurrentTagFilter ? '' : tag)}
+                                title={isCurrentTagFilter ? `Remover filtro da tag ${tag}` : `Filtrar acervo pela tag ${tag}`}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition cursor-pointer ${
+                                  isCurrentTagFilter
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 ring-1 ring-emerald-400'
+                                    : tag === 'RAG_READY'
+                                    ? 'bg-purple-950/50 text-purple-300 border-purple-800/40 hover:border-purple-600'
+                                    : tag === 'CFM'
+                                    ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800/40 hover:border-emerald-600'
+                                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500 hover:text-white'
+                                }`}
+                              >
+                                {tag === 'RAG_READY' ? 'RAG' : tag}
+                                {isCurrentTagFilter && ' ✕'}
+                              </button>
+                            );
+                          })}
                         </div>
                       </td>
                       <td className="py-3.5 px-4">
