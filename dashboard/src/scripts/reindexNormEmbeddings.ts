@@ -1,7 +1,7 @@
 import { prisma } from '../config/prisma.js';
 import { SemanticEmbeddingService } from '../services/semanticEmbeddingService.js';
 
-const BATCH_SIZE = 16;
+const BATCH_SIZE = 10;
 
 function updateEmbeddingMetadata(value: string | null): string {
   let metadata: Record<string, unknown> = {};
@@ -148,15 +148,18 @@ export async function reindexNormEmbeddings(): Promise<number> {
 
           if (isRateLimit && retries < 50) {
             retries++;
-            // 65 segundos de sleep para que a janela de 1 minuto (TPM / RPM) do Google Gemini renove totalmente a quota
-            const waitTimeMs = 65000;
+            const totalSeconds = 65;
             console.warn(
-              `⏳ [RAG Reindex] Quota por minuto atingida no Google Gemini (429 Rate Limit). Entrando em sleep preventivo de ${waitTimeMs / 1000}s para renovação da janela de tokens (tentativa ${retries}/50)...`
+              `⏳ [RAG Reindex] Quota por minuto atingida no Google Gemini (429 Rate Limit). Aguardando ${totalSeconds}s para renovação da janela do Google (tentativa ${retries}/50)...`
             );
-            await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
+            for (let remaining = totalSeconds; remaining > 0; remaining -= 15) {
+              const sleepStep = Math.min(15000, remaining * 1000);
+              console.log(`   ⏱️ Aguardando renovação da cota da Google... restam ${remaining}s`);
+              await new Promise((resolve) => setTimeout(resolve, sleepStep));
+            }
             // Restabelece o CircuitBreaker após aguardar a janela de quota
             SemanticEmbeddingService.resetCircuitBreaker();
-            console.log(`🔄 [RAG Reindex] Janela de tokens renovada. Retomando processamento do lote...`);
+            console.log(`🔄 [RAG Reindex] Janela de cota renovada com sucesso! Retomando processamento do lote...`);
           } else {
             throw err;
           }
