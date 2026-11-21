@@ -19,7 +19,11 @@ export interface NormRetrievalResult {
     | 'EMBEDDING_UNAVAILABLE'
     | 'CANDIDATE_LIMIT_EXCEEDED';
   candidatesCount: number;
-  source?: 'MongoDB (norms/norms_chunk)' | 'NORMS_CATALOG';
+  source?:
+    | 'MongoDB (norms/norms_chunk)'
+    | 'NORMS_CATALOG'
+    | 'MongoDB (norms/norms_chunk) [Fallback Léxico/Tags]'
+    | 'NORMS_CATALOG [Fallback Léxico/Tags]';
   diagnostics?: NormRetrievalDiagnostics;
 }
 
@@ -135,13 +139,16 @@ function rankCandidates(
   targetTags: string[] = []
 ): ResolvedNorm[] {
   const normalizedTargetTags = new Set(targetTags.map((t) => t.toLowerCase().trim()));
+  const hasSemantic = queryEmbedding.length > 0;
   return candidates
     .map(({ norm, embedding }) => {
-      const semanticScore = Math.max(0, cosineSimilarity(queryEmbedding, embedding));
+      const semanticScore = hasSemantic ? Math.max(0, cosineSimilarity(queryEmbedding, embedding)) : 0;
       const lexical = lexicalScore(queryText, `${norm.title}\n${norm.content}`);
       const tagMatches = norm.tags.filter((t) => normalizedTargetTags.has(t.toLowerCase().trim())).length;
-      const tagBonus = tagMatches > 0 ? Math.min(0.10, tagMatches * 0.05) : 0;
-      const combinedScore = semanticScore * 0.70 + lexical * 0.20 + tagBonus;
+      const tagBonus = tagMatches > 0 ? Math.min(0.20, tagMatches * 0.05) : 0;
+      const combinedScore = hasSemantic
+        ? semanticScore * 0.70 + lexical * 0.20 + tagBonus
+        : lexical * 0.70 + tagBonus + (tagMatches > 0 ? 0.10 : 0.01);
       return {
         ...norm,
         relevanceScore: Number(combinedScore.toFixed(4)),
@@ -362,10 +369,24 @@ export class NormsResolver {
       };
     } catch (error) {
       console.warn(
-        `[NormsResolver] Recuperação semântica indisponível; contexto normativo não será ampliado: ${
+        `⚠️ [NormsResolver] Recuperação semântica via embedding indisponível (${
           error instanceof Error ? error.message : String(error)
-        }`
+        }). Ativando fallback resiliente por relevância léxica e tags sobre os ${candidates.length} chunks disponíveis.`
       );
+      if (candidates.length > 0) {
+        const rankedNorms = rankCandidates(candidates, queryText, [], safeTopK, cleanTags);
+        if (rankedNorms.length > 0) {
+          return {
+            norms: rankedNorms,
+            status: 'READY',
+            candidatesCount: candidates.length,
+            source: dbNorms.length > 0
+              ? 'MongoDB (norms/norms_chunk) [Fallback Léxico/Tags]'
+              : 'NORMS_CATALOG [Fallback Léxico/Tags]',
+            ...(dbNorms.length > 0 && dbDiagnostics ? { diagnostics: dbDiagnostics } : {}),
+          };
+        }
+      }
       return {
         norms: [],
         status: 'EMBEDDING_UNAVAILABLE',

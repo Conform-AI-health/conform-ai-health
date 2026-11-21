@@ -153,4 +153,31 @@ describe('Semantic tag-scoped norm retrieval', () => {
     });
     expect(embedQuery).toHaveBeenCalled();
   });
+
+  it('deve ativar o fallback léxico e retornar status READY quando o provedor de embedding da query falhar (ex: 429)', async () => {
+    // Configura chunks indexados válidos
+    chunks[0].embedding = [1, 0];
+    chunks[0].contextoSemantico = JSON.stringify({
+      embedding_model: 'gemini-embedding-001:2',
+      article: 'Art. 1º',
+      heading_context: 'Identificação profissional',
+    });
+    chunks[1].embedding = [0, 1];
+    chunks[1].contextoSemantico = JSON.stringify({
+      embedding_model: 'gemini-embedding-001:2',
+      article: 'Art. 20',
+      heading_context: 'Tema distinto',
+    });
+
+    // Simula erro 429 / Circuit Breaker na geração do embedding da query
+    embedQuery.mockRejectedValueOnce(new Error('429 Too Many Requests: Quota exceeded'));
+
+    const result = await NormsResolver.retrieveRelevantByTags(['CFM'], 'CRM e identificação profissional', 1);
+
+    // Deve ativar o fallback resiliente sem abortar a auditoria
+    expect(result.status).toBe('READY');
+    expect(result.source).toContain('[Fallback Léxico/Tags]');
+    expect(result.norms.length).toBeGreaterThan(0);
+    expect(result.norms[0].relevanceScore).toBeGreaterThan(0);
+  });
 });
