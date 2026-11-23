@@ -225,7 +225,7 @@ export class NormController {
 
       // Enriquecimento com verificação física de chunks e embeddings para cada norma
       const normIds = norms.map((n) => n.id);
-      const chunks = normIds.length > 0
+      const rawChunks = normIds.length > 0
         ? await prisma.normChunk.findMany({
             where: { normId: { in: normIds } },
             select: {
@@ -236,6 +236,7 @@ export class NormController {
             },
           })
         : [];
+      const chunks = Array.isArray(rawChunks) ? rawChunks : [];
 
       const statsByNormId = new Map<string, { total: number; indexed: number }>();
       for (const chunk of chunks) {

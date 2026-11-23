@@ -377,16 +377,19 @@ export class LegalNormCrawlerService {
       const rawHref = ($(el).attr('href') || '').trim();
       if (!rawHref) return;
 
-      // Descarte imediato e silencioso de scripts e estilos (.css, .js) antes de qualquer telemetria
+      // Descarte imediato de scripts e estilos (.css, .js)
       if (this.isScriptOrStyleUrl(rawHref)) {
+        const candidate = this.normalizeCanonicalUrl(rawHref, baseUrl) || rawHref;
+        skipped?.push({ url: candidate, reason: 'Asset estático (arquivo de script ou estilo descartado)' });
         return;
       }
 
       let canonical = this.normalizeCanonicalUrl(rawHref, baseUrl);
       if (!canonical || seenUrls.has(canonical)) return;
 
-      // Descarte imediato e silencioso na URL normalizada antes de telemetria
+      // Descarte imediato na URL normalizada
       if (this.isScriptOrStyleUrl(canonical)) {
+        skipped?.push({ url: canonical, reason: 'Asset estático (arquivo de script ou estilo descartado)' });
         seenUrls.add(canonical);
         return;
       }
@@ -552,16 +555,17 @@ export class LegalNormCrawlerService {
     const seen = new Set<string>([this.normalizeCanonicalUrl(baseUrl) || baseUrl]);
 
     for (const raw of rawCandidates) {
-      if (!raw || this.isScriptOrStyleUrl(raw)) continue;
+      if (!raw) continue;
 
       const canonical = this.normalizeCanonicalUrl(raw, baseUrl);
-      if (!canonical || seen.has(canonical)) continue;
-
-      // Descarte prévio e silencioso de scripts e estilos antes de telemetria
-      if (this.isScriptOrStyleUrl(canonical)) {
-        seen.add(canonical);
+      if (this.isScriptOrStyleUrl(raw) || (canonical && this.isScriptOrStyleUrl(canonical))) {
+        if (canonical) {
+          skipped?.push({ url: canonical, reason: 'Asset estático (arquivo de script ou estilo descartado)' });
+          seen.add(canonical);
+        }
         continue;
       }
+      if (!canonical || seen.has(canonical)) continue;
       if (this.isIgnoredCrawlerUrl(canonical)) {
         skipped?.push({ url: canonical, reason: 'Asset estático ou rota de framework/plugin' });
         seen.add(canonical);

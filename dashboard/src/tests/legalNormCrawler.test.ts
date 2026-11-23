@@ -21,6 +21,16 @@ vi.mock('../config/prisma.js', () => ({
           if (where?.normId && norm.normId === where.normId) {
             return norm;
           }
+          if (Array.isArray(where?.OR)) {
+            for (const cond of where.OR) {
+              if (cond?.urlOriginal && norm.urlOriginal === cond.urlOriginal) {
+                return norm;
+              }
+              if (cond?.normId && norm.normId === cond.normId) {
+                return norm;
+              }
+            }
+          }
         }
         return null;
       }),
