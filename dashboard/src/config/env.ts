@@ -1,7 +1,12 @@
+import path from 'path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
 dotenv.config();
+// Fallback para quando o comando for executado a partir da raiz do monorepo
+if (!process.env.DATABASE_URL) {
+  dotenv.config({ path: path.resolve(process.cwd(), 'dashboard/.env') });
+}
 
 const KNOWN_INSECURE_SECRETS = [
   'conformia-super-secret-jwt-key-2026',

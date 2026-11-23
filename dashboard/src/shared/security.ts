@@ -484,7 +484,14 @@ export function isAllowedLocalhostBaseUrl(rawUrl: string): boolean {
       return false;
     }
     const hostname = parsed.hostname.toLowerCase();
-    return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
+    return [
+      'localhost',
+      '127.0.0.1',
+      '::1',
+      '[::1]',
+      'host.docker.internal',
+      'gateway.docker.internal',
+    ].includes(hostname);
   } catch {
     return false;
   }

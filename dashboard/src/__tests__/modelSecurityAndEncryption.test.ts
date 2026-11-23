@@ -12,6 +12,8 @@ describe('T26 & T32 — Segurança de Modelos de IA: BaseUrl e Cifragem AES-256-
       expect(isAllowedLocalhostBaseUrl('http://localhost:11434')).toBe(true);
       expect(isAllowedLocalhostBaseUrl('http://127.0.0.1:11434')).toBe(true);
       expect(isAllowedLocalhostBaseUrl('http://[::1]:11434')).toBe(true);
+      expect(isAllowedLocalhostBaseUrl('http://host.docker.internal:11434')).toBe(true);
+      expect(isAllowedLocalhostBaseUrl('http://gateway.docker.internal:11434')).toBe(true);
     });
 
     it('deve rejeitar categoricamente bypasses maliciosos contendo substring localhost em domínios externos', () => {

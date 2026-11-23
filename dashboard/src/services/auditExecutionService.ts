@@ -296,18 +296,29 @@ export class AuditExecutionService {
 
       // Telemetria e log de IA com tokens e fontes/normas utilizadas
       const aiInvocationSkipped = recon.aiModelUsed.startsWith('retrieval:');
+      const isHeuristicFallback = recon.aiModelUsed.startsWith('heuristic:fallback');
       const retrievalStatus = agentContext.retrievalStatus || 'NO_MATCH';
+
+      let logMessage = `[AI_INTERACTION] Veredito emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms | Normas Aplicadas: ${recon.sourcesUsed.length}`;
+      let logLevel = 'INFO';
+
+      if (aiInvocationSkipped) {
+        logMessage = `[AI_INVOCATION_SKIPPED] Auditoria ${recon.verdict}: provedor de IA não chamado | Status da recuperação: ${retrievalStatus} | Prompt Tokens: 0 | Completion Tokens: 0 | Total Tokens: 0 | Chunks candidatos: ${agentContext.retrievalCandidatesCount || 0}${retrievalDiagnosticsSummary}`;
+      } else if (isHeuristicFallback) {
+        logLevel = 'WARN';
+        logMessage = `⚠️ [AI_FALLBACK_TRIGGERED] Veredito contingencial: ${recon.verdict} (Score: ${recon.score}) | Provedor de IA indisponível (0 tokens) | Fallback Heurístico acionado | Latência: ${executionTimeMs}ms | Normas: ${recon.sourcesUsed.length}`;
+      }
+
       await prisma.systemLog.create({
         data: {
-          level: 'INFO',
+          level: logLevel,
           module: 'AI_ENGINE',
           correlationId,
-          message: aiInvocationSkipped
-            ? `[AI_INVOCATION_SKIPPED] Auditoria ${recon.verdict}: provedor de IA não chamado | Status da recuperação: ${retrievalStatus} | Prompt Tokens: 0 | Completion Tokens: 0 | Total Tokens: 0 | Chunks candidatos: ${agentContext.retrievalCandidatesCount || 0}${retrievalDiagnosticsSummary}`
-            : `[AI_INTERACTION] Veredito emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms | Normas Aplicadas: ${recon.sourcesUsed.length}`,
+          message: logMessage,
           details: JSON.stringify({
             aiModelUsed: recon.aiModelUsed,
             aiInvoked: !aiInvocationSkipped,
+            heuristicFallback: isHeuristicFallback,
             retrievalStatus,
             retrievalCandidatesCount: agentContext.retrievalCandidatesCount || 0,
             retrievalDiagnostics: agentContext.retrievalDiagnostics || null,
@@ -318,6 +329,7 @@ export class AuditExecutionService {
             totalTokens: recon.totalTokens,
             executionTimeMs,
             sourcesUsed: recon.sourcesUsed,
+            summary: recon.summary,
           }),
         },
       }).catch(() => {});
