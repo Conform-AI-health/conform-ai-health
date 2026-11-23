@@ -250,7 +250,10 @@ describe('LegalNormCrawlerService — 6 Cenários Obrigatórios (Node.js/TypeScr
       'https://www.gov.br/normas/resolucao-123.pdf',
       'https://www.gov.br/normas/resolucao-456.md',
     ]);
-    expect(skipped).toHaveLength(10);
+    // Arquivos de mídia, plugins e frameworks são registrados em skipped (8 itens)
+    // Arquivos .css e .js/.mjs são descartados silenciosamente antes da telemetria (T50)
+    expect(skipped).toHaveLength(8);
+    expect(skipped.some((s) => s.url.includes('.css') || s.url.includes('.mjs'))).toBe(false);
     expect(skipped.every((link) => link.reason.includes('Asset estático'))).toBe(true);
 
     const pdfLinks = LegalNormCrawlerService.extractLinksFromPdfBufferAndText(
