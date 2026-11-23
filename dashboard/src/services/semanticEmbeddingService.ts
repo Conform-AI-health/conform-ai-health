@@ -57,6 +57,10 @@ export class SemanticEmbeddingService {
     timeoutMs: 30000,
   });
 
+  public static resetCircuitBreaker(): void {
+    this.circuitBreaker.reset();
+  }
+
   public static async embedQuery(text: string): Promise<number[]> {
     const [embedding] = await this.embedBatch([text], 'query');
     return embedding;

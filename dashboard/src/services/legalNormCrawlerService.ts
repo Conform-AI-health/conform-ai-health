@@ -41,6 +41,8 @@ export interface ExtractedDocumentContent {
   fileType: 'html' | 'pdf' | 'docx' | 'markdown';
   extractionMethod: ExtractionMethod;
   discoveredLinks: DiscoveredLink[];
+  /** Metadados estruturados extraídos de frontmatter YAML (comum em repositórios Markdown de normas) */
+  yamlMetadata?: Record<string, any>;
   /** Links encontrados no documento mas ignorados (fora da allowlist, assets, etc.), para telemetria */
   skippedLinks?: { url: string; reason: string }[];
 }
@@ -121,6 +123,9 @@ export const DEFAULT_OFFICIAL_ALLOWED_DOMAINS = [
   'ans.gov.br',
   '.jus.br',
   '.leg.br',
+  'github.com',
+  'raw.githubusercontent.com',
+  'api.github.com',
 ];
 
 const TRACKING_PARAMS = new Set([
@@ -162,6 +167,17 @@ export class LegalNormCrawlerService {
 
   public static listJobs(): CrawlJobState[] {
     return Array.from(this.jobs.values());
+  }
+
+  /**
+   * Identifica se uma URL aponta para arquivos de script, estilos ou mapas de código (.js, .css, etc.).
+   * Arquivos desse tipo são completamente descartados ANTES de qualquer registro de telemetria ou fila.
+   */
+  public static isScriptOrStyleUrl(url: string): boolean {
+    if (!url || typeof url !== 'string') return false;
+    const cleanUrl = url.trim().split('#')[0].split('?')[0].toLowerCase();
+    return /\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\/)/i.test(cleanUrl) ||
+           /\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)$/i.test(cleanUrl);
   }
 
   /**
@@ -232,6 +248,31 @@ export class LegalNormCrawlerService {
   }
 
   /**
+   * Identifica se a URL pertence ao ecossistema do GitHub
+   */
+  public static isGithubUrl(url: string): boolean {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      return host === 'github.com' || host === 'raw.githubusercontent.com' || host === 'api.github.com';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Converte uma URL de visualização web do GitHub (/blob/) para a URL de download direto do conteúdo bruto (raw)
+   * Ex: https://github.com/:owner/:repo/blob/:branch/:filepath -> https://raw.githubusercontent.com/:owner/:repo/:branch/:filepath
+   */
+  public static convertGithubBlobToRawUrl(url: string): string {
+    if (!url || typeof url !== 'string') return url;
+    const blobMatch = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i);
+    if (blobMatch) {
+      return `https://raw.githubusercontent.com/${blobMatch[1]}/${blobMatch[2]}/${blobMatch[3]}/${blobMatch[4]}`;
+    }
+    return url;
+  }
+
+  /**
    * Verifica se uma URL pertence ao domínio de origem ou está na allowlist de fontes oficiais
    */
   public static isDomainAllowed(
@@ -242,6 +283,11 @@ export class LegalNormCrawlerService {
     try {
       const candidateHost = new URL(candidateUrl).hostname.toLowerCase();
       const rootHost = new URL(rootUrl).hostname.toLowerCase();
+
+      // Suporte cruzado automático para repositórios GitHub (github.com <-> raw.githubusercontent.com)
+      if (this.isGithubUrl(candidateUrl) && this.isGithubUrl(rootUrl)) {
+        return true;
+      }
 
       if (candidateHost === rootHost || candidateHost.endsWith(`.${rootHost}`)) {
         return true;
@@ -323,10 +369,48 @@ export class LegalNormCrawlerService {
     const navigationContainerSelector =
       'nav, header, footer, aside, .menu, .navbar, .sidebar, [class*="breadcrumb"], [id*="breadcrumb"], [aria-label*="breadcrumb"], [aria-label*="Breadcrumb"], [class*="footer"], [id*="footer"], [class*="navbar"], [id*="navbar"], [class*="navigation"], [id*="navigation"], #barra-brasil';
 
+    const isCurrentBaseGithub = this.isGithubUrl(canonicalBase);
+    const githubUiNoiseRegex = /\/(commits?|pulls?|issues?|releases?|actions?|tags?|branches?|labels?|milestones?|stargazers?|watchers?|network|forks?|search|settings)(\/|$|\?)/i;
+    const githubGlobalNavRegex = /^https?:\/\/github\.com\/(features|pricing|security|enterprise|customer-stories|readme|topics|collections|trending|login|signup|join|explore|about|site|contact|sponsors)(\/|$|\?)/i;
+
     $('a[href]').each((_, el) => {
       const rawHref = ($(el).attr('href') || '').trim();
-      const canonical = this.normalizeCanonicalUrl(rawHref, baseUrl);
+      if (!rawHref) return;
+
+      // Descarte imediato e silencioso de scripts e estilos (.css, .js) antes de qualquer telemetria
+      if (this.isScriptOrStyleUrl(rawHref)) {
+        return;
+      }
+
+      let canonical = this.normalizeCanonicalUrl(rawHref, baseUrl);
       if (!canonical || seenUrls.has(canonical)) return;
+
+      // Descarte imediato e silencioso na URL normalizada antes de telemetria
+      if (this.isScriptOrStyleUrl(canonical)) {
+        seenUrls.add(canonical);
+        return;
+      }
+
+      // Tratamento especializado para links de repositórios GitHub
+      if (isCurrentBaseGithub) {
+        if (githubGlobalNavRegex.test(canonical)) {
+          skipped?.push({ url: canonical, reason: 'Página institucional/marketing do GitHub' });
+          seenUrls.add(canonical);
+          return;
+        }
+
+        if (githubUiNoiseRegex.test(canonical)) {
+          skipped?.push({ url: canonical, reason: 'Link de navegação/UI da plataforma GitHub' });
+          seenUrls.add(canonical);
+          return;
+        }
+
+        // Se for um link de arquivo .md no GitHub (/blob/), converte para a URL de download direto (raw)
+        if (canonical.includes('/blob/') && /\.(md|markdown)($|\?|#)/i.test(canonical)) {
+          canonical = this.convertGithubBlobToRawUrl(canonical);
+          if (seenUrls.has(canonical)) return;
+        }
+      }
 
       if ($(el).closest(navigationContainerSelector).length > 0) {
         skipped?.push({ url: canonical, reason: 'Link dentro de navbar, breadcrumb ou footer' });
@@ -392,6 +476,42 @@ export class LegalNormCrawlerService {
       });
     });
 
+    // Descoberta resiliente em árvore de arquivos do GitHub via dados React embutidos
+    if (isCurrentBaseGithub) {
+      $('script[type="application/json"]').each((_, el) => {
+        const text = $(el).html() || '';
+        if (text.includes('tree') && text.includes('items')) {
+          try {
+            const parsed = JSON.parse(text);
+            const items = parsed?.payload?.tree?.items || [];
+            const owner = parsed?.payload?.repo?.owner || parsed?.payload?.pathTokens?.[0];
+            const repo = parsed?.payload?.repo?.name || parsed?.payload?.pathTokens?.[1];
+            const branch = parsed?.payload?.refInfo?.name || 'main';
+
+            if (owner && repo && Array.isArray(items)) {
+              for (const item of items) {
+                if (item.contentType === 'file' && /\.(md|markdown|pdf|docx?)$/i.test(item.name || '')) {
+                  const rawCandidate = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${item.path}`;
+                  if (!seenUrls.has(rawCandidate)) {
+                    seenUrls.add(rawCandidate);
+                    discovered.push({
+                      url: rawCandidate,
+                      anchorText: item.name,
+                      surroundingText: `Arquivo do repositório ${repo}: ${item.path}`,
+                      fileType: item.name.endsWith('.pdf') ? 'pdf' : 'markdown',
+                      depth: currentDepth + 1,
+                      discoveredFrom: canonicalBase,
+                      originChain: [...originChain, rawCandidate],
+                    });
+                  }
+                }
+              }
+            }
+          } catch {}
+        }
+      });
+    }
+
     return discovered;
   }
 
@@ -432,8 +552,16 @@ export class LegalNormCrawlerService {
     const seen = new Set<string>([this.normalizeCanonicalUrl(baseUrl) || baseUrl]);
 
     for (const raw of rawCandidates) {
+      if (!raw || this.isScriptOrStyleUrl(raw)) continue;
+
       const canonical = this.normalizeCanonicalUrl(raw, baseUrl);
       if (!canonical || seen.has(canonical)) continue;
+
+      // Descarte prévio e silencioso de scripts e estilos antes de telemetria
+      if (this.isScriptOrStyleUrl(canonical)) {
+        seen.add(canonical);
+        continue;
+      }
       if (this.isIgnoredCrawlerUrl(canonical)) {
         skipped?.push({ url: canonical, reason: 'Asset estático ou rota de framework/plugin' });
         seen.add(canonical);
@@ -602,14 +730,44 @@ export class LegalNormCrawlerService {
     allowedDomains: string[] = [],
     fallbackTitle?: string
   ): ExtractedDocumentContent {
-    const contentMd = TextEncodingSanitizer.sanitizeAndRepairText(rawMarkdown).trim();
-    const heading = contentMd.match(/^#{1,6}\s+(.+)$/m)?.[1]?.trim();
-    const fallbackFileName = new URL(url).pathname.split('/').pop() || 'Documento Markdown';
-    const title = TextEncodingSanitizer.sanitizeAndRepairText(
-      heading || fallbackTitle || fallbackFileName
-    ).slice(0, 200);
-    const documentContent = contentMd || `# ${title}`;
-    const contentHash = crypto.createHash('sha256').update(documentContent, 'utf8').digest('hex');
+    const sanitized = TextEncodingSanitizer.sanitizeAndRepairText(rawMarkdown).trim();
+
+    // 1. Extração estruturada de Frontmatter YAML (metadados ricos de repositórios como cfm-normas)
+    let yamlMetadata: Record<string, any> | undefined = undefined;
+    let bodyContent = sanitized;
+
+    const frontmatterMatch = sanitized.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+    if (frontmatterMatch) {
+      yamlMetadata = {};
+      const yamlBlock = frontmatterMatch[1];
+      bodyContent = frontmatterMatch[2].trim();
+
+      for (const yLine of yamlBlock.split(/\r?\n/)) {
+        const kv = yLine.match(/^([a-zA-Z0-9_-]+)\s*:\s*(.*)$/);
+        if (kv) {
+          const key = kv[1].trim();
+          let val = kv[2].trim();
+          if ((val.startsWith("'") && val.endsWith("'")) || (val.startsWith('"') && val.endsWith('"'))) {
+            val = val.slice(1, -1);
+          }
+          yamlMetadata[key] = val;
+        }
+      }
+    }
+
+    const heading = bodyContent.match(/^#{1,6}\s+(.+)$/m)?.[1]?.trim();
+    const fallbackFileName = new URL(url).pathname.split('/').pop()?.replace(/\.(md|markdown)$/i, '') || 'Documento Markdown';
+    
+    // Título enriquecido a partir dos metadados YAML se disponíveis
+    let computedTitle = heading || fallbackTitle || fallbackFileName;
+    if (yamlMetadata?.tipo && yamlMetadata?.numero && yamlMetadata?.ano) {
+      computedTitle = `${String(yamlMetadata.tipo).toUpperCase()} CFM Nº ${yamlMetadata.numero}/${yamlMetadata.ano}`;
+    }
+
+    const title = TextEncodingSanitizer.sanitizeAndRepairText(computedTitle).slice(0, 200);
+    const documentContent = sanitized;
+    const activeContent = bodyContent || `# ${title}`;
+    const contentHash = crypto.createHash('sha256').update(activeContent, 'utf8').digest('hex');
     const skippedLinks: { url: string; reason: string }[] = [];
     const discoveredLinks = this.extractLinksFromPdfBufferAndText(
       null,
@@ -625,13 +783,14 @@ export class LegalNormCrawlerService {
       url,
       title,
       contentMd: documentContent,
-      activeContentMd: documentContent,
+      activeContentMd: activeContent,
       revokedStrikes: [],
-      rawText: documentContent,
+      rawText: activeContent,
       contentHash,
       fileType: 'markdown',
       extractionMethod: 'text',
       discoveredLinks,
+      yamlMetadata,
       skippedLinks,
     };
   }
@@ -812,10 +971,29 @@ export class LegalNormCrawlerService {
     const reasons: string[] = [];
 
     // 1. Sinais fortes no título ou cabeçalho
-    const headerTypeRegex = /\b(lei\s+(?:complementar\s+|federal\s+|ordin[aá]ria\s+)?n[º°o]?\s*[\d.]+|decreto(?:-lei)?\s+n[º°o]?\s*[\d.]+|portaria\s+(?:conjunta\s+|gm\/ms\s+)?n[º°o]?\s*[\d.]+|resolu[cç][aã]o\s+(?:cfm\s+|rdc\s+|normativa\s+|cne\s+)?n[º°o]?\s*[\d.]+|instru[cç][aã]o\s+normativa\s+n[º°o]?\s*[\d.]+|medida\s+provis[oó]ria\s+n[º°o]?\s*[\d.]+|emenda\s+constitucional\s+n[º°o]?\s*[\d.]+|parecer\s+(?:normativo|cfm)\s+n[º°o]?\s*[\d.]+|rdc\s+n[º°o]?\s*[\d.]+|c[oó]digo\s+de\s+[eé]tica)/i;
+    const headerTypeRegex = /\b(lei\s+(?:complementar\s+|federal\s+|ordin[aá]ria\s+)?n[º°o]?\s*[\d.]+|decreto(?:-lei)?\s+n[º°o]?\s*[\d.]+|portaria\s+(?:conjunta\s+|gm\/ms\s+)?n[º°o]?\s*[\d.]+|resolu[cç][aã]o\s+(?:cfm\s+|rdc\s+|normativa\s+|cne\s+)?n[º°o]?\s*[\d.]+|instru[cç][aã]o\s+normativa\s+n[º°o]?\s*[\d.]+|medida\s+provis[oó]ria\s+n[º°o]?\s*[\d.]+|emenda\s+constitucional\s+n[º°o]?\s*[\d.]+|parecer\s+(?:normativo|cfm|crm|consulta)?\s*n[º°o]?\s*[\d.]+|rdc\s+n[º°o]?\s*[\d.]+|c[oó]digo\s+de\s+[eé]tica)/i;
     if (headerTypeRegex.test(titleAndHead)) {
       score += 0.45;
       reasons.push('Cabeçalho formal de ato normativo identificado');
+    }
+
+    // 1.1 Reconhecimento especializado de Pareceres Deontológicos (CFM/CRM)
+    const isParecer =
+      doc.yamlMetadata?.tipo?.toLowerCase() === 'parecer' ||
+      /\bparecer\b/i.test(doc.title) ||
+      /\b(parecer\s+(?:cfm|crm|normativo|consulta)?\s*(?:n[º°o]?\s*[\d.]+|\/n[º°o]?\s*[\d.]+|\s+n[º°o]?\s*[\d.]+\/\d{4}))/i.test(titleAndHead) ||
+      /\bparecer\s+cfm\b/i.test(titleAndHead);
+
+    if (isParecer) {
+      score += 0.55;
+      reasons.push('Parecer deontológico/normativo identificado');
+
+      const parecerSectionsRegex = /\b(ementa|relat[oó]rio|voto(?:\s+do\s+relator)?|do\s+parecer|conclus[aã]o|sess[aã]o\s+plen[aá]ria|conselheiro\s+relator)\b/gi;
+      const sectionMatches = fullText.match(parecerSectionsRegex) || [];
+      if (sectionMatches.length >= 2) {
+        score += 0.35;
+        reasons.push(`Estrutura formal de parecer detectada (${Array.from(new Set(sectionMatches.map((s) => s.toLowerCase()))).join(', ')})`);
+      }
     }
 
     // 2. Presença e densidade de artigos ("Art. 1º", "Art. 2º", "Parágrafo único")
@@ -837,12 +1015,12 @@ export class LegalNormCrawlerService {
 
     // 4. Penalidades para páginas de índice/listagem, notícias, comunicados e páginas institucionais
     const isNonNormPageRegex = /\b(not[ií]cia|assessoria\s+de\s+comunica[cç][aã]o|ascom|evento|workshop|cartilha|perguntas\s+frequentes|faq|quem\s+somos|fale\s+conosco|ata\s+de\s+reuni[aã]o)\b/i;
-    if (isNonNormPageRegex.test(doc.title) && articleMatches.length === 0) {
+    if (isNonNormPageRegex.test(doc.title) && articleMatches.length === 0 && !isParecer) {
       score -= 0.5;
       reasons.push('Título característico de notícia, comunicado, cartilha ou página institucional');
     }
 
-    if (doc.fileType === 'html' && doc.discoveredLinks.length >= 2 && articleMatches.length === 0) {
+    if (doc.fileType === 'html' && doc.discoveredLinks.length >= 2 && articleMatches.length === 0 && !isParecer) {
       score -= 0.45;
       reasons.push('Página HTML de índice/listagem de links sem artigos normativos');
     }
@@ -854,15 +1032,25 @@ export class LegalNormCrawlerService {
 
     // 5. Validação de aderência às tags quando especificadas
     if (targetTags && targetTags.length > 0) {
-      const tagValidation = ScraperService.validateContentHasTagAndLawData(
-        doc.title,
-        fullText,
-        targetTags,
-        doc.url
-      );
-      if (!tagValidation.hasTagData) {
-        score = Math.min(score, 0.2);
-        reasons.push(`Conteúdo não possui dados referentes às tags solicitadas [${targetTags.join(', ')}]`);
+      const isCfmTagRequested = targetTags.some((t) => t.toLowerCase() === 'cfm');
+      const isCfmDoc =
+        isCfmTagRequested &&
+        (isParecer ||
+          doc.yamlMetadata?.orgao === 'CFM' ||
+          /\bcfm\b/i.test(doc.title) ||
+          /\bconselho\s+federal\s+de\s+medicina\b/i.test(fullText));
+
+      if (!isCfmDoc) {
+        const tagValidation = ScraperService.validateContentHasTagAndLawData(
+          doc.title,
+          fullText,
+          targetTags,
+          doc.url
+        );
+        if (!tagValidation.hasTagData) {
+          score = Math.min(score, 0.2);
+          reasons.push(`Conteúdo não possui dados referentes às tags solicitadas [${targetTags.join(', ')}]`);
+        }
       }
     }
 
@@ -871,6 +1059,18 @@ export class LegalNormCrawlerService {
     // Extração de metadados jurídicos
     const metadata = this.extractLegalMetadata(doc.title, fullText);
     const references = this.extractLegalReferences(fullText);
+
+    // Enriquecimento prioritário a partir de metadados YAML (cfm-normas)
+    if (doc.yamlMetadata) {
+      if (doc.yamlMetadata.numero) metadata.number = String(doc.yamlMetadata.numero);
+      if (doc.yamlMetadata.ano) metadata.year = parseInt(String(doc.yamlMetadata.ano), 10) || metadata.year;
+      if (doc.yamlMetadata.orgao) metadata.issuingBody = String(doc.yamlMetadata.orgao);
+      if (doc.yamlMetadata.tipo) metadata.normType = String(doc.yamlMetadata.tipo).toLowerCase();
+      if (doc.yamlMetadata.ementa) metadata.summary = String(doc.yamlMetadata.ementa);
+      if (doc.yamlMetadata.data_publicacao) metadata.publishedAt = String(doc.yamlMetadata.data_publicacao);
+    } else if (isParecer && !metadata.normType) {
+      metadata.normType = 'parecer';
+    }
 
     // Camada 2: Aciona AIProviderFactory (Regras 1 e 5) apenas em casos ambíguos (score entre 0.35 e 0.59)
     let layer: 'heuristic' | 'llm' = 'heuristic';
@@ -1166,6 +1366,110 @@ export class LegalNormCrawlerService {
       return finalChunks;
     }
 
+    // 5.1 Estratégia especializada para Pareceres Deontológicos (CFM/CRM): quebra por seções formais
+    const isParecerText =
+      /\bparecer\b/i.test(normTitle) ||
+      /\b(relat[oó]rio|voto(?:\s+do\s+relator)?|do\s+parecer|conclus[aã]o|sess[aã]o\s+plen[aá]ria)\b/i.test(cleanText);
+
+    const rawParecerSections: { sectionName: string; lines: string[] }[] = [];
+    if (isParecerText) {
+      let currentSectionName: string | null = null;
+      let currentSectionLines: string[] = [];
+
+      const flushSection = () => {
+        if (currentSectionName && currentSectionLines.length > 0) {
+          rawParecerSections.push({
+            sectionName: currentSectionName,
+            lines: [...currentSectionLines],
+          });
+        }
+        currentSectionLines = [];
+      };
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        const secMatch = line.match(
+          /^(?:#+\s*)?(EMENTA|RELAT[OÓ]RIO|DO\s+PARECER|PARECER|DO\s+VOTO|VOTO(?:\s+DO\s+RELATOR)?|DA\s+CONCLUS[AÃ]O|CONCLUS[AÃ]O|SESS[AÃ]O\s+PLEN[AÃ]RIA)\b/i
+        );
+
+        if (secMatch) {
+          flushSection();
+          currentSectionName = secMatch[1].toUpperCase();
+          continue;
+        }
+
+        if (currentSectionName) {
+          currentSectionLines.push(line);
+        } else {
+          // Preâmbulo do parecer (cabeçalho)
+          if (!currentSectionName) {
+            currentSectionName = 'Identificação do Parecer';
+          }
+          currentSectionLines.push(line);
+        }
+      }
+      flushSection();
+    }
+
+    if (rawParecerSections.length >= 2) {
+      for (const sec of rawParecerSections) {
+        const fullSecText = sec.lines.join('\n').trim();
+        if (!fullSecText) continue;
+
+        const path = ['Parecer Deontológico', sec.sectionName];
+        const headingContext = `${normTitle} | ${sec.sectionName}`;
+
+        if (fullSecText.length <= maxChars) {
+          finalChunks.push({
+            chunkIndex: finalChunks.length,
+            text: fullSecText,
+            tokenCount: Math.ceil(fullSecText.length / 4),
+            path,
+            article: null,
+            headingContext,
+            contentHash: crypto.createHash('sha256').update(fullSecText, 'utf8').digest('hex'),
+          });
+        } else {
+          // Subdivide seções longas de parecer preservando a contextualização da seção
+          const secParagraphs = fullSecText.split(/\n{2,}/).filter((p) => p.trim().length > 0);
+          let secBuffer = '';
+          for (const p of secParagraphs) {
+            if (secBuffer.length + p.length > maxChars && secBuffer.length > 0) {
+              const text = secBuffer.trim();
+              finalChunks.push({
+                chunkIndex: finalChunks.length,
+                text,
+                tokenCount: Math.ceil(text.length / 4),
+                path,
+                article: null,
+                headingContext,
+                contentHash: crypto.createHash('sha256').update(text, 'utf8').digest('hex'),
+              });
+              const overlapSlice = text.slice(-Math.floor(maxChars * 0.1));
+              secBuffer = `${overlapSlice}\n${p}`;
+            } else {
+              secBuffer = secBuffer ? `${secBuffer}\n\n${p}` : p;
+            }
+          }
+          if (secBuffer.trim().length > 0) {
+            const text = secBuffer.trim();
+            finalChunks.push({
+              chunkIndex: finalChunks.length,
+              text,
+              tokenCount: Math.ceil(text.length / 4),
+              path,
+              article: null,
+              headingContext,
+              contentHash: crypto.createHash('sha256').update(text, 'utf8').digest('hex'),
+            });
+          }
+        }
+      }
+      return finalChunks;
+    }
+
     // Fallback para normas sem estrutura de "Art. X": quebra por seções/parágrafos semânticos
     const paragraphs = cleanText.split(/\n{2,}/).filter((p) => p.trim().length > 0);
     let buffer = '';
@@ -1248,25 +1552,43 @@ export class LegalNormCrawlerService {
   }> {
     const { doc, classification, discoveredFrom, originChain, tags = [], force = false } = params;
     const canonicalUrl = this.normalizeCanonicalUrl(doc.url) || doc.url;
+    const yaml = doc.yamlMetadata;
 
     const existing = await prisma.norm.findFirst({
-      where: { urlOriginal: canonicalUrl },
+      where: {
+        OR: [
+          { urlOriginal: canonicalUrl },
+          ...(yaml?.url_original ? [{ urlOriginal: yaml.url_original }] : []),
+          ...(yaml?.id ? [{ normId: yaml.id }] : []),
+        ],
+      },
     });
 
-    const orgao = (classification.issuingBody || 'GOV_BR').toUpperCase();
-    const tipo = (classification.normType || 'LEI').toUpperCase();
+    const orgao = (yaml?.orgao || classification.issuingBody || 'GOV_BR').toUpperCase();
+    const tipo = (yaml?.tipo || classification.normType || 'LEI').toUpperCase();
     const numero =
+      yaml?.numero ||
       classification.number ||
       `SN-${crypto.createHash('md5').update(canonicalUrl).digest('hex').slice(0, 6).toUpperCase()}`;
-    const ano = String(classification.year || new Date().getFullYear());
+    const ano = String(yaml?.ano || classification.year || new Date().getFullYear());
     const statusMap: Record<NormStatus, string> = {
       active: 'VIGENTE',
       revoked: 'REVOGADA',
       amended: 'VIGENTE',
       unknown: 'VIGENTE',
     };
-    const dbStatus = statusMap[classification.status] || 'VIGENTE';
-    const normCode = `${orgao}-${tipo.slice(0, 3)}-${numero}-${ano}`;
+
+    let dbStatus = statusMap[classification.status] || 'VIGENTE';
+    if (yaml?.status) {
+      const lowerYStatus = String(yaml.status).toLowerCase();
+      if (lowerYStatus.includes('vigente') || lowerYStatus.includes('ativo')) {
+        dbStatus = 'VIGENTE';
+      } else if (lowerYStatus.includes('revog')) {
+        dbStatus = 'REVOGADA';
+      }
+    }
+
+    const normCode = yaml?.id || `${orgao}-${tipo.slice(0, 3)}-${numero}-${ano}`;
     const existingTags = existing?.tags ?? [];
     const scrapedPageTags = Array.from(new Set(tags));
     const combinedTags = Array.from(
@@ -1386,8 +1708,8 @@ export class LegalNormCrawlerService {
             ano,
             status: dbStatus,
             dataPublicacao: classification.publishedAt,
-            ementaOriginal: classification.summary || doc.title,
-            ementaHigienizada: classification.summary || doc.title,
+            ementaOriginal: yaml?.ementa || classification.summary || doc.title,
+            ementaHigienizada: yaml?.ementa || classification.summary || doc.title,
             sha256Original: doc.contentHash,
             conteudoOriginalBruto: doc.contentMd,
             conteudoHigienizado: doc.activeContentMd,
@@ -1396,6 +1718,9 @@ export class LegalNormCrawlerService {
             tokensEstimados: Math.ceil(doc.activeContentMd.length / 4),
             tags: combinedTags,
             metadadosRAG: JSON.stringify(metadadosRAGObj),
+            ...(yaml?.id_norma_cfm ? { idNormaCfm: String(yaml.id_norma_cfm) } : {}),
+            ...(yaml?.url_pdf_original ? { urlPdfOriginal: yaml.url_pdf_original } : {}),
+            ...(yaml?.macro_tema ? { macroTema: yaml.macro_tema } : {}),
           },
         });
         // Substituição atômica dos chunks: remove os chunks da versão anterior antes de inserir os novos
@@ -1404,17 +1729,18 @@ export class LegalNormCrawlerService {
         savedNorm = await prisma.norm.create({
           data: {
             normId: normCode,
+            idNormaCfm: yaml?.id_norma_cfm ? String(yaml.id_norma_cfm) : null,
             orgao,
             tipo,
             numero,
             ano,
             status: dbStatus,
-            dataPublicacao: classification.publishedAt,
-            ementaOriginal: classification.summary || doc.title,
-            ementaHigienizada: classification.summary || doc.title,
-            macroTema: 'Conformidade Regulatória e Normas Legais',
-            urlOriginal: canonicalUrl,
-            urlPdfOriginal: doc.fileType === 'pdf' ? canonicalUrl : null,
+            dataPublicacao: yaml?.data_publicacao || classification.publishedAt,
+            ementaOriginal: yaml?.ementa || classification.summary || doc.title,
+            ementaHigienizada: yaml?.ementa || classification.summary || doc.title,
+            macroTema: yaml?.macro_tema || 'Conformidade Regulatória e Normas Legais',
+            urlOriginal: yaml?.url_original || canonicalUrl,
+            urlPdfOriginal: yaml?.url_pdf_original || (doc.fileType === 'pdf' ? canonicalUrl : null),
             sha256Original: doc.contentHash,
             conteudoOriginalBruto: doc.contentMd,
             conteudoHigienizado: doc.activeContentMd,
@@ -1551,6 +1877,9 @@ export class LegalNormCrawlerService {
     if (!canonicalRoot) {
       throw new Error('URL inicial inválida para crawling.');
     }
+    if (this.isScriptOrStyleUrl(canonicalRoot)) {
+      throw new Error('A URL inicial aponta para um script ou folha de estilo (.js, .css) e foi descartada do scraping normativo.');
+    }
 
     const ssrfRoot = await validateSafeUrlAsync(canonicalRoot);
     if (!ssrfRoot.safe) {
@@ -1559,7 +1888,7 @@ export class LegalNormCrawlerService {
 
     const jobId = options.jobId || `crawl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const maxDepth = options.maxDepth ?? 2;
-    const maxPages = options.maxPages ?? 30;
+    const maxPages = options.maxPages ?? env.CRAWL_MAX_PAGES ?? 1000;
     const allowedDomains = options.allowedDomains || [];
     const tags = options.tags || [];
     const force = options.force === true;
@@ -1621,7 +1950,15 @@ export class LegalNormCrawlerService {
 
     while (queue.length > 0 && jobState.counters.downloaded < maxPages) {
       const current = queue.shift()!;
-      const normUrl = this.normalizeCanonicalUrl(current.url) || current.url;
+      let normUrl = this.normalizeCanonicalUrl(current.url) || current.url;
+      // Normalização automática de URLs do GitHub para download do conteúdo bruto (raw)
+      normUrl = this.convertGithubBlobToRawUrl(normUrl);
+
+      // Descarte prévio e silencioso de arquivos de script e estilos (.css, .js) antes de qualquer telemetria
+      if (this.isScriptOrStyleUrl(normUrl) || this.isScriptOrStyleUrl(current.url)) {
+        visitedUrls.add(normUrl);
+        continue;
+      }
       if (visitedUrls.has(normUrl)) {
         await LinkTraceService.record({
           jobId,
@@ -1850,7 +2187,6 @@ export class LegalNormCrawlerService {
 
         // Deduplicação em memória por content_hash dentro do mesmo job
         if (visitedContentHashes.has(extracted.contentHash) && !force) {
-          await this.upsertScrapedPage(extracted, normUrl, tags);
           await LinkTraceService.record({
             jobId,
             url: normUrl,
@@ -1873,7 +2209,7 @@ export class LegalNormCrawlerService {
         const topicsInScope = detectedTopics.filter((t) => allowedTopics.includes(t));
 
         if (!classification.isNorm) {
-          await this.upsertScrapedPage(extracted, normUrl, [...tags, ...detectedTopics]);
+          // Links de entrada, índices e páginas de navegação que não são normas não são salvos em scraped_pages
           jobState.counters.discarded++;
           jobState.discards.push({
             url: normUrl,

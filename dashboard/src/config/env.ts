@@ -1,7 +1,12 @@
+import path from 'path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
 dotenv.config();
+// Fallback para quando o comando for executado a partir da raiz do monorepo
+if (!process.env.DATABASE_URL) {
+  dotenv.config({ path: path.resolve(process.cwd(), 'dashboard/.env') });
+}
 
 const KNOWN_INSECURE_SECRETS = [
   'conformia-super-secret-jwt-key-2026',
@@ -52,7 +57,8 @@ const envSchema = z
     FIRECRAWL_WAIT_FOR_MS: z.coerce.number().int().nonnegative().default(1500),
     CRAWL_MAX_LINKS_PER_PAGE: z.coerce.number().int().positive().default(50),
     CRAWL_BATCH_SIZE: z.coerce.number().int().positive().default(4),
-    CRAWL_MAX_PAGES: z.coerce.number().int().positive().default(100),
+    CRAWL_MAX_PAGES: z.coerce.number().int().positive().default(1000),
+    RAG_MAX_CANDIDATE_CHUNKS: z.coerce.number().int().positive().default(10000),
     MCP_SERVER_URL: z.string().optional().default('http://localhost:8080/mcp'),
     CORS_ORIGIN: z.string().default('http://localhost:5173'),
     MONITORING_API_KEY: z.string().optional().default(''),

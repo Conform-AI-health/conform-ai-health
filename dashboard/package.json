@@ -12,8 +12,11 @@
     "start:worker": "node dist/worker.js",
     "typecheck": "tsc --noEmit",
     "db:cleanup": "tsx src/scripts/cleanupScrapedPages.ts",
-    "rag:reindex": "node dist/scripts/reindexNormEmbeddings.js",
+    "rag:reindex": "tsx src/scripts/reindexNormEmbeddings.ts",
+    "rag:reindex:dist": "node dist/scripts/reindexNormEmbeddings.js",
     "rag:reindex:dev": "tsx src/scripts/reindexNormEmbeddings.ts",
+    "rag:index-norm": "tsx src/scripts/indexSpecificNorm.ts",
+    "rag:index-norm:dist": "node dist/scripts/indexSpecificNorm.js",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx src/shared/autoMigrate.ts",
     "test": "vitest run"

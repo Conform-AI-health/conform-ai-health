@@ -122,5 +122,32 @@ describe('Motor de Reconciliação Deontológica (CFM)', () => {
     expect(providerCall).not.toHaveBeenCalled();
     providerCall.mockRestore();
   });
+
+  it('deve blindar o motor heurístico contra falso CONFORME quando acionado em contingência por falha de IA', () => {
+    const heuristic = AIProviderFactory.getProvider('heuristic') as any;
+    const scrapeResult = ScraperService.processHtml(
+      'https://pagina-sem-infracao-obvia.med.br',
+      '<html><body><p>Texto médico neutro sem termos proibidos óbvios no regex.</p></body></html>',
+      'CHEERIO'
+    );
+
+    const fallbackResult = heuristic.executeHeuristic(
+      scrapeResult,
+      'Contingência ativada após falha no modelo Gemini',
+      undefined,
+      {
+        isFallback: true,
+        failedProvider: 'gemini',
+        modelError: '503 Service Unavailable: High Demand',
+      }
+    );
+
+    expect(fallbackResult.verdict).toBe('INCONCLUSIVO');
+    expect(fallbackResult.score).toBeLessThanOrEqual(60);
+    expect(fallbackResult.aiModelUsed).toBe('heuristic:fallback-gemini');
+    expect(fallbackResult.summary).toContain('[CONTINGÊNCIA HEURÍSTICA]');
+    expect(fallbackResult.summary).toContain('503 Service Unavailable');
+    expect(fallbackResult.guardrailsApplied).toBe(true);
+  });
 });
 

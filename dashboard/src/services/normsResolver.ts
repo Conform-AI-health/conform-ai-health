@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { prisma } from '../config/prisma.js';
+import { env } from '../config/env.js';
 import { NORMS_CATALOG, NormChunk } from '../data/normsCatalog.js';
 import { cosineSimilarity, SemanticEmbeddingService } from './semanticEmbeddingService.js';
 
-const MAX_RAG_CANDIDATE_CHUNKS = 2000;
+const DEFAULT_MAX_RAG_CANDIDATE_CHUNKS = 10000;
 const DEFAULT_RAG_TOP_K = 8;
 
 export interface NormRetrievalResult {
@@ -18,7 +19,11 @@ export interface NormRetrievalResult {
     | 'EMBEDDING_UNAVAILABLE'
     | 'CANDIDATE_LIMIT_EXCEEDED';
   candidatesCount: number;
-  source?: 'MongoDB (norms/norms_chunk)' | 'NORMS_CATALOG';
+  source?:
+    | 'MongoDB (norms/norms_chunk)'
+    | 'NORMS_CATALOG'
+    | 'MongoDB (norms/norms_chunk) [Fallback Léxico/Tags]'
+    | 'NORMS_CATALOG [Fallback Léxico/Tags]';
   diagnostics?: NormRetrievalDiagnostics;
 }
 
@@ -134,13 +139,16 @@ function rankCandidates(
   targetTags: string[] = []
 ): ResolvedNorm[] {
   const normalizedTargetTags = new Set(targetTags.map((t) => t.toLowerCase().trim()));
+  const hasSemantic = queryEmbedding.length > 0;
   return candidates
     .map(({ norm, embedding }) => {
-      const semanticScore = Math.max(0, cosineSimilarity(queryEmbedding, embedding));
+      const semanticScore = hasSemantic ? Math.max(0, cosineSimilarity(queryEmbedding, embedding)) : 0;
       const lexical = lexicalScore(queryText, `${norm.title}\n${norm.content}`);
       const tagMatches = norm.tags.filter((t) => normalizedTargetTags.has(t.toLowerCase().trim())).length;
-      const tagBonus = tagMatches > 0 ? Math.min(0.10, tagMatches * 0.05) : 0;
-      const combinedScore = semanticScore * 0.70 + lexical * 0.20 + tagBonus;
+      const tagBonus = tagMatches > 0 ? Math.min(0.20, tagMatches * 0.05) : 0;
+      const combinedScore = hasSemantic
+        ? semanticScore * 0.70 + lexical * 0.20 + tagBonus
+        : lexical * 0.70 + tagBonus + (tagMatches > 0 ? 0.10 : 0.01);
       return {
         ...norm,
         relevanceScore: Number(combinedScore.toFixed(4)),
@@ -188,11 +196,11 @@ export class NormsResolver {
     let dbDiagnostics: NormRetrievalDiagnostics | undefined;
 
     if (dbNorms.length > 0) {
+      const maxCandidateChunks = env.RAG_MAX_CANDIDATE_CHUNKS || DEFAULT_MAX_RAG_CANDIDATE_CHUNKS;
       const normById = new Map(dbNorms.map((norm) => [norm.id, norm]));
       const chunks = await prisma.normChunk.findMany({
         where: { normId: { in: dbNorms.map((norm) => norm.id) } },
-        orderBy: [{ normId: 'asc' }, { chunkIndex: 'asc' }],
-        take: MAX_RAG_CANDIDATE_CHUNKS + 1,
+        take: maxCandidateChunks,
         select: {
           id: true,
           normId: true,
@@ -205,12 +213,10 @@ export class NormsResolver {
         },
       });
 
-      if (chunks.length > MAX_RAG_CANDIDATE_CHUNKS) {
-        return {
-          norms: [],
-          status: 'CANDIDATE_LIMIT_EXCEEDED',
-          candidatesCount: chunks.length,
-        };
+      if (chunks.length >= maxCandidateChunks) {
+        console.warn(
+          `⚠️ [NormsResolver] Grande volume de normas (${chunks.length} chunks). RAG processará os ${maxCandidateChunks} chunks prioritários para manter a auditoria ágil sem interrupção.`
+        );
       }
 
       const activeChunks = chunks.filter(
@@ -242,14 +248,19 @@ export class NormsResolver {
           diagnostics.missingNormParentCount += 1;
           isIndexed = false;
         }
-        if (embedding.length === 0) {
+
+        // Chunks pendentes de vetor ou vazios são apenas missingEmbeddingCount (não modelMismatch)
+        const isPendingOrEmpty =
+          embedding.length === 0 ||
+          metadata.embedding_model === 'PENDING_REINDEX';
+
+        if (isPendingOrEmpty) {
           diagnostics.missingEmbeddingCount += 1;
           isIndexed = false;
         } else if (embedding.length !== SemanticEmbeddingService.vectorDimensions) {
           diagnostics.invalidDimensionCount += 1;
           isIndexed = false;
-        }
-        if (typeof metadata.embedding_model !== 'string' || !metadata.embedding_model) {
+        } else if (typeof metadata.embedding_model !== 'string' || !metadata.embedding_model) {
           diagnostics.missingModelMetadataCount += 1;
           isIndexed = false;
         } else if (metadata.embedding_model !== SemanticEmbeddingService.embeddingModelId) {
@@ -285,13 +296,19 @@ export class NormsResolver {
         }];
       });
 
-      if (diagnostics.indexedChunksCount !== activeChunks.length) {
+      if (diagnostics.indexedChunksCount === 0 || diagnostics.modelMismatchCount > 0) {
         return {
           norms: [],
           status: 'UNINDEXED',
           candidatesCount: activeChunks.length,
           diagnostics,
         };
+      }
+
+      if (diagnostics.missingEmbeddingCount > 0) {
+        console.warn(
+          `⚠️ [NormsResolver] Recuperação RAG resiliente: ${diagnostics.indexedChunksCount}/${activeChunks.length} chunks indexados. ${diagnostics.missingEmbeddingCount} chunks recém-inseridos estão pendentes de vetor. Prosseguindo auditoria com os ${candidates.length} chunks indexados disponíveis.`
+        );
       }
       dbDiagnostics = diagnostics;
     } else {
@@ -351,10 +368,24 @@ export class NormsResolver {
       };
     } catch (error) {
       console.warn(
-        `[NormsResolver] Recuperação semântica indisponível; contexto normativo não será ampliado: ${
+        `⚠️ [NormsResolver] Recuperação semântica via embedding indisponível (${
           error instanceof Error ? error.message : String(error)
-        }`
+        }). Ativando fallback resiliente por relevância léxica e tags sobre os ${candidates.length} chunks disponíveis.`
       );
+      if (candidates.length > 0) {
+        const rankedNorms = rankCandidates(candidates, queryText, [], safeTopK, cleanTags);
+        if (rankedNorms.length > 0) {
+          return {
+            norms: rankedNorms,
+            status: 'READY',
+            candidatesCount: candidates.length,
+            source: dbNorms.length > 0
+              ? 'MongoDB (norms/norms_chunk) [Fallback Léxico/Tags]'
+              : 'NORMS_CATALOG [Fallback Léxico/Tags]',
+            ...(dbNorms.length > 0 && dbDiagnostics ? { diagnostics: dbDiagnostics } : {}),
+          };
+        }
+      }
       return {
         norms: [],
         status: 'EMBEDDING_UNAVAILABLE',

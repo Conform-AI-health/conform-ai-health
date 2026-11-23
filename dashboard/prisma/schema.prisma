@@ -330,6 +330,7 @@ model NormChunk {
 
   @@index([normCode, chunkIndex])
   @@index([normId])
+  @@index([normId, chunkIndex])
   @@map("norms_chunk")
 }
 

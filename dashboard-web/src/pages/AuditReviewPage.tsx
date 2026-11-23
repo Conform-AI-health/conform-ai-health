@@ -21,6 +21,10 @@ import {
   Inbox,
   History,
   CheckCircle2,
+  XCircle,
+  X,
+  MailX,
+  Ban,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
@@ -80,6 +84,12 @@ export const AuditReviewPage: React.FC = () => {
   const [processedReports, setProcessedReports] = useState<ReportItem[]>([]);
   const [loadingProcessed, setLoadingProcessed] = useState(false);
   const [resendingEmailId, setResendingEmailId] = useState<string | null>(null);
+
+  // Estados para Modal de Recusa de Laudo
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [reportToReject, setReportToReject] = useState<ReportItem | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [isRejecting, setIsRejecting] = useState(false);
 
   // Expansão de cards
   const [expandedReports, setExpandedReports] = useState<Record<string, boolean>>({});
@@ -165,6 +175,47 @@ export const AuditReviewPage: React.FC = () => {
       toast.error(err.response?.data?.error || 'Falha ao confirmar o laudo e enviar e-mail.');
     } finally {
       setSubmittingId(null);
+    }
+  };
+
+  const handleOpenRejectModal = (report: ReportItem) => {
+    setReportToReject(report);
+    setRejectionReason(auditorNotes[report.id] || '');
+    setRejectModalOpen(true);
+  };
+
+  const handleCloseRejectModal = () => {
+    if (isRejecting) return;
+    setRejectModalOpen(false);
+    setReportToReject(null);
+    setRejectionReason('');
+  };
+
+  const handleConfirmReject = async () => {
+    if (!reportToReject) return;
+
+    try {
+      setIsRejecting(true);
+      const notes = rejectionReason.trim() || 'Laudo recusado pelo auditor responsável.';
+
+      await api.post(`/reports/${reportToReject.id}/confirm-and-send`, {
+        confirmed: true,
+        decision: 'REJECTED',
+        notes,
+      });
+
+      toast.success(
+        'Laudo recusado com sucesso. Ele foi movido para a tela de Laudos Processados e nenhum e-mail foi disparado para a clínica.'
+      );
+
+      handleCloseRejectModal();
+      fetchPendingReports();
+      fetchProcessedReports();
+    } catch (err: any) {
+      console.error('Erro ao recusar laudo:', err);
+      toast.error(err.response?.data?.error || 'Falha ao processar a recusa do laudo.');
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -427,7 +478,16 @@ export const AuditReviewPage: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRejectModal(report)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-950/40 text-rose-300 hover:bg-rose-900/60 border border-rose-800/70 transition"
+                          title="Recusar laudo (arquiva sem enviar e-mail)"
+                        >
+                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                          <span>Recusar</span>
+                        </button>
                         <button
                           onClick={() => toggleExpand(report.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700/80 transition"
@@ -540,9 +600,21 @@ export const AuditReviewPage: React.FC = () => {
                             </span>
                           </label>
 
-                          {/* Botão de Confirmação & Envio de E-mail */}
-                          <div className="flex justify-end pt-1">
+                          {/* Botões de Ação: Recusar Laudo vs Confirmar e Enviar */}
+                          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/60">
                             <button
+                              type="button"
+                              onClick={() => handleOpenRejectModal(report)}
+                              disabled={isSubmitting}
+                              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-rose-300 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/80 shadow-md shadow-rose-950/30 transition disabled:opacity-40"
+                              title="Recusar laudo: ele será movido para os processados e nenhum e-mail será disparado"
+                            >
+                              <XCircle className="w-4 h-4 text-rose-400" />
+                              <span>Recusar Laudo</span>
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() => handleConfirmAndSend(report)}
                               disabled={!isChecked || isSubmitting}
                               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-md shadow-cyan-950/50 disabled:opacity-40 disabled:cursor-not-allowed transition duration-150"
@@ -623,11 +695,23 @@ export const AuditReviewPage: React.FC = () => {
                               content={METRIC_GLOSSARY.deontologicalScore.description}
                             />
                           </span>
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
-                            <CheckCheck className="w-3.5 h-3.5" />
-                            Homologado por Auditor
-                          </span>
-                          {report.emailSent ? (
+                          {report.reviewStatus === 'REJECTED' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-950/60 text-rose-400 border border-rose-800/60">
+                              <XCircle className="w-3.5 h-3.5" />
+                              Recusado por Auditor
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
+                              <CheckCheck className="w-3.5 h-3.5" />
+                              Homologado por Auditor
+                            </span>
+                          )}
+                          {report.reviewStatus === 'REJECTED' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                              <MailX className="w-3 h-3 text-rose-400" />
+                              E-mail Não Enviado (Recusado)
+                            </span>
+                          ) : report.emailSent ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-950/60 text-cyan-400 border border-cyan-800/60">
                               <Mail className="w-3 h-3" />
                               E-mail Enviado
@@ -645,7 +729,9 @@ export const AuditReviewPage: React.FC = () => {
                             <strong className="text-slate-300">Auditor:</strong> {report.reviewedBy || 'Auditor'}
                           </span>
                           <span>
-                            <strong className="text-slate-300">Homologado em:</strong>{' '}
+                            <strong className="text-slate-300">
+                              {report.reviewStatus === 'REJECTED' ? 'Recusado em:' : 'Homologado em:'}
+                            </strong>{' '}
                             {formatDateTime(report.reviewedAt || report.updatedAt)}
                           </span>
                           <span>
@@ -677,15 +763,17 @@ export const AuditReviewPage: React.FC = () => {
                           <Download className="w-3.5 h-3.5" />
                           <span>Download</span>
                         </button>
-                        <button
-                          onClick={() => handleResendEmail(report.id)}
-                          disabled={isResending}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 border border-cyan-800/60 transition disabled:opacity-50"
-                          title="Reenviar E-mail Oficial para a Clínica"
-                        >
-                          <Send className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
-                          <span>Reenviar E-mail</span>
-                        </button>
+                        {report.reviewStatus !== 'REJECTED' && (
+                          <button
+                            onClick={() => handleResendEmail(report.id)}
+                            disabled={isResending}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 border border-cyan-800/60 transition disabled:opacity-50"
+                            title="Reenviar E-mail Oficial para a Clínica"
+                          >
+                            <Send className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
+                            <span>Reenviar E-mail</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => toggleExpand(report.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700/80 transition"
@@ -701,10 +789,28 @@ export const AuditReviewPage: React.FC = () => {
                       <div className="p-5 space-y-5 bg-[#080e22]/40">
                         {/* Parecer do Auditor */}
                         {report.auditorNotes && (
-                          <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-800/40 text-xs space-y-1">
-                            <div className="flex items-center gap-2 font-bold text-cyan-300">
-                              <UserCheck className="w-4 h-4 text-cyan-400" />
-                              <span>Parecer Técnico do Auditor Responsável:</span>
+                          <div
+                            className={`p-4 rounded-xl border text-xs space-y-1 ${
+                              report.reviewStatus === 'REJECTED'
+                                ? 'bg-rose-950/20 border-rose-800/40'
+                                : 'bg-cyan-950/20 border-cyan-800/40'
+                            }`}
+                          >
+                            <div
+                              className={`flex items-center gap-2 font-bold ${
+                                report.reviewStatus === 'REJECTED' ? 'text-rose-300' : 'text-cyan-300'
+                              }`}
+                            >
+                              {report.reviewStatus === 'REJECTED' ? (
+                                <XCircle className="w-4 h-4 text-rose-400" />
+                              ) : (
+                                <UserCheck className="w-4 h-4 text-cyan-400" />
+                              )}
+                              <span>
+                                {report.reviewStatus === 'REJECTED'
+                                  ? 'Motivo da Recusa pelo Auditor Responsável:'
+                                  : 'Parecer Técnico do Auditor Responsável:'}
+                              </span>
                             </div>
                             <p className="text-slate-200 leading-relaxed italic">"{report.auditorNotes}"</p>
                           </div>
@@ -778,6 +884,104 @@ export const AuditReviewPage: React.FC = () => {
             </div>
           )}
         </>
+      )}
+
+      {/* Modal de Recusa de Laudo */}
+      {rejectModalOpen && reportToReject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#0b1329] border border-rose-800/70 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl shadow-rose-950/50">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-700/60 text-rose-400">
+                  <XCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-100">Recusar Laudo de Auditoria</h3>
+                  <p className="text-xs text-rose-300/80">O laudo será arquivado sem envio de e-mail</p>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseRejectModal}
+                disabled={isRejecting}
+                className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs space-y-1.5">
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="font-medium text-slate-400">Clínica:</span>
+                <span className="font-bold text-slate-100">
+                  {reportToReject.client?.tradeName || reportToReject.client?.name || 'Clínica Médica'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="font-medium text-slate-400">Destinatário:</span>
+                <span className="text-slate-200">
+                  {reportToReject.client?.email || reportToReject.client?.users?.[0]?.email || 'Sem e-mail'}
+                </span>
+              </div>
+              {reportToReject.targetUrl && (
+                <div className="flex items-center justify-between text-slate-300 truncate">
+                  <span className="font-medium text-slate-400 mr-2 flex-shrink-0">URL:</span>
+                  <span className="text-cyan-400 truncate text-[11px]">{reportToReject.targetUrl}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-800/40 text-xs text-rose-200 flex items-start gap-2.5 leading-relaxed">
+              <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <strong>Atenção:</strong> Ao confirmar a recusa, este laudo será movido para a tela de{' '}
+                <strong>Laudos Processados</strong> com status de recusado. <strong>Nenhum e-mail será enviado</strong> para a
+                clínica ou seus responsáveis.
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-300">
+                Motivo da Recusa / Justificativa Técnica:
+              </label>
+              <textarea
+                rows={3}
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="Ex: Falso positivo identificado na promessa de resultado; ou captura incompleta de páginas pelo crawler; solicitar nova auditoria..."
+                className="w-full text-xs p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleCloseRejectModal}
+                disabled={isRejecting}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={isRejecting}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 shadow-lg shadow-rose-950/50 disabled:opacity-50 transition"
+              >
+                {isRejecting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Processando Recusa...</span>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="w-4 h-4" />
+                    <span>Confirmar Recusa do Laudo</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -35,6 +35,11 @@ export class OllamaProvider implements IAIProvider {
         .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
         .join('\n');
 
+      const resolvedSystemPrompt = agentContext.systemPrompt.replace(
+        /\{normasVigentesDoEscopo\}|\{CONTEUDO_DAS_NORMAS_MD\}/gi,
+        relevantNorms
+      );
+
       const secureAudit = AIGuardrails.generateSecureAuditBlock(
         scrape.cleanMarkdown.substring(0, 6000),
         scrape.url
@@ -42,7 +47,7 @@ export class OllamaProvider implements IAIProvider {
       const groundingInstructions = AIGuardrails.buildGroundingPromptInstructions(agentContext.activeNorms);
 
       const prompt = `
-${agentContext.systemPrompt}
+${resolvedSystemPrompt}
 
 ${groundingInstructions}
 
@@ -76,7 +81,7 @@ Retorne APENAS um JSON válido no formato:
           format: 'json',
           stream: false,
         },
-        { timeout: 30000 }
+        { timeout: 120000 }
       );
 
       let jsonText = response.data?.response || '{}';
@@ -118,7 +123,7 @@ Retorne APENAS um JSON válido no formato:
     const model = targetModel?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b';
     const prompt =
       customPrompt ||
-      'Teste de integridade Conform.AI: Confirme em uma frase sucinta a prontidão para auditoria deontológica com base no catálogo normativo dinâmico.';
+      'Teste de prontidão Conform.AI: Responda apenas "OK" se o motor estiver operacional.';
 
     try {
       const response = await safeHttpPostJson(
@@ -128,7 +133,7 @@ Retorne APENAS um JSON válido no formato:
           prompt,
           stream: false,
         },
-        { timeout: 8000 }
+        { timeout: 60000 }
       );
       return {
         provider: 'ollama',

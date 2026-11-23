@@ -515,6 +515,7 @@ export class ReportController {
 
       const where: any = {
         status: AuditStatus.COMPLETED,
+        reviewStatus: { notIn: ['APPROVED', 'REJECTED'] },
         OR: [
           { reviewStatus: 'PENDING_REVIEW' },
           { auditorReviewed: false },
@@ -677,13 +678,17 @@ export class ReportController {
         reviewerId: req.user?.userId || 'system',
         reviewerEmail: req.user?.email || 'auditor@conformia.med.br',
         reviewedAt: new Date().toISOString(),
-        notes: notes || 'Laudo revisado e confirmado pelo auditor responsável.',
+        notes: notes || (decision === 'REJECTED' ? 'Laudo recusado pelo auditor responsável.' : 'Laudo revisado e confirmado pelo auditor responsável.'),
         adjustedScore,
         adjustedVerdict,
       };
 
-      const finalScore = adjustedScore !== undefined ? adjustedScore : (report.score ?? 0);
-      const finalVerdict = adjustedVerdict !== undefined ? adjustedVerdict : report.verdict;
+      const finalScore = adjustedScore !== undefined
+        ? adjustedScore
+        : (decision === 'REJECTED' ? Math.min(report.score ?? 50, 40) : (report.score ?? 0));
+      const finalVerdict = adjustedVerdict !== undefined
+        ? adjustedVerdict
+        : (decision === 'REJECTED' ? Verdict.NAO_CONFORME : report.verdict);
 
       // 1. Atualiza dados do laudo
       const updatedReport = await prisma.auditReport.update({
@@ -807,7 +812,9 @@ export class ReportController {
       res.status(200).json({
         message: decision === 'APPROVED'
           ? 'Laudo confirmado e homologado com sucesso! E-mail de notificação processado para a clínica.'
-          : `Revisão do auditor registrada com sucesso (${decision}).`,
+          : (decision === 'REJECTED'
+             ? 'Laudo recusado pelo auditor com sucesso. Nenhum e-mail foi disparado para a clínica.'
+             : `Revisão do auditor registrada com sucesso (${decision}).`),
         report: updatedReport,
         emailSent: emailDispatched,
       });

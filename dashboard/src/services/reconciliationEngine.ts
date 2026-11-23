@@ -121,9 +121,15 @@ Audite somente com base nos dispositivos normativos recuperados para esta págin
 Normas ou artigos revogados nunca devem fundamentar uma infração.
 Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da auditoria.`;
       const rawPrompt = agent.systemPrompt?.trim() || defaultPrompt;
+      const normsMarkdown = retrieval.norms.length > 0
+        ? retrieval.norms
+            .map((n) => `[${n.normCode}${n.article ? ` - ${n.article}` : ''}] ${n.title}: ${n.content}${n.severityDefault ? ` (Severidade: ${n.severityDefault})` : ''}`)
+            .join('\n\n')
+        : 'As normas são fornecidas uma única vez na seção "NORMAS RECUPERADAS" do contexto.';
+
       const systemPrompt = rawPrompt.replace(
-        /\{normasVigentesDoEscopo\}/g,
-        'As normas são fornecidas uma única vez na seção "NORMAS RECUPERADAS" do contexto.'
+        /\{normasVigentesDoEscopo\}|\{CONTEUDO_DAS_NORMAS_MD\}/gi,
+        normsMarkdown
       );
 
       return {
@@ -162,10 +168,21 @@ Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da audit
           diagnostics: undefined,
         };
 
+    const rawDefaultPrompt = defaultAgent?.systemPrompt?.trim() ||
+      'Audite somente com base nos dispositivos normativos recuperados para esta página. Na ausência deles, não conclua conformidade.';
+    const defaultNormsMarkdown = retrieval.norms.length > 0
+      ? retrieval.norms
+          .map((n) => `[${n.normCode}${n.article ? ` - ${n.article}` : ''}] ${n.title}: ${n.content}${n.severityDefault ? ` (Severidade: ${n.severityDefault})` : ''}`)
+          .join('\n\n')
+      : 'As normas são fornecidas uma única vez na seção "NORMAS RECUPERADAS" do contexto.';
+    const resolvedDefaultSystemPrompt = rawDefaultPrompt.replace(
+      /\{normasVigentesDoEscopo\}|\{CONTEUDO_DAS_NORMAS_MD\}/gi,
+      defaultNormsMarkdown
+    );
+
     return {
       name: defaultAgent?.name || 'Auditor Deontológico ConformIA',
-      systemPrompt: defaultAgent?.systemPrompt.trim() ||
-        'Audite somente com base nos dispositivos normativos recuperados para esta página. Na ausência deles, não conclua conformidade.',
+      systemPrompt: resolvedDefaultSystemPrompt,
       targetNorms: defaultTags,
       tags: defaultTags,
       activeNorms: toNormChunks(retrieval.norms),

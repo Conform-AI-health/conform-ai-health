@@ -5,6 +5,12 @@ import { ScrapeResult } from '../scraperService.js';
 import { AgentContext, ReconciliationOutput, violationSchema, reconciliationOutputSchema } from '../../shared/reconciliationTypes.js';
 import { IAIProvider, AIProviderHealth, AIProviderType } from './aiProvider.interface.js';
 
+export interface HeuristicFallbackContext {
+  isFallback?: boolean;
+  failedProvider?: string;
+  modelError?: string;
+}
+
 export class HeuristicProvider implements IAIProvider {
   public readonly providerId: AIProviderType = 'heuristic';
   public readonly displayName: string = 'Motor Heurístico Deontológico';
@@ -30,7 +36,8 @@ export class HeuristicProvider implements IAIProvider {
   public executeHeuristic(
     scrape: ScrapeResult,
     customSummaryHeader?: string,
-    agentContext?: AgentContext
+    agentContext?: AgentContext,
+    fallbackContext?: HeuristicFallbackContext
   ): ReconciliationOutput {
     const violations: z.infer<typeof violationSchema>[] = [];
     const textLower = scrape.cleanMarkdown.toLowerCase();
@@ -198,13 +205,36 @@ export class HeuristicProvider implements IAIProvider {
       else if (v.severity === 'LEVE') penalty += 5;
     }
 
-    const score = Math.max(0, 100 - penalty);
-    let verdict: 'CONFORME' | 'PARCIALMENTE_CONFORME' | 'NAO_CONFORME' = 'CONFORME';
-    if (score < 50) verdict = 'NAO_CONFORME';
-    else if (score < 90) verdict = 'PARCIALMENTE_CONFORME';
+    const isFallback = fallbackContext?.isFallback === true;
+    let score = Math.max(0, 100 - penalty);
+    let verdict: 'CONFORME' | 'PARCIALMENTE_CONFORME' | 'NAO_CONFORME' | 'INCONCLUSIVO' = 'CONFORME';
 
-    const header = customSummaryHeader ? `${customSummaryHeader} | ` : '';
-    const summary = `${header}Auditoria deontológica automatizada processou ${activeNorms.length} normas regulatórias ativas vinculadas ao agente. Foram identificadas ${uniqueViolations.length} infrações às diretrizes normativas vigentes.`;
+    if (isFallback) {
+      // Blindagem estrita contra falso "CONFORME":
+      // Quando acionado em regime de contingência por falha da IA, o laudo nunca pode ser aprovado cegamente.
+      if (uniqueViolations.length === 0) {
+        verdict = 'INCONCLUSIVO';
+        score = 50;
+      } else if (score < 50) {
+        verdict = 'NAO_CONFORME';
+      } else {
+        verdict = 'INCONCLUSIVO';
+        score = Math.min(score, 60);
+      }
+    } else {
+      if (score < 50) verdict = 'NAO_CONFORME';
+      else if (score < 90) verdict = 'PARCIALMENTE_CONFORME';
+    }
+
+    let summary = '';
+    if (isFallback) {
+      const providerName = fallbackContext?.failedProvider ? fallbackContext.failedProvider.toUpperCase() : 'IA';
+      const errorDetail = fallbackContext?.modelError ? ` (Erro original: ${fallbackContext.modelError.slice(0, 150)})` : '';
+      summary = `⚠️ [CONTINGÊNCIA HEURÍSTICA] O provedor principal ${providerName} falhou${errorDetail}. O motor heurístico processou ${activeNorms.length} normas e encontrou ${uniqueViolations.length} infrações preliminares. O laudo foi classificado preventivamente como ${verdict} (Score: ${score}) e requer REVISÃO HUMANA OBRIGATÓRIA ou reprocessamento com IA.`;
+    } else {
+      const header = customSummaryHeader ? `${customSummaryHeader} | ` : '';
+      summary = `${header}Auditoria deontológica automatizada processou ${activeNorms.length} normas regulatórias ativas vinculadas ao agente. Foram identificadas ${uniqueViolations.length} infrações às diretrizes normativas vigentes.`;
+    }
 
     const sourcesUsed = activeNorms.map((n) => `${n.normCode} (${n.article}): ${n.title}`);
 
@@ -217,10 +247,12 @@ export class HeuristicProvider implements IAIProvider {
       completionTokens: 0,
       totalTokens: 0,
       sourcesUsed,
-      aiModelUsed: 'heuristic:regex-heuristic-v1',
+      aiModelUsed: isFallback
+        ? `heuristic:fallback-${fallbackContext?.failedProvider || 'error'}`
+        : 'heuristic:regex-heuristic-v1',
       groundingScore: null,
       hallucinationRisk: 'NOT_EVALUATED',
-      guardrailsApplied: false,
+      guardrailsApplied: isFallback,
       hallucinationsInterceptedCount: 0,
     });
   }

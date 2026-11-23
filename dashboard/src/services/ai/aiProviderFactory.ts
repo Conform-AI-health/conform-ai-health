@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { env } from '../../config/env.js';
 import { prisma } from '../../config/prisma.js';
 import { Bulkhead } from '../../shared/bulkhead.js';
@@ -9,12 +10,18 @@ import { GeminiProvider } from './geminiProvider.js';
 import { OllamaProvider } from './ollamaProvider.js';
 import { HeuristicProvider } from './heuristicProvider.js';
 
+function resolveOllamaBaseUrl(configuredUrl?: string | null): string {
+  const url = configuredUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434';
+  const isInsideDocker = fs.existsSync('/.dockerenv');
+  if (isInsideDocker && (url.includes('localhost') || url.includes('127.0.0.1'))) {
+    return url.replace('localhost', 'host.docker.internal').replace('127.0.0.1', 'host.docker.internal');
+  }
+  return url;
+}
+
 export class AIProviderFactory {
   private static providers: Map<AIProviderType, IAIProvider> = new Map();
-  private static activeProviderName: AIProviderType =
-    env.NODE_ENV === 'production' && env.AI_PROVIDER === 'ollama'
-      ? 'gemini'
-      : env.AI_PROVIDER;
+  private static activeProviderName: AIProviderType = env.AI_PROVIDER;
   private static cachedActiveModel: any = null;
   private static cacheTimestamp: number = 0;
 
@@ -86,13 +93,13 @@ export class AIProviderFactory {
         where: { isActive: true },
       });
 
-      if (activeFromDb && !(env.NODE_ENV === 'production' && activeFromDb.provider === 'ollama')) {
+      if (activeFromDb) {
         this.cachedActiveModel = {
           id: activeFromDb.id,
           name: activeFromDb.name,
           provider: activeFromDb.provider as AIProviderType,
           modelId: activeFromDb.modelId,
-          baseUrl: activeFromDb.baseUrl || env.OLLAMA_BASE_URL,
+          baseUrl: resolveOllamaBaseUrl(activeFromDb.baseUrl),
           apiKey: decryptModelApiKey(activeFromDb.apiKey) || env.GEMINI_API_KEY,
           temperature: activeFromDb.temperature ?? 0.2,
           maxTokens: activeFromDb.maxTokens ?? 2048,
@@ -100,9 +107,6 @@ export class AIProviderFactory {
         this.activeProviderName = this.cachedActiveModel.provider;
         this.cacheTimestamp = now;
         return this.cachedActiveModel;
-      }
-      if (activeFromDb?.provider === 'ollama' && env.NODE_ENV === 'production') {
-        console.warn('[AIProviderFactory] Configuração Ollama ignorada em produção; usando o provedor Gemini configurado.');
       }
     } catch {
       // Fallback gracioso
@@ -140,13 +144,35 @@ export class AIProviderFactory {
     const primaryProvider = this.getProvider(activeModel.provider);
 
     return await this.aiBulkhead.execute(async () => {
+      let primaryErrorMsg = '';
+
       // Tentativa 1: Provedor Ativo (Gemini ou Ollama)
       try {
         if (activeModel.provider !== 'heuristic') {
           return await primaryProvider.reconcile(scrape, agentContext, activeModel);
         }
       } catch (err: any) {
-        console.warn(`[AIProviderFactory] Falha no provedor primário ${activeModel.provider}: ${err.message}. Ativando cascata de resiliência...`);
+        primaryErrorMsg = String(err?.message || err);
+        console.warn(`[AIProviderFactory] Falha no provedor primário ${activeModel.provider}: ${primaryErrorMsg}. Ativando cascata de resiliência...`);
+
+        // Registra o erro exato do modelo na telemetria de governança
+        if (prisma.systemLog?.create) {
+          await prisma.systemLog.create({
+            data: {
+              level: 'ERROR',
+              module: 'AI_ENGINE',
+              message: `🚨 [AI_ENGINE] [MODEL_ERROR] Provedor "${activeModel.provider}" (${activeModel.modelId}) falhou: ${primaryErrorMsg.slice(0, 300)}`,
+              details: JSON.stringify({
+                provider: activeModel.provider,
+                modelId: activeModel.modelId,
+                error: primaryErrorMsg,
+                stack: err?.stack,
+                url: scrape.url,
+                timestamp: new Date().toISOString(),
+              }),
+            },
+          }).catch(() => {});
+        }
       }
 
       // Ollama fica disponível como contingência somente em desenvolvimento.
@@ -168,7 +194,7 @@ export class AIProviderFactory {
             name: ollamaDbConfig?.name || 'Ollama Local Fallback',
             provider: 'ollama' as AIProviderType,
             modelId: ollamaDbConfig?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b',
-            baseUrl: ollamaDbConfig?.baseUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434',
+            baseUrl: resolveOllamaBaseUrl(ollamaDbConfig?.baseUrl),
             apiKey: null,
             temperature: ollamaDbConfig?.temperature ?? activeModel.temperature ?? 0.2,
             maxTokens: ollamaDbConfig?.maxTokens ?? activeModel.maxTokens ?? 2048,
@@ -176,16 +202,34 @@ export class AIProviderFactory {
 
           return await ollama.reconcile(scrape, agentContext, ollamaModelConfig);
         } catch (err: any) {
-          console.warn(`[AIProviderFactory] Falha no Ollama Local: ${err.message}. Ativando Heurística...`);
+          const ollamaErrorMsg = String(err?.message || err);
+          console.warn(`[AIProviderFactory] Falha no Ollama Local: ${ollamaErrorMsg}. Ativando Heurística...`);
+
+          await prisma.systemLog.create({
+            data: {
+              level: 'WARN',
+              module: 'AI_ENGINE',
+              message: `⚠️ [AI_ENGINE] [OLLAMA_FALLBACK_FAIL] Contingência local Ollama falhou: ${ollamaErrorMsg.slice(0, 200)}`,
+              details: JSON.stringify({
+                error: ollamaErrorMsg,
+                timestamp: new Date().toISOString(),
+              }),
+            },
+          }).catch(() => {});
         }
       }
 
-      // Tentativa 3: Motor Heurístico Garantido (Sem dependência de rede)
+      // Tentativa 3: Motor Heurístico Blindado de Contingência (Sem dependência de rede)
       const heuristic = this.getProvider('heuristic') as HeuristicProvider;
       return heuristic.executeHeuristic(
         scrape,
-        `Fallback automático ativado: Análise orientada ao agente (${activeModel.name})`,
-        agentContext
+        `Contingência de emergência ativada após falha no modelo ${activeModel.name}`,
+        agentContext,
+        {
+          isFallback: Boolean(primaryErrorMsg),
+          failedProvider: activeModel.provider,
+          modelError: primaryErrorMsg,
+        }
       );
     });
   }

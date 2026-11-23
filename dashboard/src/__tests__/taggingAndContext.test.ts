@@ -50,6 +50,27 @@ describe('Auto-Tagging Regulatória & Proteção de Segurança', () => {
     expect(multiTags).toEqual(expect.arrayContaining(['CFM', 'LGPD', 'ANVISA', 'ANS']));
   });
 
+  it('deve extrair tags granulares de especialidade (Dermatologia) e gatilhos de transformação e publicidade', () => {
+    const pageHtml = `
+      <h1>Clínica de Dermatologia Dra. Maria</h1>
+      <p>Veja as fotos de antes e depois e a transformação de nossas pacientes.</p>
+      <p>Resultado 100% garantido e promoção com 20% de desconto.</p>
+      <p>CRM/SP 123456 | RQE 65432</p>
+    `;
+    const tags = ScraperService.detectRegulatoryTags(pageHtml, pageHtml);
+    expect(tags).toContain('CFM');
+    expect(tags).toContain('PUBLICIDADE');
+    expect(tags).toContain('DERMATOLOGIA');
+    expect(tags).toContain('TRANSFORMAÇÃO');
+    expect(tags).toContain('ANTES E DEPOIS');
+    expect(tags).toContain('GARANTIDO');
+    expect(tags).toContain('PROMESSA');
+    expect(tags).toContain('PROMOÇÃO');
+    expect(tags).toContain('DESCONTO');
+    expect(tags).toContain('CRM');
+    expect(tags).toContain('RQE');
+  });
+
   it('deve bloquear URLs maliciosas contra ataques SSRF', () => {
     // Localhost / Loopback
     expect(validateSafeUrl('http://localhost:3000').safe).toBe(false);

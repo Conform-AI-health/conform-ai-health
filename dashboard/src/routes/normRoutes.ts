@@ -18,6 +18,7 @@ router.post('/search', NormController.searchNormsVector);
 
 // Base de Normas e Chunks do MongoDB Atlas (Coleções 'norms' e 'norms_chunk')
 router.get('/', NormController.listNorms);
+router.get('/tags', NormController.listDistinctTags);
 router.get('/:normId', NormController.getNormById);
 router.get('/:normId/chunks', NormController.getNormChunks);
 

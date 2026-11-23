@@ -689,7 +689,13 @@ export class ScraperService {
     $('a[href*="/web/dou/-/"], a[href*="/en/web/dou/-/"]').each((_, el) => {
       const href = $(el).attr('href') || '';
       const text = $(el).text().trim();
-      if (href && text && !href.includes('#') && !href.startsWith('javascript:')) {
+      if (
+        href &&
+        text &&
+        !href.includes('#') &&
+        !href.startsWith('javascript:') &&
+        !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(href)
+      ) {
         const full = href.startsWith('http') ? href : `https://www.in.gov.br${href.startsWith('/') ? '' : '/'}${href}`;
         if (!discoveredLinks.some((d) => d.url === full)) {
           discoveredLinks.push({ url: full, title: text });
@@ -701,7 +707,12 @@ export class ScraperService {
     const paginationHrefs: string[] = [];
     $('a[href*="pagina="], a[href*="page="], ul.pagination a, .pagination a').each((_, el) => {
       const h = $(el).attr('href') || '';
-      if (h && !h.startsWith('#') && !h.startsWith('javascript:')) {
+      if (
+        h &&
+        !h.startsWith('#') &&
+        !h.startsWith('javascript:') &&
+        !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(h)
+      ) {
         const full = h.startsWith('http') ? h : `https://www.in.gov.br${h.startsWith('/') ? '' : '/'}${h}`;
         if (full !== targetUrl && !paginationHrefs.includes(full)) {
           paginationHrefs.push(full);
@@ -778,7 +789,12 @@ export class ScraperService {
     $('a').each((_, el) => {
       const href = $(el).attr('href') || '';
       const text = $(el).text().trim();
-      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+      if (
+        href &&
+        !href.startsWith('#') &&
+        !href.startsWith('javascript:') &&
+        !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(href)
+      ) {
         const absoluteUrl = href.startsWith('http') ? href : `${origin}${href.startsWith('/') ? '' : '/'}${href}`;
         if (
           docLinkRegex.test(absoluteUrl) &&
@@ -795,7 +811,12 @@ export class ScraperService {
     const paginationLinks: string[] = [];
     $('a[href*="page="], a[href*="pagina="], a[href*="p="], ul.pagination a, .pagination a, nav.submenu a, .sub-menu a').each((_, el) => {
       const href = $(el).attr('href') || '';
-      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+      if (
+        href &&
+        !href.startsWith('#') &&
+        !href.startsWith('javascript:') &&
+        !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(href)
+      ) {
         const absoluteUrl = href.startsWith('http') ? href : `${origin}${href.startsWith('/') ? '' : '/'}${href}`;
         if (absoluteUrl !== targetUrl && !paginationLinks.includes(absoluteUrl)) {
           paginationLinks.push(absoluteUrl);
@@ -814,7 +835,12 @@ export class ScraperService {
           pg$('a').each((_, el) => {
             const h = pg$(el).attr('href') || '';
             const t = pg$(el).text().trim();
-            if (h && !h.startsWith('#') && !h.startsWith('javascript:')) {
+            if (
+              h &&
+              !h.startsWith('#') &&
+              !h.startsWith('javascript:') &&
+              !/\.(?:css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|map)($|\?|#)/i.test(h)
+            ) {
               const abs = h.startsWith('http') ? h : `${origin}${h.startsWith('/') ? '' : '/'}${h}`;
               if (
                 docLinkRegex.test(abs) &&
@@ -1396,6 +1422,110 @@ export class ScraperService {
       tags.push('TELEMEDICINA');
     }
 
+    // --- 2. ESPECIALIDADES MÉDICAS GRANULARES (ALINHADAS COM O CATÁLOGO E NORMAS) ---
+    if (textLower.includes('dermatolog')) {
+      tags.push('DERMATOLOGIA');
+    }
+    if (textLower.includes('cirurgi')) {
+      tags.push('CIRURGIA');
+    }
+    if (textLower.includes('pediatr')) {
+      tags.push('PEDIATRIA');
+    }
+    if (textLower.includes('cardiolog')) {
+      tags.push('CARDIOLOGIA');
+    }
+    if (textLower.includes('oftalmolog')) {
+      tags.push('OFTALMOLOGIA');
+    }
+    if (textLower.includes('ortoped')) {
+      tags.push('ORTOPEDIA');
+    }
+    if (textLower.includes('ginecolog') || textLower.includes('obstetr')) {
+      tags.push('GINECOLOGIA');
+    }
+    if (textLower.includes('psiquiatr')) {
+      tags.push('PSIQUIATRIA');
+    }
+
+    // --- 3. GATILHOS DEONTOLÓGICOS DE PUBLICIDADE, IMAGEM E PROMESSA DE RESULTADO ---
+    if (
+      textLower.includes('transformação') ||
+      textLower.includes('transformacao') ||
+      textLower.includes('transforme seu')
+    ) {
+      tags.push('TRANSFORMAÇÃO');
+    }
+    if (
+      textLower.includes('antes e depois') ||
+      textLower.includes('antes/depois') ||
+      textLower.includes('before and after')
+    ) {
+      tags.push('ANTES E DEPOIS');
+    }
+    if (textLower.includes('fotos comparativas') || textLower.includes('foto comparativa')) {
+      tags.push('FOTOS COMPARATIVAS');
+    }
+    if (
+      textLower.includes('resultado garantido') ||
+      textLower.includes('100% garantido') ||
+      textLower.includes('garantia de resultado')
+    ) {
+      tags.push('GARANTIDO');
+      tags.push('PROMESSA');
+    }
+    if (textLower.includes('cura definitiva')) {
+      tags.push('CURA DEFINITIVA');
+      tags.push('PROMESSA');
+    }
+    if (textLower.includes('o melhor médico') || textLower.includes('o melhor') || textLower.includes('a melhor clínica')) {
+      tags.push('O MELHOR');
+    }
+    if (textLower.includes('infalível') || textLower.includes('infalivel')) {
+      tags.push('INFALÍVEL');
+      tags.push('PROMESSA');
+    }
+
+    // --- 4. GATILHOS DE MERCANTILIZAÇÃO, PREÇO E PROMOÇÃO ---
+    if (textLower.includes('promoção') || textLower.includes('promocao')) {
+      tags.push('PROMOÇÃO');
+    }
+    if (textLower.includes('desconto')) {
+      tags.push('DESCONTO');
+    }
+    if (textLower.includes('black friday')) {
+      tags.push('BLACK FRIDAY');
+    }
+    if (textLower.includes('sorteio')) {
+      tags.push('SORTEIO');
+    }
+    if (textLower.includes('consórcio') || textLower.includes('consorcio')) {
+      tags.push('CONSÓRCIO');
+    }
+    if (textLower.includes('cupom')) {
+      tags.push('CUPOM');
+    }
+    if (textLower.includes('combo')) {
+      tags.push('COMBO');
+    }
+
+    // --- 5. IDENTIFICAÇÃO E QUALIFICAÇÃO PROFISSIONAL ---
+    if (/\brqe\b/i.test(textLower) || textLower.includes('registro de qualificação')) {
+      tags.push('RQE');
+      tags.push('ESPECIALIDADE');
+    }
+    if (/\bcrm\b/i.test(textLower)) {
+      tags.push('CRM');
+    }
+
+    // --- 6. PRODUTOS E PROCEDIMENTOS REGULADOS ---
+    if (textLower.includes('botox') || textLower.includes('toxina botulínica')) {
+      tags.push('BOTOX');
+    }
+    if (textLower.includes('ácido hialurônico') || textLower.includes('acido hialuronico')) {
+      tags.push('ÁCIDO HIALURÔNICO');
+    }
+
     // Marque somente quando a própria norma estiver explicitamente revogada.
     if (isExplicitlyRevokedNormShared(cleanMarkdown, rawHtml)) {
       tags.push('REVOGADO');
@@ -1407,6 +1537,6 @@ export class ScraperService {
       tags.push('CFM');
     }
 
-    return tags;
+    return Array.from(new Set(tags));
   }
 }

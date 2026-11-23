@@ -10,7 +10,7 @@ import { env } from '../config/env.js';
 const crawlInputSchema = z.object({
   url: z.string().url('URL inválida'),
   maxDepth: z.number().int().min(0).max(4).optional(),
-  maxPages: z.number().int().min(1).max(500).optional(),
+  maxPages: z.number().int().min(1).max(50000).optional(),
   tags: z.array(z.string()).optional(),
   allowedDomains: z.array(z.string()).optional(),
   force: z.boolean().optional(),
@@ -103,6 +103,58 @@ export class NormController {
   }
 
   /**
+   * Retorna todas as tags distintas presentes nos documentos da coleção 'norms', com respectiva contagem
+   */
+  public static async listDistinctTags(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      // 1. Tenta agregação nativa do MongoDB para contagem e agrupamento de tags distintas
+      let tags: Array<{ tag: string; count: number }> = [];
+      try {
+        const results = (await prisma.norm.aggregateRaw({
+          pipeline: [
+            { $unwind: '$tags' },
+            { $group: { _id: '$tags', count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+          ],
+        })) as unknown as Array<{ _id: string; count: number }>;
+
+        if (Array.isArray(results) && results.length > 0) {
+          tags = results
+            .map((item) => ({
+              tag: typeof item._id === 'string' ? item._id.trim() : String(item._id || '').trim(),
+              count: typeof item.count === 'number' ? item.count : 1,
+            }))
+            .filter((item) => item.tag.length > 0);
+        }
+      } catch (aggErr) {
+        // Fallback seguro usando findMany caso o driver não autorize aggregateRaw
+        const normsWithTags = await prisma.norm.findMany({
+          select: { tags: true },
+        });
+        const counts = new Map<string, number>();
+        for (const n of normsWithTags) {
+          if (Array.isArray(n.tags)) {
+            for (const t of n.tags) {
+              const clean = typeof t === 'string' ? t.trim() : '';
+              if (clean) counts.set(clean, (counts.get(clean) || 0) + 1);
+            }
+          }
+        }
+        tags = Array.from(counts.entries())
+          .map(([tag, count]) => ({ tag, count }))
+          .sort((a, b) => b.count - a.count);
+      }
+
+      res.status(200).json({
+        total: tags.length,
+        tags,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Listagem paginada da coleção mestre 'norms' com filtros dinâmicos
    */
   public static async listNorms(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -113,6 +165,7 @@ export class NormController {
       const status = (req.query.status as string)?.trim();
       const ano = (req.query.ano as string)?.trim();
       const tag = (req.query.tag as string)?.trim();
+      const hasEmbeddingsParam = (req.query.hasEmbeddings as string)?.trim().toLowerCase();
       const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 10));
 
@@ -122,7 +175,15 @@ export class NormController {
       if (tipo) where.tipo = { equals: tipo, mode: 'insensitive' };
       if (status) where.status = { equals: status, mode: 'insensitive' };
       if (ano) where.ano = ano;
-      if (tag) where.tags = { has: tag };
+      if (tag) {
+        where.tags = { hasSome: [tag, tag.toUpperCase(), tag.toLowerCase()] };
+      }
+
+      if (hasEmbeddingsParam === 'true') {
+        where.tags = where.tags ? { ...where.tags, has: 'RAG_READY' } : { has: 'RAG_READY' };
+      } else if (hasEmbeddingsParam === 'false') {
+        where.NOT = { tags: { has: 'RAG_READY' } };
+      }
 
       if (search) {
         where.OR = [
@@ -162,8 +223,57 @@ export class NormController {
         }),
       ]);
 
+      // Enriquecimento com verificação física de chunks e embeddings para cada norma
+      const normIds = norms.map((n) => n.id);
+      const chunks = normIds.length > 0
+        ? await prisma.normChunk.findMany({
+            where: { normId: { in: normIds } },
+            select: {
+              id: true,
+              normId: true,
+              embedding: true,
+              contextoSemantico: true,
+            },
+          })
+        : [];
+
+      const statsByNormId = new Map<string, { total: number; indexed: number }>();
+      for (const chunk of chunks) {
+        const stats = statsByNormId.get(chunk.normId) || { total: 0, indexed: 0 };
+        stats.total += 1;
+        const hasVector = Array.isArray(chunk.embedding) && chunk.embedding.length > 0;
+        if (hasVector) {
+          stats.indexed += 1;
+        }
+        statsByNormId.set(chunk.normId, stats);
+      }
+
+      const enrichedNorms = norms.map((norm) => {
+        const stats = statsByNormId.get(norm.id) || {
+          total: norm.totalChunks || 0,
+          indexed: norm.tags?.includes('RAG_READY') ? norm.totalChunks || 0 : 0,
+        };
+        const totalChunks = Math.max(norm.totalChunks || 0, stats.total);
+        const indexedChunks = stats.indexed;
+        const hasEmbeddings = indexedChunks > 0 || (norm.tags?.includes('RAG_READY') && totalChunks > 0);
+        const embeddingStatus =
+          (totalChunks > 0 && indexedChunks >= totalChunks) || (norm.tags?.includes('RAG_READY') && indexedChunks > 0)
+            ? 'FULL'
+            : indexedChunks > 0
+            ? 'PARTIAL'
+            : 'NONE';
+
+        return {
+          ...norm,
+          totalChunks,
+          indexedChunks,
+          hasEmbeddings,
+          embeddingStatus,
+        };
+      });
+
       res.status(200).json({
-        data: norms,
+        data: enrichedNorms,
         pagination: {
           total,
           page,

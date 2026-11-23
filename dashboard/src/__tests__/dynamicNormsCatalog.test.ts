@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NormsResolver } from '../services/normsResolver.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
+import { SemanticEmbeddingService } from '../services/semanticEmbeddingService.js';
 import { prisma } from '../config/prisma.js';
 import { NORMS_CATALOG } from '../data/normsCatalog.js';
 
@@ -8,6 +9,9 @@ import { NORMS_CATALOG } from '../data/normsCatalog.js';
 vi.mock('../config/prisma.js', () => ({
   prisma: {
     norm: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    normChunk: {
       findMany: vi.fn().mockResolvedValue([]),
     },
     agentModule: {
@@ -19,6 +23,18 @@ vi.mock('../config/prisma.js', () => ({
     aiModelConfig: {
       findFirst: vi.fn(),
     },
+  },
+}));
+
+vi.mock('../services/semanticEmbeddingService.js', () => ({
+  cosineSimilarity: vi.fn(() => 0.95),
+  SemanticEmbeddingService: {
+    modelName: 'gemini-embedding-001',
+    vectorDimensions: 768,
+    embeddingModelId: 'gemini-embedding-001:768',
+    embedQuery: vi.fn(async () => new Array(768).fill(0.1)),
+    embedDocuments: vi.fn(async (texts: string[]) => texts.map(() => new Array(768).fill(0.1))),
+    resetCircuitBreaker: vi.fn(),
   },
 }));
 
@@ -99,6 +115,52 @@ describe('Desacoplamento Normativo Dinâmico & Catálogo Ativo', () => {
       expect(context.systemPrompt).toContain('NORMAS RECUPERADAS');
       expect(context.activeNorms).toEqual([]);
       expect(context.retrievalStatus).toBe('NO_QUERY');
+    });
+
+    it('deve substituir {CONTEUDO_DAS_NORMAS_MD} pelos chunks normativos quando houver normas recuperadas', async () => {
+      vi.mocked(prisma.norm.findMany).mockResolvedValueOnce([
+        {
+          id: 'norm-cfm-2336',
+          normId: 'CFM-RES-2336-2023',
+          tipo: 'RESOLUCAO',
+          numero: '2336',
+          ano: '2023',
+          status: 'VIGENTE',
+          ementaHigienizada: 'Publicidade médica e redes sociais.',
+          tags: ['CFM', 'PUBLICIDADE'],
+        } as any,
+      ]);
+
+      vi.mocked(prisma.normChunk.findMany).mockResolvedValueOnce([
+        {
+          id: 'c1',
+          normId: 'norm-cfm-2336',
+          normCode: 'CFM-RES-2336-2023',
+          chunkIndex: 1,
+          conteudoChunk: 'Art. 9º É vedado publicar fotos de antes e depois.',
+          contextoSemantico: JSON.stringify({
+            heading_context: 'Art. 9º',
+            embedding_model: SemanticEmbeddingService.embeddingModelId,
+          }),
+          embedding: new Array(768).fill(0.1),
+          tags: ['CFM', 'PUBLICIDADE'],
+        } as any,
+      ]);
+
+      vi.mocked(prisma.agentModule.findFirst).mockResolvedValueOnce({
+        id: 'agent-dermatologico',
+        name: 'Dermatológico',
+        code: 'dermatologico',
+        tags: ['CFM', 'PUBLICIDADE'],
+        regulatoryFramework: 'Deontologia CFM',
+        systemPrompt: 'Base de Conhecimento Oficial:\n{CONTEUDO_DAS_NORMAS_MD}\nDiretrizes de Análise.',
+      } as any);
+
+      const context = await ReconciliationEngine.resolveAgentContext('agent-dermatologico', 'fotos de antes e depois');
+      expect(context.systemPrompt).not.toContain('{CONTEUDO_DAS_NORMAS_MD}');
+      expect(context.systemPrompt).toContain('Res. CFM 2.336/23');
+      expect(context.systemPrompt).toContain('Artigo 14');
+      expect(context.systemPrompt).toContain('Antes e Depois');
     });
 
     it('não deve anexar normas quando o agente não tiver consultado uma página', async () => {

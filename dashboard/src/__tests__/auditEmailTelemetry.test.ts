@@ -445,6 +445,70 @@ describe('📧 Notificações por E-mail & Registro de Falhas na Telemetria (Aud
         })
       );
     });
+
+    it('ReportController.confirmAndSendEmail: quando auditor RECUSA o laudo, deve registrar decisão REJECTED e NÃO enviar e-mail', async () => {
+      (prisma.auditReport.findUnique as any).mockResolvedValue({
+        id: 'rep-reject-1',
+        targetUrl: 'https://clinicarecusada.med.br',
+        score: 85,
+        verdict: 'CONFORME',
+        summary: 'Resumo preliminar',
+        violations: [],
+        client: {
+          name: 'Clínica Recusada',
+          email: 'contato@clinicarecusada.med.br',
+          users: [{ email: 'medico@clinicarecusada.med.br' }],
+        },
+      });
+
+      (prisma.auditReport.update as any).mockResolvedValue({
+        id: 'rep-reject-1',
+        reviewStatus: 'REJECTED',
+        verdict: 'NAO_CONFORME',
+        auditorReviewed: true,
+      });
+
+      const sendEmailSpy = vi.spyOn(EmailService, 'sendAuditReportCompletedEmail');
+
+      const req: any = {
+        params: { id: 'rep-reject-1' },
+        body: {
+          confirmed: true,
+          decision: 'REJECTED',
+          notes: 'Dados do site inconsistentes. Reauditoria necessária.',
+        },
+        user: { role: 'AUDITOR', email: 'auditor@conformia.med.br' },
+      };
+      const res: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await ReportController.confirmAndSendEmail(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(sendEmailSpy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Laudo recusado pelo auditor com sucesso'),
+          emailSent: false,
+        })
+      );
+
+      // Valida chamada de update com status REJECTED e veredito atualizado
+      expect(prisma.auditReport.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'rep-reject-1' },
+          data: expect.objectContaining({
+            reviewStatus: 'REJECTED',
+            auditorReviewed: true,
+            verdict: 'NAO_CONFORME',
+            auditorNotes: 'Dados do site inconsistentes. Reauditoria necessária.',
+          }),
+        })
+      );
+    });
   });
 
   describe('4. Endpoint ReportController.notifyClient (Reenvio Manual & Telemetria)', () => {

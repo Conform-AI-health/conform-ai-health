@@ -51,9 +51,10 @@ export class GeminiProvider implements IAIProvider {
         .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
         .join('\n');
 
-      const resolvedSystemPrompt = agentContext.systemPrompt.includes('{normasVigentesDoEscopo}')
-        ? agentContext.systemPrompt.replace(/\{normasVigentesDoEscopo\}/g, relevantNorms)
-        : agentContext.systemPrompt;
+      const resolvedSystemPrompt = agentContext.systemPrompt.replace(
+        /\{normasVigentesDoEscopo\}|\{CONTEUDO_DAS_NORMAS_MD\}/gi,
+        relevantNorms
+      );
 
       const systemInstruction = `${resolvedSystemPrompt}\n\n${groundingInstructions}`;
 
@@ -93,14 +94,41 @@ Retorne o resultado estritamente em formato JSON estruturado conforme o seguinte
 }
 `;
 
-      const response = await ai.models.generateContent({
-        model: modelId,
-        contents: prompt,
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-        },
-      });
+      let response: any;
+      const maxRetries = 3;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          response = await ai.models.generateContent({
+            model: modelId,
+            contents: prompt,
+            config: {
+              systemInstruction,
+              responseMimeType: 'application/json',
+            },
+          });
+          break;
+        } catch (err: any) {
+          const errMsg = String(err?.message || err);
+          const isTransient =
+            errMsg.includes('503') ||
+            errMsg.includes('UNAVAILABLE') ||
+            errMsg.includes('high demand') ||
+            errMsg.includes('429') ||
+            errMsg.includes('RESOURCE_EXHAUSTED') ||
+            errMsg.includes('timeout') ||
+            errMsg.includes('ECONNRESET');
+
+          if (isTransient && attempt < maxRetries) {
+            const backoffMs = attempt * 2000;
+            console.warn(`⏳ [GeminiProvider] Erro transitório na API (${errMsg.slice(0, 120)}...). Tentativa ${attempt}/${maxRetries}. Aguardando ${backoffMs}ms para retry...`);
+            await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          } else {
+            console.error(`❌ [GeminiProvider] Falha definitiva após ${attempt} tentativa(s): ${errMsg}`);
+            throw err;
+          }
+        }
+      }
 
       let responseText = response.text || '{}';
       if (responseText.includes('```')) {
