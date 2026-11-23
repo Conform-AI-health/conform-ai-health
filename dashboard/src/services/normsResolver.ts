@@ -200,7 +200,6 @@ export class NormsResolver {
       const normById = new Map(dbNorms.map((norm) => [norm.id, norm]));
       const chunks = await prisma.normChunk.findMany({
         where: { normId: { in: dbNorms.map((norm) => norm.id) } },
-        orderBy: [{ normId: 'asc' }, { chunkIndex: 'asc' }],
         take: maxCandidateChunks,
         select: {
           id: true,
