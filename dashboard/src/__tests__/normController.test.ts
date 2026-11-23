@@ -30,6 +30,10 @@ describe('NormController - Gestão e Auditoria das Coleções norms e norms_chun
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(prisma.normChunk.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.normChunk.count).mockResolvedValue(0);
+    vi.mocked(prisma.norm.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.norm.count).mockResolvedValue(0);
     req = {
       query: {},
       params: {},
