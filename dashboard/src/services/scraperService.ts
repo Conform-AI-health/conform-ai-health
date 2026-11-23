@@ -1422,6 +1422,110 @@ export class ScraperService {
       tags.push('TELEMEDICINA');
     }
 
+    // --- 2. ESPECIALIDADES MÉDICAS GRANULARES (ALINHADAS COM O CATÁLOGO E NORMAS) ---
+    if (textLower.includes('dermatolog')) {
+      tags.push('DERMATOLOGIA');
+    }
+    if (textLower.includes('cirurgi')) {
+      tags.push('CIRURGIA');
+    }
+    if (textLower.includes('pediatr')) {
+      tags.push('PEDIATRIA');
+    }
+    if (textLower.includes('cardiolog')) {
+      tags.push('CARDIOLOGIA');
+    }
+    if (textLower.includes('oftalmolog')) {
+      tags.push('OFTALMOLOGIA');
+    }
+    if (textLower.includes('ortoped')) {
+      tags.push('ORTOPEDIA');
+    }
+    if (textLower.includes('ginecolog') || textLower.includes('obstetr')) {
+      tags.push('GINECOLOGIA');
+    }
+    if (textLower.includes('psiquiatr')) {
+      tags.push('PSIQUIATRIA');
+    }
+
+    // --- 3. GATILHOS DEONTOLÓGICOS DE PUBLICIDADE, IMAGEM E PROMESSA DE RESULTADO ---
+    if (
+      textLower.includes('transformação') ||
+      textLower.includes('transformacao') ||
+      textLower.includes('transforme seu')
+    ) {
+      tags.push('TRANSFORMAÇÃO');
+    }
+    if (
+      textLower.includes('antes e depois') ||
+      textLower.includes('antes/depois') ||
+      textLower.includes('before and after')
+    ) {
+      tags.push('ANTES E DEPOIS');
+    }
+    if (textLower.includes('fotos comparativas') || textLower.includes('foto comparativa')) {
+      tags.push('FOTOS COMPARATIVAS');
+    }
+    if (
+      textLower.includes('resultado garantido') ||
+      textLower.includes('100% garantido') ||
+      textLower.includes('garantia de resultado')
+    ) {
+      tags.push('GARANTIDO');
+      tags.push('PROMESSA');
+    }
+    if (textLower.includes('cura definitiva')) {
+      tags.push('CURA DEFINITIVA');
+      tags.push('PROMESSA');
+    }
+    if (textLower.includes('o melhor médico') || textLower.includes('o melhor') || textLower.includes('a melhor clínica')) {
+      tags.push('O MELHOR');
+    }
+    if (textLower.includes('infalível') || textLower.includes('infalivel')) {
+      tags.push('INFALÍVEL');
+      tags.push('PROMESSA');
+    }
+
+    // --- 4. GATILHOS DE MERCANTILIZAÇÃO, PREÇO E PROMOÇÃO ---
+    if (textLower.includes('promoção') || textLower.includes('promocao')) {
+      tags.push('PROMOÇÃO');
+    }
+    if (textLower.includes('desconto')) {
+      tags.push('DESCONTO');
+    }
+    if (textLower.includes('black friday')) {
+      tags.push('BLACK FRIDAY');
+    }
+    if (textLower.includes('sorteio')) {
+      tags.push('SORTEIO');
+    }
+    if (textLower.includes('consórcio') || textLower.includes('consorcio')) {
+      tags.push('CONSÓRCIO');
+    }
+    if (textLower.includes('cupom')) {
+      tags.push('CUPOM');
+    }
+    if (textLower.includes('combo')) {
+      tags.push('COMBO');
+    }
+
+    // --- 5. IDENTIFICAÇÃO E QUALIFICAÇÃO PROFISSIONAL ---
+    if (/\brqe\b/i.test(textLower) || textLower.includes('registro de qualificação')) {
+      tags.push('RQE');
+      tags.push('ESPECIALIDADE');
+    }
+    if (/\bcrm\b/i.test(textLower)) {
+      tags.push('CRM');
+    }
+
+    // --- 6. PRODUTOS E PROCEDIMENTOS REGULADOS ---
+    if (textLower.includes('botox') || textLower.includes('toxina botulínica')) {
+      tags.push('BOTOX');
+    }
+    if (textLower.includes('ácido hialurônico') || textLower.includes('acido hialuronico')) {
+      tags.push('ÁCIDO HIALURÔNICO');
+    }
+
     // Marque somente quando a própria norma estiver explicitamente revogada.
     if (isExplicitlyRevokedNormShared(cleanMarkdown, rawHtml)) {
       tags.push('REVOGADO');
@@ -1433,6 +1537,6 @@ export class ScraperService {
       tags.push('CFM');
     }
 
-    return tags;
+    return Array.from(new Set(tags));
   }
 }

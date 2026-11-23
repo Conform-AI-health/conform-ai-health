@@ -21,7 +21,7 @@ router.use(authenticate);
 
 // Ingestão e exclusão de normas restritas a Administradores e Auditores (SEC-03)
 router.post('/scrape', authorize(Role.ADMIN, Role.AUDITOR), scrapingLimiter, ScrapedPageController.scrapeAndIndex);
-router.post('/upload', authorize(Role.ADMIN, Role.AUDITOR), express.json({ limit: '20mb' }), scrapingLimiter, ScrapedPageController.uploadAndIndex);
+router.post('/upload', authorize(Role.ADMIN, Role.AUDITOR), express.json({ limit: '50mb' }), scrapingLimiter, ScrapedPageController.uploadAndIndex);
 router.delete('/:id', authorize(Role.ADMIN, Role.AUDITOR), ScrapedPageController.delete);
 
 // Leitura de catálogo regulatório liberada para usuários autorizados
