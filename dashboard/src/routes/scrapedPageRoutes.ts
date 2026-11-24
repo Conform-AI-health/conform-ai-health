@@ -1,7 +1,7 @@
 import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { ScrapedPageController } from '../controllers/scrapedPageController.js';
-import { authenticate, authorize, Role } from '../middlewares/auth.js';
+import { authenticate, requireLinkedClient, authorize, Role } from '../middlewares/auth.js';
 
 const scrapingLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -18,6 +18,7 @@ const router = Router();
 
 // Todas as rotas exigem usuário autenticado
 router.use(authenticate);
+router.use(requireLinkedClient);
 
 // Ingestão e exclusão de normas restritas a Administradores e Auditores (SEC-03)
 router.post('/scrape', authorize(Role.ADMIN, Role.AUDITOR), scrapingLimiter, ScrapedPageController.scrapeAndIndex);

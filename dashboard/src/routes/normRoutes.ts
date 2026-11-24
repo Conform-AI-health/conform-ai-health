@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { NormController } from '../controllers/normController.js';
-import { authenticate, authorize, Role } from '../middlewares/auth.js';
+import { authenticate, requireLinkedClient, authorize, Role } from '../middlewares/auth.js';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(requireLinkedClient);
 
 // Catálogo e estatísticas
 router.get('/catalog', NormController.listCatalog);
