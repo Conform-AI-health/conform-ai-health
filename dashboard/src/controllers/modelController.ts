@@ -9,7 +9,7 @@ import { encryptModelApiKey, maskApiKey } from '../shared/encryption.js';
 const createModelSchema = z.object({
   name: z.string().min(2, 'Nome do modelo é obrigatório'),
   provider: z.enum(['gemini', 'ollama', 'heuristic'], {
-    errorMap: () => ({ message: 'Provedor deve ser gemini, ollama ou heuristic' }),
+    error: () => 'Provedor deve ser gemini, ollama ou heuristic',
   }),
   modelId: z.string().min(2, 'Identificador técnico do modelo é obrigatório (ex: gemini-2.0-flash, qwen2.5:7b)'),
   baseUrl: z.string().optional().nullable().or(z.literal('')),

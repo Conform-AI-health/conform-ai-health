@@ -18,6 +18,11 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
+  },
+  "overrides": {
+    "zod": "^4.6.7",
+    "gaxios": {
+      "uuid": "^11.1.1"
+    }
   }
 }
-

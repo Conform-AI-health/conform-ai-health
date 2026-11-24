@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { AgentController } from '../controllers/agentController.js';
-import { authenticate, authorize, Role } from '../middlewares/auth.js';
+import { authenticate, requireLinkedClient, authorize, Role } from '../middlewares/auth.js';
 
 const runAuditLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -17,6 +17,7 @@ const runAuditLimiter = rateLimit({
 const router = Router();
 
 router.use(authenticate);
+router.use(requireLinkedClient);
 
 router.get('/', AgentController.listModules);
 router.get('/:id', AgentController.getModuleById);

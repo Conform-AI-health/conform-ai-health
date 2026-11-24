@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { ReportController } from '../controllers/reportController.js';
-import { authenticate, authorize, Role } from '../middlewares/auth.js';
+import { authenticate, requireLinkedClient, authorize, Role } from '../middlewares/auth.js';
 
 const router = Router();
 
 // Todas as rotas de relatórios requerem usuário autenticado
 router.use(authenticate);
+router.use(requireLinkedClient);
 
 router.get('/', ReportController.list);
 router.get('/pending-review', authorize(Role.ADMIN, Role.AUDITOR), ReportController.getPendingReview);

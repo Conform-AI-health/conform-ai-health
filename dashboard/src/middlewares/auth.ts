@@ -81,6 +81,22 @@ export function authorize(...allowedRoles: Role[]) {
 }
 
 /**
+ * Bloqueia usuários CLIENT sem clínica vinculada (ex.: contas criadas pelo cadastro público)
+ * de acessarem recursos de negócio até que um ADMIN/AUDITOR vincule a conta a uma clínica.
+ */
+export function requireLinkedClient(req: Request, res: Response, next: NextFunction): void {
+  if (req.user?.role === Role.CLIENT && !req.user.clientId) {
+    res.status(403).json({
+      error: 'Acesso negado. Usuário do perfil CLIENT sem clínica vinculada.',
+      code: 'CLIENT_NOT_LINKED',
+    });
+    return;
+  }
+
+  next();
+}
+
+/**
  * Middleware de isolamento multi-tenant:
  * Se o usuário for CLIENT, garante que ele só pode acessar os dados do seu próprio clientId
  */

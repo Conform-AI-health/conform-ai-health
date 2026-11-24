@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { ClientController } from '../controllers/clientController.js';
-import { authenticate, authorize, enforceTenantIsolation, Role } from '../middlewares/auth.js';
+import { authenticate, requireLinkedClient, authorize, enforceTenantIsolation, Role } from '../middlewares/auth.js';
 
 const router = Router();
 
 // Todas as rotas de cliente exigem autenticação
 router.use(authenticate);
+router.use(requireLinkedClient);
 
 // Portal do cliente (própria clínica)
 router.get('/portal/me', authorize(Role.CLIENT), ClientController.portalMe);
