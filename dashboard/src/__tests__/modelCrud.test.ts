@@ -66,6 +66,7 @@ vi.mock('../config/redis.js', () => ({
 }));
 
 import { createApp } from '../app.js';
+import { prisma } from '../config/prisma.js';
 
 describe('CRUD de Modelos de Inteligência Artificial no MongoDB', () => {
   const app = createApp();
@@ -138,5 +139,18 @@ describe('CRUD de Modelos de Inteligência Artificial no MongoDB', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('ACTIVE_MODEL_CANNOT_BE_DELETED');
+  });
+
+  it('PUT /api/v1/models/:id parcial não deve sobrescrever configurações salvas com defaults', async () => {
+    vi.mocked(prisma.aiModelConfig.update).mockClear();
+
+    const res = await request(app)
+      .put('/api/v1/models/model-1')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Gemini 2.0 Flash (renomeado)' });
+
+    expect(res.status).toBe(200);
+    const { data } = vi.mocked(prisma.aiModelConfig.update).mock.calls[0][0] as any;
+    expect(data).toEqual({ name: 'Gemini 2.0 Flash (renomeado)' });
   });
 });

@@ -6,7 +6,7 @@ import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { validateSafeUrlAsync, isAllowedLocalhostBaseUrl } from '../shared/security.js';
 import { encryptModelApiKey, maskApiKey } from '../shared/encryption.js';
 
-const createModelSchema = z.object({
+const modelFieldsSchema = z.object({
   name: z.string().min(2, 'Nome do modelo é obrigatório'),
   provider: z.enum(['gemini', 'ollama', 'heuristic'], {
     error: () => 'Provedor deve ser gemini, ollama ou heuristic',
@@ -14,14 +14,22 @@ const createModelSchema = z.object({
   modelId: z.string().min(2, 'Identificador técnico do modelo é obrigatório (ex: gemini-2.0-flash, qwen2.5:7b)'),
   baseUrl: z.string().optional().nullable().or(z.literal('')),
   apiKey: z.string().optional().nullable().or(z.literal('')),
-  temperature: z.coerce.number().min(0).max(2).default(0.2),
-  maxTokens: z.coerce.number().min(128).max(32768).default(2048),
+  temperature: z.coerce.number().min(0).max(2),
+  maxTokens: z.coerce.number().min(128).max(32768),
   description: z.string().optional().nullable().or(z.literal('')),
-  isActive: z.boolean().optional().default(false),
-  isDefault: z.boolean().optional().default(false),
+  isActive: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
 });
 
-const updateModelSchema = createModelSchema.partial();
+// Defaults só na criação: no Zod 4, `.partial()` ainda aplicaria `.default()` e sobrescreveria valores salvos.
+const createModelSchema = modelFieldsSchema.extend({
+  temperature: modelFieldsSchema.shape.temperature.default(0.2),
+  maxTokens: modelFieldsSchema.shape.maxTokens.default(2048),
+  isActive: modelFieldsSchema.shape.isActive.default(false),
+  isDefault: modelFieldsSchema.shape.isDefault.default(false),
+});
+
+const updateModelSchema = modelFieldsSchema.partial();
 
 export class ModelController {
   /**

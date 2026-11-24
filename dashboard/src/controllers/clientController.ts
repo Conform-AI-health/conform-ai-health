@@ -13,7 +13,7 @@ const safeHttpUrlSchema = z
     'Apenas os protocolos HTTP e HTTPS são permitidos'
   );
 
-const createClientSchema = z.object({
+const clientFieldsSchema = z.object({
   name: z.string().min(2, 'Razão Social é obrigatória'),
   tradeName: z.string().optional().nullable(),
   cnpj: z.string().optional().nullable(),
@@ -23,7 +23,7 @@ const createClientSchema = z.object({
   especialidade: z.string().optional().nullable(),
   websiteUrl: safeHttpUrlSchema.optional().nullable().or(z.literal('')),
   instagramHandle: z.string().optional().nullable(),
-  status: z.enum(['ATIVO', 'INATIVO', 'PENDENTE', 'SUSPENSO']).default('ATIVO'),
+  status: z.enum(['ATIVO', 'INATIVO', 'PENDENTE', 'SUSPENSO']),
   phone: z.string().optional().nullable(),
   email: z.string().email('E-mail de Notificação / Compliance inválido').optional().nullable().or(z.literal('')),
   accessEmail: z.string().email('E-mail de acesso inválido').optional().nullable().or(z.literal('')),
@@ -38,7 +38,12 @@ const clientSelfUpdateSchema = z.object({
   instagramHandle: z.string().optional().nullable(),
 });
 
-const updateClientSchema = createClientSchema.partial();
+// Default só na criação: no Zod 4, `.partial()` ainda aplicaria `.default()` e sobrescreveria o status salvo.
+const createClientSchema = clientFieldsSchema.extend({
+  status: clientFieldsSchema.shape.status.default('ATIVO'),
+});
+
+const updateClientSchema = clientFieldsSchema.partial();
 
 function sanitizeClientSummary(summary?: string | null): string {
   if (!summary) return 'Laudo preliminar de conformidade deontológica.';
