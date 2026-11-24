@@ -13,7 +13,7 @@ export function errorHandler(
     res.status(400).json({
       error: 'Dados de requisição inválidos.',
       code: 'VALIDATION_ERROR',
-      details: err.issues.map((e) => ({
+      details: err.errors.map((e) => ({
         field: e.path.join('.'),
         message: e.message,
       })),

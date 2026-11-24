@@ -83,7 +83,7 @@ describe('Guarda de vínculo obrigatório para usuários CLIENT (requireLinkedCl
   });
 });
 
-describe('Formato de erro de validação Zod (v4)', () => {
+describe('Formato de erro de validação Zod', () => {
   const app = createApp();
 
   it('deve retornar VALIDATION_ERROR com details por campo', async () => {
