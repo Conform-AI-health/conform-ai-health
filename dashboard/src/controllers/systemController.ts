@@ -11,6 +11,19 @@ const toggleProviderSchema = z.object({
   provider: z.enum(['gemini', 'ollama', 'heuristic']),
 });
 
+const testAiBodySchema = z.object({
+  prompt: z.string().optional(),
+  modelConfigId: z.string().optional(),
+  modelId: z.string().optional(),
+  baseUrl: z.string().max(2048).optional(),
+});
+
+async function isSavedModelBaseUrl(modelId: string | undefined, baseUrl: string): Promise<boolean> {
+  if (!modelId) return false;
+  const model = await prisma.aiModelConfig.findUnique({ where: { id: modelId }, select: { baseUrl: true } }).catch(() => null);
+  return !!model?.baseUrl && model.baseUrl.trim() === baseUrl;
+}
+
 export class SystemController {
   public static async status(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -112,10 +125,15 @@ export class SystemController {
 
   public static async testAi(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const prompt = req.body?.prompt ? String(req.body.prompt).slice(0, 1000) : undefined;
-      const targetModelId = req.body?.modelConfigId || req.body?.modelId;
-      const customBaseUrl = req.body?.baseUrl ? String(req.body.baseUrl).trim() : undefined;
-      if (customBaseUrl && !isAllowedLocalhostBaseUrl(customBaseUrl)) {
+      const parsed = testAiBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ error: 'Payload inválido para teste de IA.', code: 'AI_TEST_INVALID_PAYLOAD' });
+        return;
+      }
+      const prompt = parsed.data.prompt?.slice(0, 1000) || undefined;
+      const targetModelId = parsed.data.modelConfigId || parsed.data.modelId || undefined;
+      const customBaseUrl = parsed.data.baseUrl?.trim() || undefined;
+      if (customBaseUrl && !isAllowedLocalhostBaseUrl(customBaseUrl) && !(await isSavedModelBaseUrl(targetModelId, customBaseUrl))) {
         res.status(400).json({
           error: 'baseUrl não permitida para teste de IA. Use localhost, o host configurado em OLLAMA_HOST ou a faixa privada Tailscale.',
           code: 'AI_TEST_BASE_URL_NOT_ALLOWED',
