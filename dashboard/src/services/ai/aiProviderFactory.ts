@@ -9,15 +9,9 @@ import { IAIProvider, AIProviderType, AIProviderHealth } from './aiProvider.inte
 import { GeminiProvider } from './geminiProvider.js';
 import { OllamaProvider } from './ollamaProvider.js';
 import { HeuristicProvider } from './heuristicProvider.js';
+import { resolveOllamaBaseUrl } from './aiUrlResolver.js';
 
-function resolveOllamaBaseUrl(configuredUrl?: string | null): string {
-  const url = configuredUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434';
-  const isInsideDocker = fs.existsSync('/.dockerenv');
-  if (isInsideDocker && (url.includes('localhost') || url.includes('127.0.0.1'))) {
-    return url.replace('localhost', 'host.docker.internal').replace('127.0.0.1', 'host.docker.internal');
-  }
-  return url;
-}
+export { resolveOllamaBaseUrl };
 
 export class AIProviderFactory {
   private static providers: Map<AIProviderType, IAIProvider> = new Map();
@@ -244,8 +238,13 @@ export class AIProviderFactory {
     let activeModel: any = null;
     if (targetModelId) {
       activeModel = await prisma.aiModelConfig.findUnique({ where: { id: targetModelId } }).catch(() => null);
-      if (activeModel?.apiKey) {
-        activeModel.apiKey = decryptModelApiKey(activeModel.apiKey) || activeModel.apiKey;
+      if (activeModel) {
+        if (activeModel.apiKey) {
+          activeModel.apiKey = decryptModelApiKey(activeModel.apiKey) || activeModel.apiKey;
+        }
+        if (activeModel.provider === 'ollama') {
+          activeModel.baseUrl = resolveOllamaBaseUrl(activeModel.baseUrl);
+        }
       }
     }
     if (!activeModel) {
