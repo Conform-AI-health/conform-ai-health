@@ -19,6 +19,7 @@ export class ReportRepository {
                 email: true,
                 phone: true,
                 websiteUrl: true,
+                users: { select: { email: true } },
               },
             }
           : false,

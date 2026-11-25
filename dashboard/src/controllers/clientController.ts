@@ -130,9 +130,11 @@ export class ClientController {
       const { client, createdUser } = await ClientService.createClient(data);
 
       res.status(201).json({
-        message: 'Clínica cadastrada com sucesso.',
+        message:
+          'Clínica cadastrada com sucesso.' +
+          (createdUser ? ' Usuário de acesso institucional gerado com troca de senha obrigatória no primeiro acesso.' : ''),
         client,
-        user: createdUser ? { id: createdUser.id, email: createdUser.email, role: createdUser.role } : null,
+        accessUser: createdUser,
       });
     } catch (error: any) {
       if (error.message === 'CRM_ALREADY_EXISTS') {
@@ -152,17 +154,21 @@ export class ClientController {
   public static async createOrUpdateAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const { email, password, name } = req.body;
+      const accessSchema = z.object({
+        email: z.string().email('E-mail institucional inválido'),
+        password: z.string().min(6, 'Senha inicial deve ter no mínimo 6 caracteres'),
+        name: z.string().optional(),
+      });
 
-      if (!email) {
-        res.status(400).json({ error: 'E-mail de acesso é obrigatório.' });
-        return;
-      }
-
-      const result = await ClientService.createOrUpdateAccess(id, { email, password, name });
+      const { email, password, name } = accessSchema.parse(req.body);
+      const result = await ClientService.createOrUpdateAccess(
+        id,
+        { email, password, name },
+        req.user?.email
+      );
 
       res.status(200).json({
-        message: 'Acesso do cliente configurado com sucesso.',
+        message: 'Credenciais de acesso institucional configuradas com sucesso! A clínica deverá alterar a senha no primeiro acesso.',
         user: result.user,
       });
     } catch (error: any) {

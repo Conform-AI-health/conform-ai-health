@@ -3,6 +3,7 @@ import { ClientRepository } from '../repositories/clientRepository.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { AgentRepository } from '../repositories/agentRepository.js';
 import { ReportRepository } from '../repositories/reportRepository.js';
+import { SystemLogRepository } from '../repositories/systemLogRepository.js';
 import { ScraperService } from './scraperService.js';
 import { Client, ClientStatus, Role, ExtractionMode } from '@prisma/client';
 
@@ -151,19 +152,43 @@ export class ClientService {
     });
 
     let createdUser = null;
-    const accessEmail = data.accessEmail || data.email;
+    const accessEmail = (data.accessEmail || data.email)?.trim();
     if (accessEmail && data.initialPassword) {
+      const passwordHash = await bcrypt.hash(data.initialPassword, 12);
       const existingUser = await UserRepository.findByEmail(accessEmail);
-      if (!existingUser) {
-        const hashedPassword = await bcrypt.hash(data.initialPassword, 10);
-        createdUser = await UserRepository.create({
-          name: data.tradeName || data.name,
-          email: accessEmail,
-          passwordHash: hashedPassword,
-          role: Role.CLIENT,
-          client: { connect: { id: client.id } },
-        });
+      const userSelect = { id: true, email: true, name: true, role: true, mustChangePassword: true };
+
+      if (existingUser) {
+        createdUser = await UserRepository.update(
+          existingUser.id,
+          {
+            passwordHash,
+            role: Role.CLIENT,
+            clientId: client.id,
+            mustChangePassword: true,
+          },
+          userSelect
+        );
+      } else {
+        createdUser = await UserRepository.create(
+          {
+            name: data.tradeName || data.name,
+            email: accessEmail,
+            passwordHash,
+            role: Role.CLIENT,
+            clientId: client.id,
+            mustChangePassword: true,
+          },
+          userSelect
+        );
       }
+
+      await SystemLogRepository.create({
+        level: 'INFO',
+        module: 'CLIENT_MANAGEMENT',
+        message: `[CLIENT_ACCESS_CREATED] Usuário institucional ${accessEmail} criado com senha temporária para a clínica "${client.name}". Troca obrigatória no primeiro acesso.`,
+        details: JSON.stringify({ clientId: client.id, userEmail: accessEmail }),
+      });
     }
 
     if (data.websiteUrl && data.websiteUrl.trim().length > 0) {
@@ -184,7 +209,11 @@ export class ClientService {
   /**
    * Criação ou atualização de credenciais de acesso do cliente
    */
-  public static async createOrUpdateAccess(clientId: string, accessData: { email: string; password?: string; name?: string }) {
+  public static async createOrUpdateAccess(
+    clientId: string,
+    accessData: { email: string; password?: string; name?: string },
+    requestedBy?: string
+  ) {
     const client = await ClientRepository.findById(clientId);
     if (!client) {
       throw new Error('CLIENT_NOT_FOUND');
@@ -195,32 +224,55 @@ export class ClientService {
       throw new Error('EMAIL_ALREADY_IN_USE');
     }
 
+    const targetName = accessData.name || client.tradeName || client.name;
+    const userSelect = { id: true, email: true, name: true, role: true, mustChangePassword: true };
+    let user: any;
+
     if (existingUser) {
       const updateData: any = {
-        name: accessData.name || client.tradeName || client.name,
+        name: targetName,
         clientId: client.id,
+        role: Role.CLIENT,
+        mustChangePassword: true,
       };
       if (accessData.password) {
-        updateData.passwordHash = await bcrypt.hash(accessData.password, 10);
+        updateData.passwordHash = await bcrypt.hash(accessData.password, 12);
       }
-      const updated = await UserRepository.update(existingUser.id, updateData);
-      return { user: { id: updated.id, email: updated.email, name: updated.name, role: updated.role } };
+      user = await UserRepository.update(existingUser.id, updateData, userSelect);
+    } else {
+      if (!accessData.password) {
+        throw new Error('PASSWORD_REQUIRED_FOR_NEW_USER');
+      }
+      const passwordHash = await bcrypt.hash(accessData.password, 12);
+      user = await UserRepository.create(
+        {
+          name: targetName,
+          email: accessData.email,
+          passwordHash,
+          role: Role.CLIENT,
+          clientId: client.id,
+          mustChangePassword: true,
+        },
+        userSelect
+      );
     }
 
-    if (!accessData.password) {
-      throw new Error('PASSWORD_REQUIRED_FOR_NEW_USER');
-    }
-
-    const hashedPassword = await bcrypt.hash(accessData.password, 10);
-    const newUser = await UserRepository.create({
-      name: accessData.name || client.tradeName || client.name,
-      email: accessData.email,
-      passwordHash: hashedPassword,
-      role: Role.CLIENT,
-      client: { connect: { id: client.id } },
+    await SystemLogRepository.create({
+      level: 'INFO',
+      module: 'CLIENT_MANAGEMENT',
+      message: `[CLIENT_ACCESS_PROVISIONED] Acesso institucional concedido/redefinido para ${accessData.email} (Clínica: ${client.name}). Troca de senha obrigatória no primeiro acesso ativada.`,
+      details: JSON.stringify({ clientId: client.id, email: accessData.email, requestedBy }),
     });
 
-    return { user: { id: newUser.id, email: newUser.email, name: newUser.name, role: newUser.role } };
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        mustChangePassword: user.mustChangePassword ?? true,
+      },
+    };
   }
 
   /**

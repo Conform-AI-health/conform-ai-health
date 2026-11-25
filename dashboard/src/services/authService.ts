@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { UserRepository } from '../repositories/userRepository.js';
 import { ClientRepository } from '../repositories/clientRepository.js';
+import { SystemLogRepository } from '../repositories/systemLogRepository.js';
 import { EmailService } from './emailService.js';
 import { env } from '../config/env.js';
 import { Role, User } from '@prisma/client';
@@ -158,7 +159,7 @@ export class AuthService {
     }
 
     const tokenHash = this.hashToken(rawToken);
-    if (user.refreshToken !== tokenHash) {
+    if (user.refreshToken !== tokenHash && user.refreshToken !== rawToken) {
       // Violação de segurança: token reutilizado ou inválido. Revoga tudo.
       await UserRepository.update(user.id, { refreshToken: null });
       throw new Error('REFRESH_TOKEN_REUSE_DETECTED');
@@ -193,7 +194,10 @@ export class AuthService {
   public static async resetPassword(tokenRaw: string, newPassword: string) {
     const tokenHash = this.hashToken(tokenRaw);
     const user = await UserRepository.findFirst({
-      resetPasswordToken: tokenHash,
+      OR: [
+        { resetPasswordToken: tokenHash },
+        { resetPasswordToken: tokenRaw },
+      ],
       resetPasswordExpires: { gt: new Date() },
     });
 
@@ -206,6 +210,7 @@ export class AuthService {
       passwordHash,
       resetPasswordToken: null,
       resetPasswordExpires: null,
+      refreshToken: null,
       mustChangePassword: false,
     });
   }
@@ -235,6 +240,18 @@ export class AuthService {
     await UserRepository.update(user.id, {
       passwordHash,
       mustChangePassword: false,
+    });
+
+    await SystemLogRepository.create({
+      level: 'INFO',
+      module: 'AUTH',
+      message: `[FIRST_ACCESS_PASSWORD_CHANGED] Usuário institucional ${user.email} (Perfil: ${user.role}) definiu sua senha definitiva no primeiro acesso.`,
+      details: JSON.stringify({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        clientId: user.clientId,
+      }),
     });
   }
 

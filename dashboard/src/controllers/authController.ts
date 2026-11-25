@@ -173,14 +173,15 @@ export class AuthController {
     }
   }
 
-  public static async refreshToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+  public static async refreshToken(req: Request, res: Response, next?: NextFunction): Promise<void> {
     try {
-      const cookies = AuthController.parseCookies(req.headers.cookie);
+      const headers = req.headers || {};
+      const cookies = AuthController.parseCookies(headers.cookie);
       const isCookieSource = Boolean(cookies['conformia_refresh_token']);
 
       if (isCookieSource) {
-        const xRequestedWith = req.headers['x-requested-with'];
-        const origin = req.headers['origin'];
+        const xRequestedWith = headers['x-requested-with'];
+        const origin = headers['origin'];
         const allowedOrigins = (env.CORS_ORIGIN || '').split(',').map((o) => o.trim()).filter(Boolean);
         const isAllowedOrigin = origin && (allowedOrigins.includes(origin) || env.NODE_ENV !== 'production');
 
@@ -193,10 +194,9 @@ export class AuthController {
         }
       }
 
-      let refreshToken = cookies['conformia_refresh_token'];
-      if (!refreshToken && req.body?.refreshToken) {
-        refreshToken = refreshTokenSchema.parse(req.body).refreshToken;
-      }
+      const rawTokenInput =
+        req.body?.refreshToken || headers['x-refresh-token'] || cookies['conformia_refresh_token'];
+      const refreshToken = rawTokenInput ? refreshTokenSchema.parse({ refreshToken: rawTokenInput }).refreshToken : '';
 
       if (!refreshToken) {
         res.status(401).json({
@@ -233,7 +233,11 @@ export class AuthController {
         });
         return;
       }
-      next(error);
+      if (typeof next === 'function') {
+        next(error);
+      } else {
+        res.status(500).json({ error: error?.message || 'Erro interno ao renovar sessão.' });
+      }
     }
   }
 
@@ -327,7 +331,8 @@ export class AuthController {
       await AuthService.firstAccessPassword(userId, newPassword);
 
       res.status(200).json({
-        message: 'Senha cadastrada com sucesso! Você já pode navegar normalmente na plataforma.',
+        message: 'Senha definitiva configurada com sucesso! Acesso ao Portal da Clínica liberado.',
+        mustChangePassword: false,
       });
     } catch (error) {
       next(error);

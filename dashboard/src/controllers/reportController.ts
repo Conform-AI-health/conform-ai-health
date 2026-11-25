@@ -162,33 +162,25 @@ export class ReportController {
   }
 
   /**
-   * Revisa e altera o status/veredito de um laudo
+   * AI-05: Revisão humana de laudo deontológico
    */
   public static async reviewReport(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
       const reviewSchema = z.object({
-        reviewStatus: z.enum(['APPROVED', 'REJECTED', 'CORRECTED', 'REVIEWED']).optional(),
-        verdict: z.nativeEnum(Verdict).optional(),
-        score: z.number().min(0).max(100).optional(),
-        summary: z.string().optional(),
+        decision: z.enum(['APPROVED', 'REJECTED', 'CHANGES_REQUESTED']),
+        notes: z.string().min(5, 'Parecer técnico da revisão humana é obrigatório (mínimo 5 caracteres).'),
+        adjustedScore: z.number().min(0).max(100).optional(),
+        adjustedVerdict: z.nativeEnum(Verdict).optional(),
       });
 
-      const parsed = reviewSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({ error: 'Dados de revisão inválidos.', details: parsed.error.format() });
-        return;
-      }
-
-      const updated = await ReportService.reviewReport(
-        id,
-        parsed.data,
-        req.user ? { name: req.user.email || req.user.userId } : undefined
-      );
+      const data = reviewSchema.parse(req.body);
+      const { report, review } = await ReportService.reviewReport(id, data, req.user);
 
       res.status(200).json({
-        message: 'Revisão humana registrada com sucesso.',
-        report: updated,
+        message: `Revisão humana registrada com sucesso (${data.decision}).`,
+        report,
+        review,
       });
     } catch (error: any) {
       if (error.message === 'REPORT_NOT_FOUND') {
@@ -200,23 +192,34 @@ export class ReportController {
   }
 
   /**
-   * Dispara notificação por e-mail para a clínica auditada
+   * Reenvia notificação por e-mail para a clínica e grava telemetria auditável
    */
   public static async notifyClient(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      await ReportService.notifyClient(id);
+      const { recipient, messageId } = await ReportService.notifyClient(id, req.user);
 
       res.status(200).json({
-        message: 'Notificação por e-mail disparada com sucesso.',
+        message: 'Notificação de laudo enviada com sucesso para a clínica.',
+        recipient,
+        messageId,
       });
     } catch (error: any) {
-      if (error.message === 'CLIENT_OR_REPORT_NOT_FOUND') {
-        res.status(404).json({ error: 'Laudo ou cliente associado não encontrado.' });
+      if (error.message === 'REPORT_NOT_FOUND') {
+        res.status(404).json({ error: 'Laudo de auditoria não encontrado.' });
+        return;
+      }
+      if (error.message === 'TENANT_FORBIDDEN') {
+        res.status(403).json({ error: 'Acesso negado ao laudo desta clínica.' });
         return;
       }
       if (error.message === 'CLIENT_HAS_NO_EMAIL') {
         res.status(400).json({ error: 'Clínica não possui endereço de e-mail cadastrado.' });
+        return;
+      }
+      if (error.message?.startsWith('EMAIL_DELIVERY_FAILED:')) {
+        const reason = error.message.slice('EMAIL_DELIVERY_FAILED:'.length);
+        res.status(502).json({ error: `Falha no envio de e-mail: ${reason}` });
         return;
       }
       next(error);
@@ -229,17 +232,21 @@ export class ReportController {
   public static async getPendingReview(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
-      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
 
       const { reports, total } = await ReportService.getPendingReview(page, limit);
 
       res.status(200).json({
-        data: reports,
+        data: reports.map((r: any) => ({
+          ...r,
+          targetUrl: r.targetUrl || 'URL não informada',
+          summary: r.summary || 'Laudo de conformidade deontológica.',
+        })),
         pagination: {
           total,
           page,
           limit,
-          totalPages: Math.ceil(total / limit),
+          totalPages: Math.ceil(total / limit) || 1,
         },
       });
     } catch (error) {
@@ -253,17 +260,21 @@ export class ReportController {
   public static async getProcessedReview(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
-      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
 
       const { reports, total } = await ReportService.getProcessedReview(page, limit);
 
       res.status(200).json({
-        data: reports,
+        data: reports.map((r: any) => ({
+          ...r,
+          targetUrl: r.targetUrl || 'URL não informada',
+          summary: r.summary || 'Laudo de conformidade deontológica.',
+        })),
         pagination: {
           total,
           page,
           limit,
-          totalPages: Math.ceil(total / limit),
+          totalPages: Math.ceil(total / limit) || 1,
         },
       });
     } catch (error) {
@@ -272,37 +283,37 @@ export class ReportController {
   }
 
   /**
-   * Confirma a revisão e envia e-mail com relatório final para a clínica
+   * Homologa o laudo pelo auditor humano com checkbox obrigatório e dispara o e-mail oficial à clínica
    */
   public static async confirmAndSendEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const sendSchema = z.object({
-        emailTo: z.string().email().optional(),
-        customMessage: z.string().optional(),
+      const confirmSchema = z.object({
+        confirmed: z.boolean().refine((val) => val === true, {
+          message: 'A confirmação do auditor é obrigatória (a flag/checkbox deve estar selecionada).',
+        }),
+        decision: z.enum(['APPROVED', 'REJECTED', 'CHANGES_REQUESTED']).default('APPROVED'),
+        notes: z.string().optional(),
+        adjustedScore: z.number().min(0).max(100).optional(),
+        adjustedVerdict: z.nativeEnum(Verdict).optional(),
       });
 
-      const parsed = sendSchema.safeParse(req.body);
-      const emailTo = parsed.success ? parsed.data.emailTo : undefined;
-      const customMessage = parsed.success ? parsed.data.customMessage : undefined;
-
-      await ReportService.confirmAndSendEmail(
-        id,
-        emailTo,
-        customMessage,
-        req.user ? { name: req.user.email || req.user.userId } : undefined
-      );
+      const payload = confirmSchema.parse(req.body);
+      const { report, emailSent, decision } = await ReportService.confirmAndSendEmail(id, payload, req.user);
 
       res.status(200).json({
-        message: 'Relatório revisado aprovado e e-mail enviado com sucesso.',
+        message:
+          decision === 'APPROVED'
+            ? 'Laudo confirmado e homologado com sucesso! E-mail de notificação processado para a clínica.'
+            : decision === 'REJECTED'
+            ? 'Laudo recusado pelo auditor com sucesso. Nenhum e-mail foi disparado para a clínica.'
+            : `Revisão do auditor registrada com sucesso (${decision}).`,
+        report,
+        emailSent,
       });
     } catch (error: any) {
       if (error.message === 'REPORT_NOT_FOUND') {
         res.status(404).json({ error: 'Laudo de auditoria não encontrado.' });
-        return;
-      }
-      if (error.message === 'CLIENT_HAS_NO_EMAIL') {
-        res.status(400).json({ error: 'Nenhum e-mail de destino válido encontrado para este cliente.' });
         return;
       }
       next(error);

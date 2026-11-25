@@ -20,15 +20,41 @@ export class UserRepository {
     });
   }
 
-  public static async create(data: Prisma.UserCreateInput): Promise<User> {
+  public static async create(
+    data: Prisma.UserCreateInput | Prisma.UserUncheckedCreateInput
+  ): Promise<User>;
+  public static async create(
+    data: Prisma.UserCreateInput | Prisma.UserUncheckedCreateInput,
+    select: Prisma.UserSelect
+  ): Promise<Record<string, any>>;
+  public static async create(
+    data: Prisma.UserCreateInput | Prisma.UserUncheckedCreateInput,
+    select?: Prisma.UserSelect
+  ): Promise<User | Record<string, any>> {
+    if (select) {
+      return await prisma.user.create({ data, select });
+    }
     return await prisma.user.create({ data });
   }
 
-  public static async update(id: string, data: Prisma.UserUpdateInput): Promise<User> {
-    return await prisma.user.update({
-      where: { id },
-      data,
-    });
+  public static async update(
+    id: string,
+    data: Prisma.UserUpdateInput | Prisma.UserUncheckedUpdateInput
+  ): Promise<User>;
+  public static async update(
+    id: string,
+    data: Prisma.UserUpdateInput | Prisma.UserUncheckedUpdateInput,
+    select: Prisma.UserSelect
+  ): Promise<Record<string, any>>;
+  public static async update(
+    id: string,
+    data: Prisma.UserUpdateInput | Prisma.UserUncheckedUpdateInput,
+    select?: Prisma.UserSelect
+  ): Promise<User | Record<string, any>> {
+    if (select) {
+      return await prisma.user.update({ where: { id }, data, select });
+    }
+    return await prisma.user.update({ where: { id }, data });
   }
 
   public static async updateMany(
