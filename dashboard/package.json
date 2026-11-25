@@ -17,6 +17,8 @@
     "rag:reindex:dev": "tsx src/scripts/reindexNormEmbeddings.ts",
     "rag:index-norm": "tsx src/scripts/indexSpecificNorm.ts",
     "rag:index-norm:dist": "node dist/scripts/indexSpecificNorm.js",
+    "norms:tag": "tsx src/scripts/applyThematicTags.ts",
+    "norms:tag:apply": "tsx src/scripts/applyThematicTags.ts --apply",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx src/shared/autoMigrate.ts",
     "test": "vitest run"
