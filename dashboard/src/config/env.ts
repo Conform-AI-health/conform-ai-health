@@ -48,7 +48,7 @@ const envSchema = z
     FRONTEND_URL: z.string().default('http://localhost:5173'),
     AI_PROVIDER: z.enum(['gemini', 'ollama', 'heuristic']).default('gemini'),
     GEMINI_API_KEY: z.string().optional().default(''),
-    OLLAMA_BASE_URL: z.string().default('http://localhost:11434'),
+    OLLAMA_BASE_URL: z.string().default(process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST || 'http://localhost:11434'),
     OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
     GEMINI_EMBEDDING_MODEL: z.string().default('gemini-embedding-001'),
     EXTRACTION_MODE: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL']).default('CHEERIO'),

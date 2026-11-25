@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
 import { NORMS_CATALOG } from '../data/normsCatalog.js';
 
@@ -348,6 +349,23 @@ export async function runInitialSeed(): Promise<void> {
         description: 'Modelo multimodal de alta velocidade e precisão para auditoria do Catálogo Normativo Dinâmico em Saúde.',
       },
     });
+
+    // Atualização de endpoint do Ollama se configurado via variáveis de ambiente com IP/host dedicado
+    if (env.OLLAMA_BASE_URL && !env.OLLAMA_BASE_URL.includes('localhost') && !env.OLLAMA_BASE_URL.includes('127.0.0.1')) {
+      await prisma.aiModelConfig.updateMany({
+        where: {
+          provider: 'ollama',
+          OR: [
+            { baseUrl: null },
+            { baseUrl: 'http://localhost:11434' },
+            { baseUrl: 'http://host.docker.internal:11434' },
+          ],
+        },
+        data: {
+          baseUrl: env.OLLAMA_BASE_URL,
+        },
+      });
+    }
   }
 }
 
