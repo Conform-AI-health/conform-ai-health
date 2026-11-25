@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import { createRateLimitStore } from '../shared/distributedResilience.js';
 import { AgentController } from '../controllers/agentController.js';
 import { authenticate, requireLinkedClient, authorize, Role } from '../middlewares/auth.js';
 
 const runAuditLimiter = rateLimit({
+  store: createRateLimitStore('runAudit'),
   windowMs: 15 * 60 * 1000,
   max: 25,
   message: {

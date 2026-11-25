@@ -1,9 +1,11 @@
 import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import { createRateLimitStore } from '../shared/distributedResilience.js';
 import { ScrapedPageController } from '../controllers/scrapedPageController.js';
 import { authenticate, requireLinkedClient, authorize, Role } from '../middlewares/auth.js';
 
 const scrapingLimiter = rateLimit({
+  store: createRateLimitStore('scraping'),
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: {

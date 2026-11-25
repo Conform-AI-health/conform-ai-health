@@ -15,7 +15,22 @@ export class CircuitBreakerOpenError extends Error {
   }
 }
 
+/**
+ * Estado compartilhado entre processos/instâncias (ex: Redis). Falhas do store nunca bloqueiam a chamada.
+ */
+export interface CircuitBreakerSharedStore {
+  getOpenTtlMs(name: string): Promise<number>;
+  markOpen(name: string, ttlMs: number): Promise<void>;
+  clear(name: string): Promise<void>;
+}
+
 export class CircuitBreaker {
+  private static sharedStore: CircuitBreakerSharedStore | null = null;
+
+  public static configureSharedStore(store: CircuitBreakerSharedStore | null): void {
+    CircuitBreaker.sharedStore = store;
+  }
+
   private state: CircuitBreakerState = 'CLOSED';
   private failureCount = 0;
   private successCount = 0;
@@ -46,6 +61,7 @@ export class CircuitBreaker {
 
   public async execute<T>(action: () => Promise<T>, fallback?: () => Promise<T> | T): Promise<T> {
     const activeFallback = fallback ?? this.fallback;
+    await this.syncFromSharedStore();
     const currentState = this.getState();
 
     if (currentState === 'OPEN') {
@@ -69,6 +85,20 @@ export class CircuitBreaker {
     }
   }
 
+  private async syncFromSharedStore(): Promise<void> {
+    const store = CircuitBreaker.sharedStore;
+    if (!store || this.state === 'OPEN') return;
+    try {
+      const ttlMs = await store.getOpenTtlMs(this.name);
+      if (ttlMs > 0) {
+        this.state = 'OPEN';
+        this.nextAttemptAt = Date.now() + ttlMs;
+      }
+    } catch {
+      // Store indisponível: mantém decisão local
+    }
+  }
+
   private onSuccess(): void {
     if (this.state === 'HALF_OPEN') {
       this.successCount++;
@@ -76,6 +106,7 @@ export class CircuitBreaker {
         this.state = 'CLOSED';
         this.failureCount = 0;
         this.successCount = 0;
+        CircuitBreaker.sharedStore?.clear(this.name).catch(() => {});
         console.log(`🟢 [CircuitBreaker:${this.name}] Circuito restabelecido com sucesso! Estado: CLOSED.`);
       }
     } else {
@@ -90,6 +121,7 @@ export class CircuitBreaker {
     if (this.state === 'HALF_OPEN' || this.failureCount >= this.failureThreshold) {
       this.state = 'OPEN';
       this.nextAttemptAt = Date.now() + this.resetTimeoutMs;
+      CircuitBreaker.sharedStore?.markOpen(this.name, this.resetTimeoutMs).catch(() => {});
       console.error(`🚨 [CircuitBreaker:${this.name}] Limiar atingido! Circuito ABERTO (OPEN) por ${this.resetTimeoutMs / 1000}s.`);
     }
   }

@@ -96,5 +96,15 @@ describe('Testes de Paginação e Endpoint de Teste do Modelo de IA', () => {
       expect(res.body.latencyMs).toBeDefined();
       expect(res.body.response).toBeDefined();
     });
+
+    it('deve rejeitar baseUrl fora da allowlist (SSRF) com HTTP 400', async () => {
+      const res = await request(app)
+        .post('/api/v1/system/test-ai')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ prompt: 'Ping', baseUrl: 'http://169.254.169.254/latest/meta-data' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('AI_TEST_BASE_URL_NOT_ALLOWED');
+    });
   });
 });

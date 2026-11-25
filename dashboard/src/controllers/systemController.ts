@@ -4,6 +4,7 @@ import { prisma } from '../config/prisma.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { getRedisConnection, auditQueue } from '../config/redis.js';
 import { env } from '../config/env.js';
+import { isAllowedLocalhostBaseUrl } from '../shared/security.js';
 import { getWorkerHealth, getWorkerMetrics } from '../worker.js';
 
 const toggleProviderSchema = z.object({
@@ -114,6 +115,13 @@ export class SystemController {
       const prompt = req.body?.prompt ? String(req.body.prompt).slice(0, 1000) : undefined;
       const targetModelId = req.body?.modelConfigId || req.body?.modelId;
       const customBaseUrl = req.body?.baseUrl ? String(req.body.baseUrl).trim() : undefined;
+      if (customBaseUrl && !isAllowedLocalhostBaseUrl(customBaseUrl)) {
+        res.status(400).json({
+          error: 'baseUrl não permitida para teste de IA. Use localhost, o host configurado em OLLAMA_HOST ou a faixa privada Tailscale.',
+          code: 'AI_TEST_BASE_URL_NOT_ALLOWED',
+        });
+        return;
+      }
       const result = await ReconciliationEngine.testModelResponse(prompt, targetModelId, customBaseUrl);
 
       await prisma.systemLog.create({

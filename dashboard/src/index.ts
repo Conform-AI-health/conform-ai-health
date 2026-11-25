@@ -4,6 +4,7 @@ import { env } from './config/env.js';
 import { runAutoMigrateAndSeed } from './shared/autoMigrate.js';
 import { createLogger } from './shared/logger.js';
 import { initTracing, shutdownTracing } from './shared/tracing.js';
+import { initDistributedResilience } from './shared/distributedResilience.js';
 
 // Garante resolução IPv4 prioritária em ambientes conteinerizados Docker para evitar falhas de ENETUNREACH
 dns.setDefaultResultOrder('ipv4first');
@@ -12,6 +13,7 @@ const log = createLogger('Bootstrap');
 
 async function bootstrap() {
   initTracing(env.SERVICE_NAME || 'conformia-api');
+  initDistributedResilience();
   const app = createApp();
 
   // Executa auto-migração e provisionamento estrito inicial (T03)

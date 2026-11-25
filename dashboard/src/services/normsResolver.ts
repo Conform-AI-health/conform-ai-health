@@ -158,6 +158,107 @@ function rankCandidates(
     .slice(0, topK);
 }
 
+interface CandidateChunkRow {
+  id: string;
+  normId: string;
+  normCode: string;
+  chunkIndex: number;
+  conteudoChunk: string;
+  contextoSemantico: string | null;
+  embedding: number[];
+  tags: string[];
+}
+
+const VECTOR_SEARCH_RETRY_AFTER_MS = 10 * 60 * 1000;
+let vectorSearchUnavailableUntil = 0;
+
+function ejsonId(value: unknown): string {
+  if (value && typeof value === 'object' && '$oid' in (value as Record<string, unknown>)) {
+    return String((value as Record<string, unknown>).$oid);
+  }
+  return String(value ?? '');
+}
+
+function ejsonNumber(value: unknown): number {
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    return Number(obj.$numberDouble ?? obj.$numberInt ?? obj.$numberLong ?? obj.$numberDecimal ?? NaN);
+  }
+  return Number(value);
+}
+
+/**
+ * Busca vetorial nativa no MongoDB Atlas ($vectorSearch) restrita às normas vigentes do escopo.
+ * Retorna null quando desabilitada, indisponível (ex: Mongo não-Atlas, índice ausente) ou sem resultados,
+ * para que o chamador use a busca por força bruta em memória.
+ */
+export async function searchChunksWithAtlasVector(
+  queryEmbedding: number[],
+  normIds: string[],
+  topK: number
+): Promise<CandidateChunkRow[] | null> {
+  if (env.RAG_VECTOR_SEARCH_ENABLED !== 'true' || queryEmbedding.length === 0 || normIds.length === 0) {
+    return null;
+  }
+  if (Date.now() < vectorSearchUnavailableUntil) {
+    return null;
+  }
+  try {
+    const limit = Math.min(200, topK * 8);
+    const docs = (await prisma.normChunk.aggregateRaw({
+      pipeline: [
+        {
+          $vectorSearch: {
+            index: env.RAG_VECTOR_INDEX_NAME,
+            path: 'embedding',
+            queryVector: queryEmbedding,
+            numCandidates: Math.min(10000, limit * 20),
+            limit,
+            filter: { normId: { $in: normIds.map((id) => ({ $oid: id })) } },
+          },
+        },
+        {
+          $project: {
+            normId: 1,
+            normCode: 1,
+            chunkIndex: 1,
+            conteudoChunk: 1,
+            contextoSemantico: 1,
+            embedding: 1,
+            tags: 1,
+          },
+        },
+      ],
+    })) as unknown as Array<Record<string, unknown>>;
+
+    if (!Array.isArray(docs) || docs.length === 0) {
+      return null;
+    }
+    return docs.map((doc) => ({
+      id: ejsonId(doc._id),
+      normId: ejsonId(doc.normId),
+      normCode: String(doc.normCode ?? ''),
+      chunkIndex: ejsonNumber(doc.chunkIndex),
+      conteudoChunk: String(doc.conteudoChunk ?? ''),
+      contextoSemantico: typeof doc.contextoSemantico === 'string' ? doc.contextoSemantico : null,
+      embedding: Array.isArray(doc.embedding) ? doc.embedding.map(ejsonNumber) : [],
+      tags: Array.isArray(doc.tags) ? doc.tags.map(String) : [],
+    }));
+  } catch (error) {
+    vectorSearchUnavailableUntil = Date.now() + VECTOR_SEARCH_RETRY_AFTER_MS;
+    console.warn(
+      `⚠️ [NormsResolver] Atlas $vectorSearch indisponível (${
+        error instanceof Error ? error.message : String(error)
+      }). Usando busca vetorial em memória por ${VECTOR_SEARCH_RETRY_AFTER_MS / 60000} min.`
+    );
+    return null;
+  }
+}
+
+export function resetVectorSearchAvailability(): void {
+  vectorSearchUnavailableUntil = 0;
+}
+
 export class NormsResolver {
   /**
    * Recupera somente chunks vigentes da taxonomia solicitada e os ranqueia pelo conteúdo auditado.
@@ -194,11 +295,25 @@ export class NormsResolver {
 
     let candidates: RankedNormCandidate[] = [];
     let dbDiagnostics: NormRetrievalDiagnostics | undefined;
+    let precomputedQueryEmbedding: number[] | null = null;
 
     if (dbNorms.length > 0) {
       const maxCandidateChunks = env.RAG_MAX_CANDIDATE_CHUNKS || DEFAULT_MAX_RAG_CANDIDATE_CHUNKS;
       const normById = new Map(dbNorms.map((norm) => [norm.id, norm]));
-      const chunks = await prisma.normChunk.findMany({
+      let vectorChunks: CandidateChunkRow[] | null = null;
+      if (env.RAG_VECTOR_SEARCH_ENABLED === 'true') {
+        try {
+          precomputedQueryEmbedding = await SemanticEmbeddingService.embedQuery(queryText.slice(0, 8000));
+          vectorChunks = await searchChunksWithAtlasVector(
+            precomputedQueryEmbedding,
+            dbNorms.map((norm) => norm.id),
+            safeTopK
+          );
+        } catch {
+          precomputedQueryEmbedding = null;
+        }
+      }
+      const chunks: CandidateChunkRow[] = vectorChunks ?? await prisma.normChunk.findMany({
         where: { normId: { in: dbNorms.map((norm) => norm.id) } },
         take: maxCandidateChunks,
         select: {
@@ -357,7 +472,8 @@ export class NormsResolver {
     }
 
     try {
-      const queryEmbedding = await SemanticEmbeddingService.embedQuery(queryText.slice(0, 8000));
+      const queryEmbedding = precomputedQueryEmbedding
+        ?? await SemanticEmbeddingService.embedQuery(queryText.slice(0, 8000));
       const rankedNorms = rankCandidates(candidates, queryText, queryEmbedding, safeTopK, cleanTags);
       return {
         norms: rankedNorms,

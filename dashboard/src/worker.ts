@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { Worker, Job } from 'bullmq';
 import { SpanKind } from '@opentelemetry/api';
 import { getRedisConnection } from './config/redis.js';
+import { initDistributedResilience } from './shared/distributedResilience.js';
 import { prisma } from './config/prisma.js';
 import { env } from './config/env.js';
 import { AuditExecutionService } from './services/auditExecutionService.js';
@@ -270,6 +271,7 @@ export function stopWorkerHealthServer(): Promise<void> {
 
 export function startAuditWorker() {
   initTracing(process.env.SERVICE_NAME || 'conformia-worker');
+  initDistributedResilience();
   workerLog.info('Inicializando worker assíncrono BullMQ...');
 
   const worker = new Worker<AuditJobData>(

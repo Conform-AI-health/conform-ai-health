@@ -6,6 +6,7 @@ import { AuthController } from '../controllers/authController.js';
 import { prisma } from '../config/prisma.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { env, envSchema } from '../config/env.js';
 
 // Mocks do prisma em ../config/prisma.js e ../lib/prisma.js
@@ -224,7 +225,7 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
         id: 'user-001',
         name: 'Auditor Chefe',
         email: 'auditor@conformia.med.br',
-        refreshToken: validRefreshToken,
+        refreshToken: crypto.createHash('sha256').update(validRefreshToken).digest('hex'),
         role: 'AUDITOR',
         clientId: null,
       };
