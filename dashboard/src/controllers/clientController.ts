@@ -1,9 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import bcrypt from 'bcryptjs';
-import { prisma } from '../config/prisma.js';
 import { ClientStatus, Role, ExtractionMode } from '@prisma/client';
-import { ScraperService } from '../services/scraperService.js';
+import { ClientService } from '../services/clientService.js';
 
 const safeHttpUrlSchema = z
   .string()
@@ -38,32 +36,11 @@ const clientSelfUpdateSchema = z.object({
   instagramHandle: z.string().optional().nullable(),
 });
 
-// Default só na criação: no Zod 4, `.partial()` ainda aplicaria `.default()` e sobrescreveria o status salvo.
 const createClientSchema = clientFieldsSchema.extend({
   status: clientFieldsSchema.shape.status.default('ATIVO'),
 });
 
 const updateClientSchema = clientFieldsSchema.partial();
-
-function sanitizeClientSummary(summary?: string | null): string {
-  if (!summary) return 'Laudo preliminar de conformidade deontológica.';
-  const isTechnicalRagLeak =
-    summary.includes('A recuperação encontrou') ||
-    summary.includes('chunks indexados') ||
-    summary.includes('Modelo esperado') ||
-    summary.includes('npm run rag:reindex') ||
-    summary.includes('Sem embedding') ||
-    summary.includes('dimensão inválida') ||
-    summary.includes('modelo diferente') ||
-    summary.includes('metadado ausente') ||
-    summary.includes('norma-pai ausente') ||
-    summary.includes('A IA não foi chamada');
-
-  if (isTechnicalRagLeak) {
-    return 'Auditoria preliminar inconclusiva: O canal digital foi submetido à varredura preventiva e encontra-se em fase de validação complementar pela equipe de governança e auditoria regulatória. Revisão humana em andamento.';
-  }
-  return summary;
-}
 
 export class ClientController {
   /**
@@ -76,49 +53,15 @@ export class ClientController {
       const search = (req.query.search as string)?.trim();
       const status = req.query.status as ClientStatus;
 
-      const where: any = {};
-      if (status) {
-        where.status = status;
-      }
-      if (search) {
-        where.OR = [
-          { name: { contains: search, mode: 'insensitive' } },
-          { tradeName: { contains: search, mode: 'insensitive' } },
-          { crmResponsavel: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-        ];
-      }
-
-      const [total, clients] = await Promise.all([
-        prisma.client.count({ where }),
-        prisma.client.findMany({
-          where,
-          skip: (page - 1) * limit,
-          take: limit,
-          orderBy: { createdAt: 'desc' },
-          include: {
-            users: {
-              select: { id: true, email: true, name: true, mustChangePassword: true, role: true },
-            },
-            _count: {
-              select: { auditReports: true, users: true },
-            },
-          },
-        }),
-      ]);
+      const result = await ClientService.listClients({ page, limit, search, status });
 
       res.status(200).json({
-        data: clients.map((c) => ({
-          ...c,
-          email: c.email || null,
-          createdAt: c.createdAt || new Date(),
-          updatedAt: c.updatedAt || new Date(),
-        })),
+        data: result.clients,
         pagination: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
+          total: result.total,
+          page: result.page,
+          limit: result.limit,
+          totalPages: Math.ceil(result.total / result.limit) || 1,
         },
       });
     } catch (error) {
@@ -127,222 +70,90 @@ export class ClientController {
   }
 
   /**
-   * Detalhes de uma clínica específica por ID
+   * Detalhes de uma clínica por ID
    */
   public static async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
+      const client = await ClientService.getClientById(id, req.user);
 
-      // Isolamento multi-tenant: CLIENT só pode ver a sua própria clínica
-      if (req.user?.role === Role.CLIENT && req.user.clientId !== id) {
+      res.status(200).json(client);
+    } catch (error: any) {
+      if (error.message === 'TENANT_FORBIDDEN') {
         res.status(403).json({
           error: 'Acesso negado. Você só tem permissão para visualizar os dados da sua própria clínica.',
           code: 'TENANT_FORBIDDEN',
         });
         return;
       }
-
-      const client = await prisma.client.findUnique({
-        where: { id },
-        include: {
-          users: {
-            select: { id: true, name: true, email: true, role: true, createdAt: true },
-          },
-          auditReports: {
-            orderBy: { createdAt: 'desc' },
-            take: 5,
-            include: {
-              _count: { select: { violations: true } },
-            },
-          },
-          _count: {
-            select: { auditReports: true, users: true },
-          },
-        },
-      });
-
-      if (!client) {
+      if (error.message === 'CLIENT_NOT_FOUND') {
         res.status(404).json({ error: 'Clínica não encontrada.' });
         return;
       }
-
-      res.status(200).json(client);
-    } catch (error) {
       next(error);
     }
   }
 
   /**
-   * Endpoint exclusivo para o perfil CLIENT visualizar seu próprio painel (Portal do Cliente)
+   * Retorna os dados cadastrais da clínica do usuário logado (Portal do Cliente)
    */
   public static async portalMe(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      if (!req.user?.clientId) {
-        res.status(404).json({
-          error: 'Nenhuma clínica vinculada a este usuário.',
-          code: 'NO_LINKED_CLIENT',
-        });
+      const clientId = req.user?.clientId;
+      if (!clientId) {
+        res.status(403).json({ error: 'Usuário não vinculado a uma clínica específica.' });
         return;
       }
 
-      const clientId = req.user.clientId;
-
-      const client = await prisma.client.findUnique({
-        where: { id: clientId },
-        include: {
-          auditReports: {
-            orderBy: { createdAt: 'desc' },
-            take: 10,
-            include: {
-              violations: true,
-            },
-          },
-        },
-      });
-
-      if (!client) {
-        res.status(404).json({ error: 'Clínica não encontrada.' });
-        return;
-      }
-
-      // Calcula indicadores do cliente
-      const reports = client.auditReports || [];
-      const latestReport = reports[0] || null;
-
-      const criticalViolationsCount = reports.reduce((acc, r) => {
-        return acc + r.violations.filter((v) => v.severity === 'CRITICA' && !v.resolved).length;
-      }, 0);
-
-      const graveViolationsCount = reports.reduce((acc, r) => {
-        return acc + r.violations.filter((v) => v.severity === 'GRAVE' && !v.resolved).length;
-      }, 0);
-
-      const sanitizedReports = reports.map((r) => ({
-        id: r.id,
-        clientId: r.clientId,
-        targetUrl: r.targetUrl,
-        verdict: r.verdict,
-        score: r.score,
-        summary: sanitizeClientSummary(r.summary),
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-        violations: r.violations.map((v) => ({
-          id: v.id,
-          normArticle: v.normArticle,
-          normCode: v.normCode,
-          severity: v.severity,
-          detectedText: v.detectedText,
-          correctiveAdvice: v.correctiveAdvice,
-          resolved: v.resolved,
-        })),
-      }));
+      const portalData = await ClientService.getPortalDashboard(clientId);
 
       res.status(200).json({
-        client: {
-          id: client.id,
-          name: client.name,
-          tradeName: client.tradeName,
-          crmResponsavel: client.crmResponsavel,
-          crmUf: client.crmUf,
-          rqeResponsavel: client.rqeResponsavel,
-          especialidade: client.especialidade,
-          websiteUrl: client.websiteUrl,
-          status: client.status,
-          email: client.email,
-        },
-        overview: {
-          latestVerdict: latestReport?.verdict || 'PARCIALMENTE_CONFORME',
-          latestScore: latestReport?.score ?? 70,
-          totalReports: reports.length,
-          activeCriticalViolations: criticalViolationsCount,
-          activeGraveViolations: graveViolationsCount,
-          lastAuditDate: latestReport?.createdAt || null,
-        },
-        recentReports: sanitizedReports,
+        client: portalData.client,
+        metrics: portalData.metrics,
+        latestReports: portalData.latestReports,
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === 'CLIENT_NOT_FOUND') {
+        res.status(404).json({ error: 'Cadastro da clínica não encontrado.' });
+        return;
+      }
       next(error);
     }
   }
 
   /**
-   * Criação de nova clínica (ADMIN e AUDITOR)
+   * Cadastro de nova clínica (Apenas ADMIN)
    */
   public static async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { accessEmail, initialPassword, ...clientFields } = createClientSchema.parse(req.body);
-      const now = new Date();
-
-      const client = await prisma.client.create({
-        data: {
-          ...clientFields,
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
-
-      let createdUser = null;
-      const targetUserEmail = (accessEmail || clientFields.email)?.trim();
-      if (initialPassword && targetUserEmail) {
-        const passwordHash = await bcrypt.hash(initialPassword, 12);
-
-        // Verifica se já existe usuário com esse e-mail
-        const existingUser = await prisma.user.findUnique({
-          where: { email: targetUserEmail },
-        });
-
-        if (existingUser) {
-          createdUser = await prisma.user.update({
-            where: { id: existingUser.id },
-            data: {
-              passwordHash,
-              role: Role.CLIENT,
-              clientId: client.id,
-              mustChangePassword: true,
-            },
-            select: { id: true, email: true, name: true, role: true, mustChangePassword: true },
-          });
-        } else {
-          createdUser = await prisma.user.create({
-            data: {
-              email: targetUserEmail,
-              passwordHash,
-              name: clientFields.tradeName || clientFields.name,
-              role: Role.CLIENT,
-              clientId: client.id,
-              mustChangePassword: true,
-            },
-            select: { id: true, email: true, name: true, role: true, mustChangePassword: true },
-          });
-        }
-
-        await prisma.systemLog.create({
-          data: {
-            level: 'INFO',
-            module: 'CLIENT_MANAGEMENT',
-            message: `[CLIENT_ACCESS_CREATED] Usuário institucional ${targetUserEmail} criado com senha temporária para a clínica "${client.name}". Troca obrigatória no primeiro acesso.`,
-            details: JSON.stringify({ clientId: client.id, userEmail: targetUserEmail }),
-          },
-        }).catch(() => {});
-      }
+      const data = createClientSchema.parse(req.body);
+      const { client, createdUser } = await ClientService.createClient(data);
 
       res.status(201).json({
-        message: 'Clínica cadastrada com sucesso.' + (createdUser ? ' Usuário de acesso institucional gerado com troca de senha obrigatória no primeiro acesso.' : ''),
+        message:
+          'Clínica cadastrada com sucesso.' +
+          (createdUser ? ' Usuário de acesso institucional gerado com troca de senha obrigatória no primeiro acesso.' : ''),
         client,
         accessUser: createdUser,
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === 'CRM_ALREADY_EXISTS') {
+        res.status(409).json({
+          error: 'Já existe uma clínica cadastrada com este CRM e UF do Responsável Técnico.',
+          code: 'CRM_ALREADY_EXISTS',
+        });
+        return;
+      }
       next(error);
     }
   }
 
   /**
-   * Cria ou redefine credenciais institucionais (CLIENT) para uma clínica existente
+   * Provisionar ou Atualizar Usuário de Acesso da Clínica
    */
   public static async createOrUpdateAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-
       const accessSchema = z.object({
         email: z.string().email('E-mail institucional inválido'),
         password: z.string().min(6, 'Senha inicial deve ter no mínimo 6 caracteres'),
@@ -350,129 +161,68 @@ export class ClientController {
       });
 
       const { email, password, name } = accessSchema.parse(req.body);
-
-      const client = await prisma.client.findUnique({
-        where: { id },
-      });
-
-      if (!client) {
-        res.status(404).json({ error: 'Clínica não encontrada.' });
-        return;
-      }
-
-      const passwordHash = await bcrypt.hash(password, 12);
-      const targetName = name || client.tradeName || client.name;
-
-      const existingUser = await prisma.user.findUnique({
-        where: { email },
-      });
-
-      let user;
-      if (existingUser) {
-        user = await prisma.user.update({
-          where: { id: existingUser.id },
-          data: {
-            passwordHash,
-            clientId: client.id,
-            role: Role.CLIENT,
-            mustChangePassword: true,
-          },
-          select: { id: true, email: true, name: true, role: true, mustChangePassword: true },
-        });
-      } else {
-        user = await prisma.user.create({
-          data: {
-            email,
-            passwordHash,
-            name: targetName,
-            role: Role.CLIENT,
-            clientId: client.id,
-            mustChangePassword: true,
-          },
-          select: { id: true, email: true, name: true, role: true, mustChangePassword: true },
-        });
-      }
-
-      await prisma.systemLog.create({
-        data: {
-          level: 'INFO',
-          module: 'CLIENT_MANAGEMENT',
-          message: `[CLIENT_ACCESS_PROVISIONED] Acesso institucional concedido/redefinido para ${email} (Clínica: ${client.name}). Troca de senha obrigatória no primeiro acesso ativada.`,
-          details: JSON.stringify({ clientId: client.id, email, requestedBy: req.user?.email }),
-        },
-      }).catch(() => {});
+      const result = await ClientService.createOrUpdateAccess(
+        id,
+        { email, password, name },
+        req.user?.email
+      );
 
       res.status(200).json({
         message: 'Credenciais de acesso institucional configuradas com sucesso! A clínica deverá alterar a senha no primeiro acesso.',
-        user,
+        user: result.user,
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === 'CLIENT_NOT_FOUND') {
+        res.status(404).json({ error: 'Clínica não encontrada.' });
+        return;
+      }
+      if (error.message === 'EMAIL_ALREADY_IN_USE') {
+        res.status(409).json({ error: 'Este e-mail já está vinculado a outro cadastro no sistema.' });
+        return;
+      }
+      if (error.message === 'PASSWORD_REQUIRED_FOR_NEW_USER') {
+        res.status(400).json({ error: 'Senha inicial é obrigatória para criar novo acesso.' });
+        return;
+      }
       next(error);
     }
   }
 
   /**
-   * Atualização de clínica existente
+   * Atualização cadastral da clínica
    */
   public static async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
+      const isClientSelf = req.user?.role === Role.CLIENT;
 
-      if (req.user?.role === Role.CLIENT) {
-        if (req.user.clientId !== id) {
-          res.status(403).json({
-            error: 'Acesso negado. Você só pode atualizar a sua própria clínica.',
-            code: 'TENANT_FORBIDDEN',
-          });
-          return;
-        }
-
-        // Impede que usuários CLIENT alterem campos sensíveis como status, cnpj ou responsáveis técnicos
-        if (
-          'status' in req.body ||
-          'cnpj' in req.body ||
-          'crmResponsavel' in req.body ||
-          'rqeResponsavel' in req.body
-        ) {
-          res.status(403).json({
-            error: 'Clientes não possuem autorização para alterar status cadastral, CNPJ ou responsáveis técnicos.',
-            code: 'CLIENT_FIELD_FORBIDDEN',
-          });
-          return;
-        }
-
-        const data = clientSelfUpdateSchema.parse(req.body);
-        const updated = await prisma.client.update({
-          where: { id },
-          data: {
-            ...data,
-            updatedAt: new Date(),
-          },
-        });
-
-        res.status(200).json({
-          message: 'Dados de contato da clínica atualizados com sucesso.',
-          client: updated,
+      if (isClientSelf && req.user?.clientId !== id) {
+        res.status(403).json({
+          error: 'Acesso negado. Você só pode atualizar a sua própria clínica.',
+          code: 'TENANT_FORBIDDEN',
         });
         return;
       }
 
-      // ADMIN e AUDITOR
-      const data = updateClientSchema.parse(req.body);
+      const data = isClientSelf
+        ? clientSelfUpdateSchema.parse(req.body)
+        : updateClientSchema.parse(req.body);
 
-      const updated = await prisma.client.update({
-        where: { id },
-        data: {
-          ...data,
-          updatedAt: new Date(),
-        },
-      });
+      const updated = await ClientService.updateClient(id, data, req.user);
 
       res.status(200).json({
         message: 'Clínica atualizada com sucesso.',
         client: updated,
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === 'TENANT_FORBIDDEN') {
+        res.status(403).json({ error: 'Acesso negado.', code: 'TENANT_FORBIDDEN' });
+        return;
+      }
+      if (error.message === 'CLIENT_NOT_FOUND') {
+        res.status(404).json({ error: 'Clínica não encontrada.' });
+        return;
+      }
       next(error);
     }
   }
@@ -483,87 +233,43 @@ export class ClientController {
   public static async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-
-      await prisma.client.delete({
-        where: { id },
-      });
+      await ClientService.deleteClient(id);
 
       res.status(200).json({
         message: 'Clínica e seus laudos associados foram removidos com sucesso.',
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === 'CLIENT_NOT_FOUND') {
+        res.status(404).json({ error: 'Clínica não encontrada.' });
+        return;
+      }
       next(error);
     }
   }
 
   /**
-   * Buscar Informações da Clínica (Scraping, Datalink ou MCP) e salvar atrelado ao cliente
+   * Buscar Informações da Clínica (Scraping) e salvar atrelado ao cliente
    */
   public static async extractInfo(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
       const { extractionMode = 'CHEERIO', targetUrl } = req.body;
 
-      const client = await prisma.client.findUnique({
-        where: { id },
-      });
-
-      if (!client) {
-        res.status(404).json({ error: 'Clínica não encontrada.' });
-        return;
-      }
-
-      const effectiveUrl = (targetUrl || client.websiteUrl || '').trim();
-      if (!effectiveUrl) {
-        res.status(400).json({ error: 'A clínica não possui URL de website cadastrada e nenhuma URL foi informada.' });
-        return;
-      }
-
-      // 1. Extração dos dados do canal digital da clínica
-      const scrape = await ScraperService.scrape(effectiveUrl, extractionMode as ExtractionMode);
-
-      // 2. Persistência em documento específico atrelado ao cliente (sem poluir o repositório de normas)
-      const scrapedDoc = await prisma.clientScrapedData.create({
-        data: {
-          clientId: id,
-          url: effectiveUrl,
-          title: scrape.title || client.tradeName || client.name,
-          cleanMarkdown: scrape.cleanMarkdown,
-          rawLength: scrape.rawHtmlLength,
-          tokensCount: scrape.tokensEstimatedClean,
-          extractionMode: extractionMode as ExtractionMode,
-          detectedTags: scrape.detectedTags,
-          extractedEntities: JSON.stringify(scrape.extractedEntities),
-          status: 'COMPLETED',
-        },
-      });
-
-      // 3. Log Operacional no Terminal
-      await prisma.systemLog.create({
-        data: {
-          level: 'INFO',
-          module: 'CLIENT_EXTRACTION',
-          correlationId: scrapedDoc.id,
-          message: `[CLIENT_EXTRACTION] Informações coletadas para "${client.name}" (${effectiveUrl}) via ${extractionMode} | ${scrape.rawHtmlLength} bytes | ${scrape.tokensEstimatedClean} tokens | Documento ID: ${scrapedDoc.id}`,
-          details: JSON.stringify({
-            clientId: id,
-            clientName: client.name,
-            url: effectiveUrl,
-            extractionMode,
-            tokensCount: scrape.tokensEstimatedClean,
-            entitiesCount: {
-              crms: scrape.extractedEntities.crms.length,
-              rqes: scrape.extractedEntities.rqes.length,
-            },
-          }),
-        },
-      }).catch(() => {});
+      const result = await ClientService.extractAndSaveInfo(id, targetUrl, extractionMode as ExtractionMode);
 
       res.status(201).json({
         message: 'Informações da clínica coletadas e persistidas com sucesso.',
-        data: scrapedDoc,
+        data: result.scrapedDoc,
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === 'CLIENT_NOT_FOUND') {
+        res.status(404).json({ error: 'Clínica não encontrada.' });
+        return;
+      }
+      if (error.message === 'EMPTY_URL') {
+        res.status(400).json({ error: 'A clínica não possui URL de website cadastrada e nenhuma URL foi informada.' });
+        return;
+      }
       next(error);
     }
   }
@@ -574,27 +280,21 @@ export class ClientController {
   public static async listScrapedData(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
+      const items = await ClientService.listScrapedData(id, req.user);
 
-      if (req.user?.role === Role.CLIENT && req.user.clientId !== id) {
+      res.status(200).json({
+        data: items,
+        total: items.length,
+      });
+    } catch (error: any) {
+      if (error.message === 'TENANT_FORBIDDEN') {
         res.status(403).json({
           error: 'Acesso negado. Você só tem permissão para visualizar dados extraídos da sua própria clínica.',
           code: 'TENANT_FORBIDDEN',
         });
         return;
       }
-
-      const items = await prisma.clientScrapedData.findMany({
-        where: { clientId: id },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      res.status(200).json({
-        data: items,
-        total: items.length,
-      });
-    } catch (error) {
       next(error);
     }
   }
 }
-

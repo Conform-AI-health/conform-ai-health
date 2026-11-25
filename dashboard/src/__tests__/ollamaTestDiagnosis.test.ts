@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { OllamaProvider } from '../services/ai/ollamaProvider.js';
 import { AIProviderFactory, resolveOllamaBaseUrl } from '../services/ai/aiProviderFactory.js';
 import { prisma } from '../config/prisma.js';
@@ -10,6 +10,23 @@ describe('Diagnóstico e Teste de Modelos de IA — Ollama Provider', () => {
   });
 
   describe('resolveOllamaBaseUrl', () => {
+    const originalHost = process.env.OLLAMA_HOST;
+    const originalBaseUrl = process.env.OLLAMA_BASE_URL;
+
+    beforeEach(() => {
+      delete process.env.OLLAMA_HOST;
+      delete process.env.OLLAMA_BASE_URL;
+      delete process.env.IS_DOCKER;
+    });
+
+    afterEach(() => {
+      if (originalHost) process.env.OLLAMA_HOST = originalHost;
+      else delete process.env.OLLAMA_HOST;
+      if (originalBaseUrl) process.env.OLLAMA_BASE_URL = originalBaseUrl;
+      else delete process.env.OLLAMA_BASE_URL;
+      delete process.env.IS_DOCKER;
+    });
+
     it('deve manter URL padrão se não houver docker e nenhuma url customizada', () => {
       const url = resolveOllamaBaseUrl();
       expect(url).toBeDefined();
@@ -29,20 +46,27 @@ describe('Diagnóstico e Teste de Modelos de IA — Ollama Provider', () => {
       delete process.env.IS_DOCKER;
     });
 
-    it('deve priorizar OLLAMA_BASE_URL configurado no ambiente quando o banco tiver o default localhost', () => {
-      process.env.OLLAMA_BASE_URL = 'http://100.106.169.126:11434';
+    it('deve priorizar OLLAMA_HOST configurado no ambiente quando o banco tiver o default localhost', () => {
+      process.env.OLLAMA_HOST = 'http://192.168.1.100:11434';
       const resolved = resolveOllamaBaseUrl('http://localhost:11434');
-      expect(resolved).toBe('http://100.106.169.126:11434');
-      delete process.env.OLLAMA_BASE_URL;
+      expect(resolved).toBe('http://192.168.1.100:11434');
+      delete process.env.OLLAMA_HOST;
+    });
+
+    it('deve adicionar protocolo http:// se OLLAMA_HOST for definido sem protocolo', () => {
+      process.env.OLLAMA_HOST = '192.168.1.100:11434';
+      const resolved = resolveOllamaBaseUrl('http://localhost:11434');
+      expect(resolved).toBe('http://192.168.1.100:11434');
+      delete process.env.OLLAMA_HOST;
     });
   });
 
   describe('isAllowedLocalhostBaseUrl anti-SSRF para Ollama', () => {
-    it('deve permitir IP customizado de Tailscale configurado em OLLAMA_BASE_URL sem bloquear como SSRF', () => {
-      process.env.OLLAMA_BASE_URL = 'http://100.106.169.126:11434';
-      const isAllowed = security.isAllowedLocalhostBaseUrl('http://100.106.169.126:11434/api/generate');
+    it('deve permitir host customizado configurado em OLLAMA_HOST sem bloquear como SSRF', () => {
+      process.env.OLLAMA_HOST = '192.168.1.100:11434';
+      const isAllowed = security.isAllowedLocalhostBaseUrl('http://192.168.1.100:11434/api/generate');
       expect(isAllowed).toBe(true);
-      delete process.env.OLLAMA_BASE_URL;
+      delete process.env.OLLAMA_HOST;
     });
   });
 

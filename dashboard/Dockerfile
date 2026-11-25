@@ -32,9 +32,10 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-# Instala dumb-init para gerenciamento confiável de sinais de processo (PID 1)
-RUN apk add --no-cache openssl dumb-init
+# Instala dumb-init e Chromium nativo para permitir renderização headless de páginas SPA sem dependência de download externo
+RUN apk add --no-cache openssl dumb-init chromium nss freetype harfbuzz ttf-freefont
 
 COPY --chown=node:node package*.json ./
 COPY --chown=node:node prisma ./prisma/

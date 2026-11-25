@@ -42,6 +42,7 @@ out
 .env*
 *.env
 !.env.example
+!.env.staging.example
 !dashboard/.env.example
 !dashboard-web/.env.example
 

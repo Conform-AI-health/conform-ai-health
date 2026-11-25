@@ -317,7 +317,7 @@ export async function runInitialSeed(): Promise<void> {
           name: 'Ollama Local (Qwen 2.5)',
           provider: 'ollama',
           modelId: 'qwen2.5:7b',
-          baseUrl: 'http://localhost:11434',
+          baseUrl: process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL || env.OLLAMA_BASE_URL || 'http://localhost:11434',
           isActive: false,
           isDefault: false,
           temperature: 0.2,
@@ -350,8 +350,20 @@ export async function runInitialSeed(): Promise<void> {
       },
     });
 
-    // Atualização de endpoint do Ollama se configurado via variáveis de ambiente com IP/host dedicado
-    if (env.OLLAMA_BASE_URL && !env.OLLAMA_BASE_URL.includes('localhost') && !env.OLLAMA_BASE_URL.includes('127.0.0.1')) {
+    // Atualização de endpoint do Ollama se configurado via variáveis de ambiente com IP/host dedicado (ex: OLLAMA_HOST)
+    const rawOllamaEnv = process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL || env.OLLAMA_BASE_URL;
+    const isCustomOllama =
+      rawOllamaEnv &&
+      !rawOllamaEnv.includes('localhost') &&
+      !rawOllamaEnv.includes('127.0.0.1') &&
+      !rawOllamaEnv.includes('host.docker.internal');
+
+    if (isCustomOllama) {
+      const targetOllamaUrl =
+        rawOllamaEnv.startsWith('http://') || rawOllamaEnv.startsWith('https://')
+          ? rawOllamaEnv.trim()
+          : `http://${rawOllamaEnv.trim()}`;
+
       await prisma.aiModelConfig.updateMany({
         where: {
           provider: 'ollama',
@@ -362,7 +374,7 @@ export async function runInitialSeed(): Promise<void> {
           ],
         },
         data: {
-          baseUrl: env.OLLAMA_BASE_URL,
+          baseUrl: targetOllamaUrl,
         },
       });
     }

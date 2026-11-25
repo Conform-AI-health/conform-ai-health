@@ -48,7 +48,8 @@ const envSchema = z
     FRONTEND_URL: z.string().default('http://localhost:5173'),
     AI_PROVIDER: z.enum(['gemini', 'ollama', 'heuristic']).default('gemini'),
     GEMINI_API_KEY: z.string().optional().default(''),
-    OLLAMA_BASE_URL: z.string().default(process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST || 'http://localhost:11434'),
+    OLLAMA_HOST: z.string().optional().default(process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL || ''),
+    OLLAMA_BASE_URL: z.string().default(process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL || 'http://localhost:11434'),
     OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
     GEMINI_EMBEDDING_MODEL: z.string().default('gemini-embedding-001'),
     EXTRACTION_MODE: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL']).default('CHEERIO'),
@@ -64,6 +65,20 @@ const envSchema = z
     MONITORING_API_KEY: z.string().optional().default(''),
     ADMIN_EMAIL: z.string().email().optional().default('admin@conform.ai'),
     ADMIN_PASSWORD: z.string().optional().default(''),
+    WORKER_HEALTH_PORT: z.coerce.number().default(3001),
+    PUPPETEER_EXECUTABLE_PATH: z.string().optional().default(''),
+    GITHUB_TOKEN: z.string().optional().default(''),
+    IS_DOCKER: z.string().optional().default('false'),
+    RUN_WORKER: z.string().optional().default('false'),
+    APP_VERSION: z.string().default('dev'),
+    APP_ENV: z.enum(['development', 'test', 'staging', 'production']).optional(),
+    SERVICE_NAME: z.string().default('conformia-api'),
+    LOG_LEVEL: z
+      .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+      .default(process.env.NODE_ENV === 'test' ? 'silent' : 'info'),
+    OTEL_ENABLED: z.string().optional().default('true'),
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional().default(''),
+    OTEL_EXPORTER_OTLP_HEADERS: z.string().optional().default(''),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {

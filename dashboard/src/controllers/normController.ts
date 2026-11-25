@@ -3,12 +3,14 @@ import { prisma } from '../config/prisma.js';
 import { NORMS_CATALOG } from '../data/normsCatalog.js';
 import { Role } from '@prisma/client';
 import { z } from 'zod';
-import { LegalNormCrawlerService } from '../services/legalNormCrawlerService.js';
+import { LegalNormCrawlerService, CrawlJobState } from '../services/legalNormCrawlerService.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { env } from '../config/env.js';
+import { normCrawlQueue } from '../config/redis.js';
 import { AIProviderFactory } from '../services/ai/aiProviderFactory.js';
 import { OllamaTaxonomyService } from '../services/ollamaTaxonomyService.js';
 import { TaxonomyInferenceInput } from '../services/deontologicalTaxonomyService.js';
+import { injectTraceCarrier } from '../shared/tracing.js';
 
 const crawlInputSchema = z.object({
   url: z.string().url('URL inválida'),
@@ -408,16 +410,54 @@ export class NormController {
       }
 
       const jobId = `crawl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      void LegalNormCrawlerService.executeCrawlJob({
+      const crawlPayload = {
         ...input,
         maxPages: input.maxPages ?? env.CRAWL_MAX_PAGES,
         jobId,
-      }).catch((err: any) => {
-        console.error(`❌ [Crawl ${jobId}] Falha geral do job: ${err.message}`);
-      });
+        traceContext: injectTraceCarrier(),
+      };
+
+      // Inicializa e persiste estado preliminar do job no Redis/Memória
+      const initialJobState: CrawlJobState = {
+        jobId,
+        rootUrl: input.url,
+        status: 'running',
+        maxDepth: input.maxDepth ?? 2,
+        allowedDomains: input.allowedDomains || [],
+        tags: input.tags || [],
+        force: input.force === true,
+        counters: {
+          discovered: 1,
+          downloaded: 0,
+          normsSaved: 0,
+          normsSkippedIdempotent: 0,
+          normsUpdatedVersion: 0,
+          discarded: 0,
+          errors: 0,
+        },
+        savedNormIds: [],
+        discards: [],
+        errors: [],
+        startedAt: new Date().toISOString(),
+      };
+      await LegalNormCrawlerService.saveJobState(initialJobState);
+
+      // Desacoplamento assíncrono: enfileira no BullMQ para processamento pelo Worker com 1 única tentativa (sem retry automático de 3x)
+      try {
+        await normCrawlQueue.add('normCrawlJob', crawlPayload, {
+          jobId: `norm-crawl-${jobId}`,
+          attempts: 1,
+        });
+        console.log(`📬 [NormController] Job de crawl de normas enfileirado no BullMQ: norm-crawl-${jobId}`);
+      } catch (queueErr: any) {
+        console.warn(`⚠️ [NormController] Redis em fallback (${queueErr.message}). Executando crawl diretamente...`);
+        void LegalNormCrawlerService.executeCrawlJob(crawlPayload).catch((err: any) => {
+          console.error(`❌ [Crawl ${jobId}] Falha geral do job: ${err.message}`);
+        });
+      }
 
       res.status(202).json({
-        message: 'Varredura iniciada. Acompanhe cada link consultado na aba "Links Consultados" da telemetria.',
+        message: 'Varredura iniciada na fila assíncrona. Acompanhe cada link consultado na aba "Links Consultados" da telemetria.',
         jobId,
         statusUrl: `/norms/crawl/${jobId}`,
       });
@@ -431,9 +471,9 @@ export class NormController {
    */
   public static async getCrawlJobStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const job = LegalNormCrawlerService.getJob(req.params.jobId);
+      const job = await LegalNormCrawlerService.getJob(req.params.jobId);
       if (!job) {
-        res.status(404).json({ error: 'Job de crawl não encontrado (jobs são mantidos em memória).' });
+        res.status(404).json({ error: 'Job de crawl não encontrado ou expirado.' });
         return;
       }
       res.status(200).json(job);

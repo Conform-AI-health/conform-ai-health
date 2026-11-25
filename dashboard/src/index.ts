@@ -2,12 +2,16 @@ import dns from 'node:dns';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { runAutoMigrateAndSeed } from './shared/autoMigrate.js';
-import { AuditSchedulerService } from './services/auditSchedulerService.js';
+import { createLogger } from './shared/logger.js';
+import { initTracing, shutdownTracing } from './shared/tracing.js';
 
 // Garante resolução IPv4 prioritária em ambientes conteinerizados Docker para evitar falhas de ENETUNREACH
 dns.setDefaultResultOrder('ipv4first');
 
+const log = createLogger('Bootstrap');
+
 async function bootstrap() {
+  initTracing(env.SERVICE_NAME || 'conformia-api');
   const app = createApp();
 
   // Executa auto-migração e provisionamento estrito inicial (T03)
@@ -15,34 +19,33 @@ async function bootstrap() {
     try {
       await runAutoMigrateAndSeed();
     } catch (err: any) {
-      console.error(`❌ [Bootstrap Fatal] Falha crítica de inicialização/provisionamento no banco de dados: ${err.message}`);
+      log.fatal(
+        { err },
+        `Falha crítica de inicialização/provisionamento no banco de dados: ${err.message}`
+      );
       process.exit(1);
     }
   }
 
   const server = app.listen(env.PORT, () => {
-    console.log(`\n🏥 ========================================================`);
-    console.log(`🚀 ConformIA Backend API ativa e pronta para auditorias!`);
-    console.log(`📡 URL: http://localhost:${env.PORT}`);
-    console.log(`🩺 Healthcheck: http://localhost:${env.PORT}/health`);
-    console.log(`🔒 API Base: http://localhost:${env.PORT}${env.API_PREFIX}`);
-    console.log(`🧠 AI Provider: ${env.AI_PROVIDER}`);
-    console.log(`========================================================\n`);
-
-    // Inicia o agendador contínuo de auditorias (cron)
-    if (env.NODE_ENV !== 'test') {
-      AuditSchedulerService.init().catch((err) => {
-        console.warn(`[Bootstrap] Falha ao iniciar AuditSchedulerService: ${err.message}`);
-      });
-    }
+    log.info(
+      {
+        port: env.PORT,
+        apiPrefix: env.API_PREFIX,
+        aiProvider: env.AI_PROVIDER,
+        version: env.APP_VERSION,
+        environment: env.APP_ENV || env.NODE_ENV,
+      },
+      'ConformIA Backend API ativa e pronta para auditorias'
+    );
   });
 
-  // INF-03: Graceful Shutdown Coordenado do Servidor HTTP, Agendador e Conexões de Banco
+  // INF-03: Graceful Shutdown Coordenado do Servidor HTTP, Tracing e Conexões de Banco
   const shutdown = async (signal: string) => {
-    console.log(`\n🛑 Sinal ${signal} recebido. Encerrando servidor HTTP gracefully...`);
+    log.info({ signal }, 'Sinal recebido. Encerrando servidor HTTP gracefully...');
 
     const forceExitTimeout = setTimeout(() => {
-      console.error('⚠️ Timeout de encerramento excedido (10s). Forçando finalização do processo.');
+      log.error('Timeout de encerramento excedido (10s). Forçando finalização do processo.');
       process.exit(1);
     }, 10000);
     forceExitTimeout.unref();
@@ -50,8 +53,8 @@ async function bootstrap() {
     try {
       await new Promise<void>((resolve) => {
         server.close((err) => {
-          if (err) console.warn('Aviso ao fechar servidor HTTP:', err.message);
-          console.log('✅ Servidor HTTP finalizado.');
+          if (err) log.warn({ err }, 'Aviso ao fechar servidor HTTP');
+          log.info('Servidor HTTP finalizado.');
           resolve();
         });
       });
@@ -59,15 +62,16 @@ async function bootstrap() {
       const { prisma } = await import('./config/prisma.js');
       if (typeof (prisma as any).$disconnect === 'function') {
         await prisma.$disconnect();
-        console.log('✅ Conexão com MongoDB finalizada.');
+        log.info('Conexão com MongoDB finalizada.');
       }
 
+      await shutdownTracing();
       clearTimeout(forceExitTimeout);
-      console.log('🚀 Finalização graciosa concluída com sucesso.');
+      log.info('Finalização graciosa concluída com sucesso.');
       process.exit(0);
     } catch (err: any) {
       clearTimeout(forceExitTimeout);
-      console.error('Erro durante shutdown:', err.message);
+      log.error({ err }, 'Erro durante shutdown');
       process.exit(1);
     }
   };
@@ -77,7 +81,6 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-  console.error('❌ Falha fatal ao iniciar ConformIA Backend:', err);
+  log.fatal({ err }, 'Falha fatal ao iniciar ConformIA Backend');
   process.exit(1);
 });
-

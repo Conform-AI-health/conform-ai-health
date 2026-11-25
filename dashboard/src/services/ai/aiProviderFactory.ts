@@ -233,7 +233,8 @@ export class AIProviderFactory {
    */
   public static async testModelResponse(
     customPrompt?: string,
-    targetModelId?: string
+    targetModelId?: string,
+    customBaseUrl?: string
   ): Promise<AIProviderHealth> {
     let activeModel: any = null;
     if (targetModelId) {
@@ -242,13 +243,22 @@ export class AIProviderFactory {
         if (activeModel.apiKey) {
           activeModel.apiKey = decryptModelApiKey(activeModel.apiKey) || activeModel.apiKey;
         }
-        if (activeModel.provider === 'ollama') {
+        if (customBaseUrl && customBaseUrl.trim()) {
+          activeModel.baseUrl = customBaseUrl.trim();
+          await prisma.aiModelConfig.update({
+            where: { id: targetModelId },
+            data: { baseUrl: activeModel.baseUrl },
+          }).catch(() => null);
+        } else if (activeModel.provider === 'ollama') {
           activeModel.baseUrl = resolveOllamaBaseUrl(activeModel.baseUrl);
         }
       }
     }
     if (!activeModel) {
       activeModel = await this.getActiveModelConfig();
+      if (customBaseUrl && customBaseUrl.trim()) {
+        activeModel.baseUrl = customBaseUrl.trim();
+      }
     }
 
     const provider = this.getProvider(activeModel.provider);

@@ -9,6 +9,7 @@ import { cosineSimilarity, SemanticEmbeddingService } from './semanticEmbeddingS
 import { AIProviderFactory } from './ai/aiProviderFactory.js';
 import { FirecrawlClient } from './firecrawl/firecrawlClient.js';
 import { LinkTraceService } from '../shared/linkTrace.js';
+import { getRedisConnection } from '../config/redis.js';
 import { classifyNormTopics, resolveRequestedTopics, TOPIC_LABELS, NormTopic } from '../shared/normTopics.js';
 import { isNavigationLabel } from '../shared/navigationLabels.js';
 import {
@@ -161,7 +162,31 @@ export class LegalNormCrawlerService {
     return ignoredAssetExtension.test(pathname) || ignoredFrameworkPath.test(pathname);
   }
 
-  public static getJob(jobId: string): CrawlJobState | undefined {
+  public static async saveJobState(job: CrawlJobState): Promise<void> {
+    this.jobs.set(job.jobId, job);
+    try {
+      const redis = getRedisConnection();
+      await redis.set(`crawl:job:${job.jobId}`, JSON.stringify(job), 'EX', 7 * 24 * 3600);
+    } catch {
+      // Falha graciosa se Redis estiver inacessível
+    }
+  }
+
+  public static async getJob(jobId: string): Promise<CrawlJobState | undefined> {
+    // 1. Prioriza consulta ao Redis (fonte de verdade entre processos API e Worker)
+    try {
+      const redis = getRedisConnection();
+      const raw = await redis.get(`crawl:job:${jobId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as CrawlJobState;
+        this.jobs.set(jobId, parsed);
+        return parsed;
+      }
+    } catch {
+      // Em caso de falha de conexão com o Redis, faz fallback para memória local
+    }
+
+    // 2. Fallback para memória local do processo
     return this.jobs.get(jobId);
   }
 
@@ -1916,7 +1941,7 @@ export class LegalNormCrawlerService {
       startedAt: new Date().toISOString(),
     };
 
-    this.jobs.set(jobId, jobState);
+    await this.saveJobState(jobState);
 
     const preferFirecrawl = options.preferFirecrawl !== false;
     const allowedTopics: NormTopic[] = resolveRequestedTopics(tags);
@@ -1948,7 +1973,8 @@ export class LegalNormCrawlerService {
     const queuedUrls = new Set<string>([canonicalRoot]);
     const visitedContentHashes = new Set<string>();
 
-    while (queue.length > 0 && jobState.counters.downloaded < maxPages) {
+    try {
+      while (queue.length > 0 && jobState.counters.downloaded < maxPages) {
       const current = queue.shift()!;
       let normUrl = this.normalizeCanonicalUrl(current.url) || current.url;
       // Normalização automática de URLs do GitHub para download do conteúdo bruto (raw)
@@ -2326,42 +2352,67 @@ export class LegalNormCrawlerService {
             }),
           },
         }).catch(() => {});
+        // Persiste progresso periódico no Redis a cada ciclo para acompanhamento em tempo real
+        await this.saveJobState(jobState);
       }
     }
 
     // Links que ficaram na fila quando o limite de páginas do job foi atingido: registrados para auditoria
-    for (const pending of queue) {
-      const pendingUrl = this.normalizeCanonicalUrl(pending.url) || pending.url;
-      if (visitedUrls.has(pendingUrl)) continue;
-      await LinkTraceService.record({
-        jobId,
-        url: pendingUrl,
-        status: 'SKIPPED_MAX_PAGES',
-        parentUrl: pending.discoveredFrom,
-        depth: pending.depth,
-        anchorText: pending.anchorText,
-        fileType: pending.fileType,
-        reason: `Limite de páginas do job (${maxPages}) atingido antes de abrir este link`,
+      for (const pending of queue) {
+        const pendingUrl = this.normalizeCanonicalUrl(pending.url) || pending.url;
+        if (visitedUrls.has(pendingUrl)) continue;
+        await LinkTraceService.record({
+          jobId,
+          url: pendingUrl,
+          status: 'SKIPPED_MAX_PAGES',
+          parentUrl: pending.discoveredFrom,
+          depth: pending.depth,
+          anchorText: pending.anchorText,
+          fileType: pending.fileType,
+          reason: `Limite de páginas do job (${maxPages}) atingido antes de abrir este link`,
+        });
+      }
+
+      jobState.status = 'completed';
+      jobState.finishedAt = new Date().toISOString();
+      await this.saveJobState(jobState);
+
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'LEGAL_NORM_CRAWLER',
+          correlationId: jobId,
+          message: `Crawl job ${jobId} concluído: ${jobState.counters.normsSaved} normas salvas, ${jobState.counters.discarded} descartados.`,
+          details: JSON.stringify({
+            counters: jobState.counters,
+            discards: jobState.discards.slice(0, 25),
+          }),
+        },
+      }).catch(() => {});
+
+      return jobState;
+    } catch (err: any) {
+      jobState.status = 'failed';
+      jobState.finishedAt = new Date().toISOString();
+      jobState.errors.push({
+        url: jobState.rootUrl,
+        message: `Erro fatal no crawler: ${err.message}`,
       });
+      jobState.counters.errors++;
+      await this.saveJobState(jobState);
+
+      await prisma.systemLog.create({
+        data: {
+          level: 'ERROR',
+          module: 'LEGAL_NORM_CRAWLER',
+          correlationId: jobId,
+          message: `Crawl job ${jobId} falhou: ${err.message}`,
+          details: JSON.stringify({ error: err.message, stack: err.stack }),
+        },
+      }).catch(() => {});
+
+      throw err;
     }
-
-    jobState.status = 'completed';
-    jobState.finishedAt = new Date().toISOString();
-
-    await prisma.systemLog.create({
-      data: {
-        level: 'INFO',
-        module: 'LEGAL_NORM_CRAWLER',
-        correlationId: jobId,
-        message: `Crawl job ${jobId} concluído: ${jobState.counters.normsSaved} normas salvas, ${jobState.counters.discarded} descartados.`,
-        details: JSON.stringify({
-          counters: jobState.counters,
-          discards: jobState.discards.slice(0, 25),
-        }),
-      },
-    }).catch(() => {});
-
-    return jobState;
   }
 
   /**

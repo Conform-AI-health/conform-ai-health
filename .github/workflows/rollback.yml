@@ -1,0 +1,99 @@
+name: ConformIA Manual Version Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente de destino do rollback'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      target_version:
+        description: 'Tag imutável alvo (ex: sha-abc1234) ou "previous" para voltar à release imediatamente anterior'
+        required: true
+        default: 'previous'
+        type: string
+      reason:
+        description: 'Motivo regulatório ou técnico do rollback (gravado em releases.log)'
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    name: Rollback (${{ github.event.inputs.environment }} -> ${{ github.event.inputs.target_version }})
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Validar Tag Imutável Solicitada
+        run: |
+          TARGET="${{ github.event.inputs.target_version }}"
+          if [ -z "$TARGET" ] || [ "$TARGET" = "latest" ] || [ "$TARGET" = "dev" ]; then
+            echo "❌ Tag de rollback inválida ('${TARGET}'). Informe 'previous' ou uma tag imutável (ex: sha-abc1234)."
+            exit 1
+          fi
+
+      - name: Checkout Repositório
+        uses: actions/checkout@v4
+
+      - name: Sincronizar Scripts Atualizados no Servidor Alvo
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
+        with:
+          host: ${{ github.event.inputs.environment == 'staging' && secrets.STAGING_EC2_HOST || secrets.AWS_EC2_HOST }}
+          username: ${{ github.event.inputs.environment == 'staging' && secrets.STAGING_EC2_USER || secrets.AWS_EC2_USER }}
+          key: ${{ github.event.inputs.environment == 'staging' && secrets.STAGING_EC2_SSH_KEY || secrets.AWS_EC2_SSH_KEY }}
+          source: "scripts/ec2-disk-cleanup.sh,scripts/ec2-deploy-release.sh"
+          target: "${{ github.event.inputs.environment == 'staging' && '/opt/conformia-staging/' || '/opt/conformia/' }}"
+          overwrite: true
+
+      - name: Executar Rollback Auditável via SSH
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+          APP_VERSION: ${{ github.event.inputs.target_version }}
+          DEPLOY_ACTOR: ${{ github.actor }}
+          DEPLOY_REASON: ${{ github.event.inputs.reason }}
+        with:
+          host: ${{ github.event.inputs.environment == 'staging' && secrets.STAGING_EC2_HOST || secrets.AWS_EC2_HOST }}
+          username: ${{ github.event.inputs.environment == 'staging' && secrets.STAGING_EC2_USER || secrets.AWS_EC2_USER }}
+          key: ${{ github.event.inputs.environment == 'staging' && secrets.STAGING_EC2_SSH_KEY || secrets.AWS_EC2_SSH_KEY }}
+          envs: GHCR_USER,GHCR_TOKEN,TARGET_ENV,APP_VERSION,DEPLOY_ACTOR,DEPLOY_REASON
+          script: |
+            set -euo pipefail
+            if [ "$TARGET_ENV" = "staging" ]; then
+              DEPLOY_DIR="/opt/conformia-staging"
+              COMPOSE_PROJECT_NAME="conformia-staging"
+              COMPOSE_FILES="-f docker-compose.yml -f docker-compose.staging.yml"
+              API_HEALTH_URL="http://127.0.0.1:3334/health"
+              WORKER_HEALTH_URL="http://127.0.0.1:3002/health"
+            else
+              DEPLOY_DIR="/opt/conformia"
+              COMPOSE_PROJECT_NAME="conformia"
+              COMPOSE_FILES="-f docker-compose.yml"
+              API_HEALTH_URL="http://127.0.0.1:3333/health"
+              WORKER_HEALTH_URL="http://127.0.0.1:3001/health"
+            fi
+
+            mkdir -p "${DEPLOY_DIR}/scripts"
+            mv -f "${DEPLOY_DIR}/ec2-disk-cleanup.sh" "${DEPLOY_DIR}/scripts/ec2-disk-cleanup.sh" 2>/dev/null || true
+            mv -f "${DEPLOY_DIR}/ec2-deploy-release.sh" "${DEPLOY_DIR}/scripts/ec2-deploy-release.sh" 2>/dev/null || true
+            chmod +x "${DEPLOY_DIR}/scripts/ec2-disk-cleanup.sh" "${DEPLOY_DIR}/scripts/ec2-deploy-release.sh"
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            DEPLOY_ENV="$TARGET_ENV" \
+            DEPLOY_DIR="$DEPLOY_DIR" \
+            COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME" \
+            COMPOSE_FILES="$COMPOSE_FILES" \
+            API_HEALTH_URL="$API_HEALTH_URL" \
+            WORKER_HEALTH_URL="$WORKER_HEALTH_URL" \
+            ACTION=ROLLBACK \
+            "${DEPLOY_DIR}/scripts/ec2-deploy-release.sh"

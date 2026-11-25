@@ -23,6 +23,7 @@ import {
   Lock,
   Key,
   User,
+  Save,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
@@ -110,6 +111,8 @@ export const AgentsPage: React.FC = () => {
   const [showTestModal, setShowTestModal] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
   const [selectedModelIdForTest, setSelectedModelIdForTest] = useState<string>('');
+  const [testEndpointUrl, setTestEndpointUrl] = useState<string>('');
+  const [savingEndpoint, setSavingEndpoint] = useState(false);
 
   // Cockpit & Governança Unificada do Módulo (Corpo Único de Configuração & Disparo)
   const [selectedModuleId, setSelectedModuleId] = useState('');
@@ -440,18 +443,30 @@ export const AgentsPage: React.FC = () => {
   const handleOpenTestModal = (modelId?: string) => {
     const active = aiModels.find((m) => m.isActive);
     const initialId = modelId || active?.id || aiModels[0]?.id || '';
+    const initialModel = aiModels.find((m) => m.id === initialId);
+    const initialUrl = initialModel?.baseUrl || '';
     setSelectedModelIdForTest(initialId);
+    setTestEndpointUrl(initialUrl);
     setShowTestModal(true);
-    handleRunModelTest(initialId);
+    handleRunModelTest(initialId, initialUrl);
   };
 
   // Testar Modelo de IA
-  const handleRunModelTest = async (modelIdToTest?: string) => {
+  const handleRunModelTest = async (modelIdToTest?: string, customBaseUrl?: string) => {
     const targetId = modelIdToTest || selectedModelIdForTest;
+    const targetUrl = customBaseUrl !== undefined ? customBaseUrl : testEndpointUrl;
     try {
       setTestingModel(true);
-      const res = await api.post('/system/test-ai', { modelConfigId: targetId });
+      const res = await api.post('/system/test-ai', {
+        modelConfigId: targetId,
+        baseUrl: targetUrl?.trim() || undefined,
+      });
       setTestResult(res.data);
+      if (targetUrl?.trim()) {
+        setAiModels((prev) =>
+          prev.map((m) => (m.id === targetId ? { ...m, baseUrl: targetUrl.trim() } : m))
+        );
+      }
     } catch (err: any) {
       setTestResult({
         provider: 'desconhecido',
@@ -463,6 +478,24 @@ export const AgentsPage: React.FC = () => {
       });
     } finally {
       setTestingModel(false);
+    }
+  };
+
+  // Salvar Endpoint Base do Modelo
+  const handleSaveModelEndpoint = async () => {
+    if (!selectedModelIdForTest || !testEndpointUrl.trim()) return;
+    try {
+      setSavingEndpoint(true);
+      await api.put(`/models/${selectedModelIdForTest}`, { baseUrl: testEndpointUrl.trim() });
+      setAiModels((prev) =>
+        prev.map((m) => (m.id === selectedModelIdForTest ? { ...m, baseUrl: testEndpointUrl.trim() } : m))
+      );
+      toast.success('Endpoint atualizado no banco com sucesso!');
+      await handleRunModelTest(selectedModelIdForTest, testEndpointUrl.trim());
+    } catch (err: any) {
+      toast.error(`Falha ao salvar endpoint: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setSavingEndpoint(false);
     }
   };
 
@@ -2083,8 +2116,11 @@ export const AgentsPage: React.FC = () => {
                     value={selectedModelIdForTest}
                     onChange={(e) => {
                       const newId = e.target.value;
+                      const sel = aiModels.find((m) => m.id === newId);
+                      const newUrl = sel?.baseUrl || '';
                       setSelectedModelIdForTest(newId);
-                      handleRunModelTest(newId);
+                      setTestEndpointUrl(newUrl);
+                      handleRunModelTest(newId, newUrl);
                     }}
                     className="flex-1 bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
                   >
@@ -2106,6 +2142,44 @@ export const AgentsPage: React.FC = () => {
                     <span>{testingModel ? 'Testando...' : 'Testar'}</span>
                   </button>
                 </div>
+
+                {/* Campo de Configuração de Endpoint Base (Ollama / Local / Tailscale) */}
+                {(() => {
+                  const selModel = aiModels.find((m) => m.id === selectedModelIdForTest);
+                  if (selModel?.provider === 'ollama' || testEndpointUrl) {
+                    return (
+                      <div className="mt-3 p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                            <Globe className="h-3.5 w-3.5 text-cyan-400" />
+                            <span>Endpoint Base da IA (URL / Tailscale / IP):</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleSaveModelEndpoint}
+                            disabled={savingEndpoint}
+                            className="text-[10px] bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800/60 px-2 py-0.5 rounded-lg font-semibold flex items-center gap-1 transition disabled:opacity-50"
+                            title="Salvar esta URL no banco de dados para este modelo"
+                          >
+                            <Save className="h-3 w-3" />
+                            <span>{savingEndpoint ? 'Salvando...' : 'Salvar no Banco'}</span>
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={testEndpointUrl}
+                          onChange={(e) => setTestEndpointUrl(e.target.value)}
+                          placeholder="Ex: http://localhost:11434 ou IP do servidor Ollama"
+                          className="w-full bg-[#080d1a] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+                        />
+                        <span className="text-[10px] text-slate-500 block">
+                          Dica: Digite o IP da sua VPN (Tailscale) ou servidor remoto e clique em "Salvar no Banco" ou "Testar".
+                        </span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               {/* Resultado do Teste */}

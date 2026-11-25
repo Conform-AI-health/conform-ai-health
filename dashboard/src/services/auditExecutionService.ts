@@ -1,12 +1,16 @@
 import { prisma } from '../config/prisma.js';
+import { env } from '../config/env.js';
 import { FirecrawlService } from './firecrawlService.js';
 import { ReconciliationEngine } from './reconciliationEngine.js';
 import { NormsResolver } from './normsResolver.js';
-import { EmailService } from './emailService.js';
 import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
 import { ExtractionMode } from '@prisma/client';
 import { ScraperService, ScrapeResult } from './scraperService.js';
 import { decryptSecret } from '../shared/encryption.js';
+import { createLogger } from '../shared/logger.js';
+import { getActiveTraceIds, runWithContext, withSpan } from '../shared/tracing.js';
+
+const auditExecLog = createLogger('AuditExecutionService');
 
 export interface ExecuteAuditParams {
   auditReportId: string;
@@ -48,9 +52,27 @@ export class AuditExecutionService {
     const startTime = Date.now();
     const correlationId = auditReportId;
 
-    console.log(`[AuditExecutionService] Iniciando pipeline para Report: ${auditReportId} | URL: ${targetUrl} (Job: ${jobId || 'direct'})`);
+    return await runWithContext(
+      {
+        auditReportId,
+        clientId: clientId || undefined,
+        jobId: jobId ? String(jobId) : undefined,
+      },
+      async () =>
+        await withSpan(
+          'audit.execute',
+          {
+            'audit.report_id': auditReportId,
+            'tenant.client_id': clientId || undefined,
+            'app.version': env.APP_VERSION,
+          },
+          async () => {
+            auditExecLog.info(
+              { auditReportId, targetUrl, jobId: jobId || 'direct' },
+              'Iniciando pipeline de auditoria'
+            );
 
-    try {
+            try {
       // 1. Marca o laudo como RUNNING e recupera vínculo de cliente existente
       const updatedReport = await prisma.auditReport.update({
         where: { id: auditReportId },
@@ -109,7 +131,15 @@ export class AuditExecutionService {
       }).catch(() => {});
 
       // 2 & 3. Scraping Exclusivo via Firecrawl + Hash SHA-256 + MongoDB
-      const firecrawlResult = await FirecrawlService.scrape(targetUrl, agentModuleId, clientId, authConfig);
+      const firecrawlResult = await withSpan(
+        'audit.scrape',
+        {
+          'audit.report_id': auditReportId,
+          'http.url': targetUrl,
+          'audit.agent_module_id': agentModuleId,
+        },
+        async () => await FirecrawlService.scrape(targetUrl, agentModuleId, clientId, authConfig)
+      );
 
       // T04: Validação estrita de integridade do conteúdo extraído
       if (!firecrawlResult || !firecrawlResult.markdown || firecrawlResult.markdown.trim().length === 0) {
@@ -291,7 +321,15 @@ export class AuditExecutionService {
       };
 
       // 5. Invocação da IA e Reconciliação Deontológica
-      const recon = await ReconciliationEngine.reconcile(scrapeAdapter, agentModuleId, agentContext);
+      const recon = await withSpan(
+        'audit.reconcile',
+        {
+          'audit.report_id': auditReportId,
+          'tenant.client_id': finalClientId || undefined,
+          'audit.norms_count': combinedNormsList.length,
+        },
+        async () => await ReconciliationEngine.reconcile(scrapeAdapter, agentModuleId, agentContext)
+      );
       const executionTimeMs = Date.now() - startTime;
 
       // Telemetria e log de IA com tokens e fontes/normas utilizadas
@@ -340,56 +378,67 @@ export class AuditExecutionService {
       const requiresHumanReview = structuredContract.findings.some((f) => f.requires_human_review) || effectiveVerdict === 'INCONCLUSIVO';
 
       // 6. Persistência Transacional no MongoDB (AuditReport e Violations)
-      await prisma.$transaction(async (tx) => {
-        await tx.auditReport.update({
-          where: { id: auditReportId },
-          data: {
-            status: 'COMPLETED',
-            verdict: effectiveVerdict,
-            score: recon.score,
-            summary: recon.summary,
-            riskLevel: structuredContract.risk_level,
-            confidence: structuredContract.confidence,
-            structuredContract: JSON.stringify(structuredContract),
-            groundingScore: recon.groundingScore ?? null,
-            hallucinationRisk: recon.hallucinationRisk ?? 'NOT_EVALUATED',
-            guardrailsApplied: recon.guardrailsApplied ?? false,
-            requiresHumanReview: true,
-            reviewStatus: 'PENDING_REVIEW',
-            auditorReviewed: false,
-            emailSent: false,
-            normSnapshots: normsSnapshotJson,
-            rawContent: firecrawlResult.rawContent,
-            cleanMarkdown: firecrawlResult.markdown,
-            tokensSaved: Math.max(0, scrapeAdapter.tokensEstimatedRaw - scrapeAdapter.tokensEstimatedClean),
-            promptTokens: recon.promptTokens,
-            completionTokens: recon.completionTokens,
-            totalTokens: recon.totalTokens,
-            sourcesUsed: recon.sourcesUsed,
-            aiModelUsed: recon.aiModelUsed,
-            executionTimeMs,
-          },
-        });
+      await withSpan(
+        'audit.persist_report',
+        {
+          'audit.report_id': auditReportId,
+          'audit.verdict': String(effectiveVerdict),
+          'audit.violations_count': recon.violations.length,
+        },
+        async () =>
+          await prisma.$transaction(async (tx) => {
+            await tx.auditReport.update({
+              where: { id: auditReportId },
+              data: {
+                status: 'COMPLETED',
+                verdict: effectiveVerdict,
+                score: recon.score,
+                summary: recon.summary,
+                riskLevel: structuredContract.risk_level,
+                confidence: structuredContract.confidence,
+                structuredContract: JSON.stringify(structuredContract),
+                groundingScore: recon.groundingScore ?? null,
+                hallucinationRisk: recon.hallucinationRisk ?? 'NOT_EVALUATED',
+                guardrailsApplied: recon.guardrailsApplied ?? false,
+                requiresHumanReview: true,
+                reviewStatus: 'PENDING_REVIEW',
+                auditorReviewed: false,
+                emailSent: false,
+                normSnapshots: normsSnapshotJson,
+                rawContent: firecrawlResult.rawContent,
+                cleanMarkdown: firecrawlResult.markdown,
+                tokensSaved: Math.max(0, scrapeAdapter.tokensEstimatedRaw - scrapeAdapter.tokensEstimatedClean),
+                promptTokens: recon.promptTokens,
+                completionTokens: recon.completionTokens,
+                totalTokens: recon.totalTokens,
+                sourcesUsed: recon.sourcesUsed,
+                aiModelUsed: recon.aiModelUsed,
+                executionTimeMs,
+              },
+            });
 
-        // Limpa violações pré-existentes se houver reprocessamento
-        await tx.violation.deleteMany({
-          where: { auditReportId },
-        });
+            // Limpa violações pré-existentes se houver reprocessamento
+            await tx.violation.deleteMany({
+              where: { auditReportId },
+            });
 
-        if (recon.violations.length > 0) {
-          await tx.violation.createMany({
-            data: recon.violations.map((v) => ({
-              auditReportId,
-              normArticle: v.normArticle,
-              normCode: v.normCode,
-              severity: v.severity,
-              detectedText: v.detectedText,
-              correctiveAdvice: v.correctiveAdvice,
-              resolved: false,
-            })),
-          });
-        }
-      });
+            if (recon.violations.length > 0) {
+              await tx.violation.createMany({
+                data: recon.violations.map((v) => ({
+                  auditReportId,
+                  normArticle: v.normArticle,
+                  normCode: v.normCode,
+                  severity: v.severity,
+                  detectedText: v.detectedText,
+                  correctiveAdvice: v.correctiveAdvice,
+                  resolved: false,
+                })),
+              });
+            }
+          })
+      );
+
+      const { traceId } = getActiveTraceIds();
 
       // Log de sucesso com telemetria de guardrails
       await prisma.systemLog.create({
@@ -400,6 +449,8 @@ export class AuditExecutionService {
           message: `[RECONCILIATION] Auditoria concluída com sucesso para "${clientName}" | ${recon.violations.length} infrações detectadas | Grounding: ${recon.groundingScore ?? 100}% | Status: COMPLETED | Tempo: ${executionTimeMs}ms`,
           details: JSON.stringify({
             auditReportId,
+            traceId,
+            appVersion: env.APP_VERSION,
             score: recon.score,
             verdict: recon.verdict,
             violationsCount: recon.violations.length,
@@ -423,6 +474,8 @@ export class AuditExecutionService {
           message: `[AUDIT_AWAITING_REVIEW] Laudo ${auditReportId} gerado pela IA com sucesso. Encaminhado para a fila de Revisão & Confirmação do Auditor (Menu Revisão de Laudos) antes do envio do e-mail oficial à clínica "${clientName}".`,
           details: JSON.stringify({
             auditReportId,
+            traceId,
+            appVersion: env.APP_VERSION,
             clientId: finalClientId,
             clientName,
             targetUrl,
@@ -435,7 +488,10 @@ export class AuditExecutionService {
         },
       }).catch(() => {});
 
-      console.log(`✅ [AuditExecutionService] Concluído pela IA para ${auditReportId} em ${executionTimeMs}ms. Aguardando revisão do auditor na fila de governança.`);
+      auditExecLog.info(
+        { auditReportId, executionTimeMs, verdict: recon.verdict, score: recon.score },
+        'Auditoria concluída pela IA. Aguardando revisão do auditor na fila de governança'
+      );
 
       return {
         success: true,
@@ -448,7 +504,7 @@ export class AuditExecutionService {
         emailSent: false,
       };
     } catch (error: any) {
-      console.error(`❌ [AuditExecutionService] Falha na auditoria ${auditReportId}:`, error);
+      auditExecLog.error({ auditReportId, err: error }, 'Falha na execução da auditoria');
 
       await prisma.auditReport.update({
         where: { id: auditReportId },
@@ -472,5 +528,8 @@ export class AuditExecutionService {
 
       throw error;
     }
+          }
+        )
+    );
   }
 }
