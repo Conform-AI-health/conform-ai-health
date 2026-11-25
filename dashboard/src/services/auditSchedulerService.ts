@@ -1,6 +1,6 @@
 import parser from 'cron-parser';
 import { prisma } from '../config/prisma.js';
-import { auditQueue } from '../config/redis.js';
+import { auditQueue, getRedisConnection } from '../config/redis.js';
 import { AuditExecutionService } from './auditExecutionService.js';
 import { decryptSecret } from '../shared/encryption.js';
 
@@ -208,6 +208,19 @@ export class AuditSchedulerService {
       } catch {
         // Ignora falhas de busca de cliente
       }
+    }
+
+    // Mutex distribuído via Redis: bloqueia disparos concorrentes entre workers/processos
+    try {
+      const redis = getRedisConnection();
+      const lockKey = `lock:sched:${agentId}`;
+      const acquired = await redis.set(lockKey, '1', 'EX', 120, 'NX');
+      if (acquired !== 'OK') {
+        console.log(`⏳ [AuditSchedulerService] Disparo bloqueado por Mutex distribuído para o agente ${agentId}.`);
+        return null;
+      }
+    } catch {
+      // Falha graciosa se Redis estiver offline
     }
 
     // Verifica se já existe um laudo PENDING ou RUNNING recente (últimos 5 minutos)

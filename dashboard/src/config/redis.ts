@@ -51,4 +51,5 @@ const queueOptions: QueueOptions = {
 };
 
 export const auditQueue = new Queue('auditQueue', queueOptions);
+export const normCrawlQueue = new Queue('normCrawlQueue', queueOptions);
 

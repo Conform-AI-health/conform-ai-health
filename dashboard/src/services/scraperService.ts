@@ -1029,8 +1029,11 @@ export class ScraperService {
       const puppeteer = puppeteerModule.default || puppeteerModule;
       safeProxy = await startSafeScrapingProxy();
 
+      const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+
       browser = await puppeteer.launch({
         headless: true,
+        executablePath,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',

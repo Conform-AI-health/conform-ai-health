@@ -28,13 +28,7 @@ async function bootstrap() {
     console.log(`🔒 API Base: http://localhost:${env.PORT}${env.API_PREFIX}`);
     console.log(`🧠 AI Provider: ${env.AI_PROVIDER}`);
     console.log(`========================================================\n`);
-
-    // Inicia o agendador contínuo de auditorias (cron)
-    if (env.NODE_ENV !== 'test') {
-      AuditSchedulerService.init().catch((err) => {
-        console.warn(`[Bootstrap] Falha ao iniciar AuditSchedulerService: ${err.message}`);
-      });
-    }
+    console.log(`ℹ️ [Bootstrap] Agendamento contínuo de auditorias é delegado exclusivamente ao Worker assíncrono (INF-02).\n`);
   });
 
   // INF-03: Graceful Shutdown Coordenado do Servidor HTTP, Agendador e Conexões de Banco

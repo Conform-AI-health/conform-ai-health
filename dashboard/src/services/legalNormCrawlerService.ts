@@ -9,6 +9,7 @@ import { cosineSimilarity, SemanticEmbeddingService } from './semanticEmbeddingS
 import { AIProviderFactory } from './ai/aiProviderFactory.js';
 import { FirecrawlClient } from './firecrawl/firecrawlClient.js';
 import { LinkTraceService } from '../shared/linkTrace.js';
+import { getRedisConnection } from '../config/redis.js';
 import { classifyNormTopics, resolveRequestedTopics, TOPIC_LABELS, NormTopic } from '../shared/normTopics.js';
 import { isNavigationLabel } from '../shared/navigationLabels.js';
 import {
@@ -161,8 +162,31 @@ export class LegalNormCrawlerService {
     return ignoredAssetExtension.test(pathname) || ignoredFrameworkPath.test(pathname);
   }
 
-  public static getJob(jobId: string): CrawlJobState | undefined {
-    return this.jobs.get(jobId);
+  public static async saveJobState(job: CrawlJobState): Promise<void> {
+    this.jobs.set(job.jobId, job);
+    try {
+      const redis = getRedisConnection();
+      await redis.set(`crawl:job:${job.jobId}`, JSON.stringify(job), 'EX', 7 * 24 * 3600);
+    } catch {
+      // Falha graciosa se Redis estiver inacessível
+    }
+  }
+
+  public static async getJob(jobId: string): Promise<CrawlJobState | undefined> {
+    const memoryJob = this.jobs.get(jobId);
+    if (memoryJob) return memoryJob;
+    try {
+      const redis = getRedisConnection();
+      const raw = await redis.get(`crawl:job:${jobId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as CrawlJobState;
+        this.jobs.set(jobId, parsed);
+        return parsed;
+      }
+    } catch {
+      // Ignora erro de I/O
+    }
+    return undefined;
   }
 
   public static listJobs(): CrawlJobState[] {
@@ -1916,7 +1940,7 @@ export class LegalNormCrawlerService {
       startedAt: new Date().toISOString(),
     };
 
-    this.jobs.set(jobId, jobState);
+    await this.saveJobState(jobState);
 
     const preferFirecrawl = options.preferFirecrawl !== false;
     const allowedTopics: NormTopic[] = resolveRequestedTopics(tags);
@@ -2347,6 +2371,7 @@ export class LegalNormCrawlerService {
 
     jobState.status = 'completed';
     jobState.finishedAt = new Date().toISOString();
+    await this.saveJobState(jobState);
 
     await prisma.systemLog.create({
       data: {

@@ -43,6 +43,8 @@ services:
       dockerfile: Dockerfile
     container_name: conformia-api
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       # Restrict plain HTTP to the host; expose it publicly only through a TLS-terminating reverse proxy.
       - "127.0.0.1:${API_PORT:-3333}:3000"
@@ -72,7 +74,7 @@ services:
       - CRAWL_MAX_LINKS_PER_PAGE=${CRAWL_MAX_LINKS_PER_PAGE:-50}
       - CRAWL_BATCH_SIZE=${CRAWL_BATCH_SIZE:-4}
       - RAG_MAX_CANDIDATE_CHUNKS=${RAG_MAX_CANDIDATE_CHUNKS:-10000}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://100.106.169.126:11434}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -106,6 +108,8 @@ services:
       dockerfile: Dockerfile
     container_name: conformia-worker
     restart: unless-stopped
+    env_file:
+      - .env
     command: ["node", "dist/worker.js"]
     ports:
       # Exposição da porta de saúde e telemetria Prometheus do Worker no loopback
@@ -137,7 +141,7 @@ services:
       - CRAWL_MAX_LINKS_PER_PAGE=${CRAWL_MAX_LINKS_PER_PAGE:-50}
       - CRAWL_BATCH_SIZE=${CRAWL_BATCH_SIZE:-4}
       - RAG_MAX_CANDIDATE_CHUNKS=${RAG_MAX_CANDIDATE_CHUNKS:-10000}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://100.106.169.126:11434}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

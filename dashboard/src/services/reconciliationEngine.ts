@@ -72,7 +72,7 @@ export class ReconciliationEngine {
     AIProviderFactory.setActiveProvider(provider);
   }
 
-  public static async testModelResponse(customPrompt?: string, targetModelId?: string): Promise<{
+  public static async testModelResponse(customPrompt?: string, targetModelId?: string, customBaseUrl?: string): Promise<{
     provider: string;
     model: string;
     status: 'ONLINE' | 'DEGRADED' | 'OFFLINE';
@@ -81,7 +81,7 @@ export class ReconciliationEngine {
     testedAt: string;
     details?: any;
   }> {
-    return await AIProviderFactory.testModelResponse(customPrompt, targetModelId);
+    return await AIProviderFactory.testModelResponse(customPrompt, targetModelId, customBaseUrl);
   }
 
   public static async resolveAgentContext(

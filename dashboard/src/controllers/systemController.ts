@@ -113,7 +113,8 @@ export class SystemController {
     try {
       const prompt = req.body?.prompt ? String(req.body.prompt).slice(0, 1000) : undefined;
       const targetModelId = req.body?.modelConfigId || req.body?.modelId;
-      const result = await ReconciliationEngine.testModelResponse(prompt, targetModelId);
+      const customBaseUrl = req.body?.baseUrl ? String(req.body.baseUrl).trim() : undefined;
+      const result = await ReconciliationEngine.testModelResponse(prompt, targetModelId, customBaseUrl);
 
       await prisma.systemLog.create({
         data: {

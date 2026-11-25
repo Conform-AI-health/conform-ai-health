@@ -6,6 +6,7 @@ import { prisma } from './config/prisma.js';
 import { env } from './config/env.js';
 import { AuditExecutionService } from './services/auditExecutionService.js';
 import { AuditSchedulerService } from './services/auditSchedulerService.js';
+import { LegalNormCrawlerService } from './services/legalNormCrawlerService.js';
 import { ExtractionMode } from '@prisma/client';
 
 export interface AuditJobData {
@@ -44,6 +45,7 @@ const workerMetrics: WorkerTelemetryMetrics = {
 };
 
 let activeWorkerInstance: Worker<AuditJobData> | null = null;
+let activeCrawlWorkerInstance: Worker | null = null;
 let healthServerInstance: http.Server | null = null;
 
 export function getActiveWorkerInstance(): Worker<AuditJobData> | null {
@@ -318,6 +320,25 @@ export function startAuditWorker() {
 
   activeWorkerInstance = worker;
 
+  // Processador desacoplado da fila de varredura de normas (LegalNormCrawlerService)
+  const crawlWorker = new Worker(
+    'normCrawlQueue',
+    async (job: Job) => {
+      console.log(`👷 [NormCrawlWorker] Iniciando job de varredura normativa ${job.id} (JobId: ${job.data?.jobId})`);
+      return await LegalNormCrawlerService.executeCrawlJob(job.data);
+    },
+    {
+      connection: getRedisConnection(),
+      concurrency: 1, // Varredura de normas utiliza concorrência controlada para preservar largura de banda e servidores públicos
+    }
+  );
+
+  crawlWorker.on('failed', (job, err) => {
+    console.error(`❌ [NormCrawlWorker] Job ${job?.id} falhou definitivamente: ${err.message}`);
+  });
+
+  activeCrawlWorkerInstance = crawlWorker;
+
   // Inicia o servidor HTTP de health check
   startWorkerHealthServer();
 
@@ -342,6 +363,11 @@ export async function shutdownWorker(signal: string = 'SIGTERM'): Promise<void> 
       await activeWorkerInstance.close();
       console.log('[AuditWorker] Fila BullMQ finalizada sem interrupção abrupta de jobs.');
       activeWorkerInstance = null;
+    }
+    if (activeCrawlWorkerInstance) {
+      await activeCrawlWorkerInstance.close();
+      console.log('[AuditWorker] Fila normCrawlQueue finalizada.');
+      activeCrawlWorkerInstance = null;
     }
     if (healthServerInstance) {
       await new Promise<void>((resolve) => {
