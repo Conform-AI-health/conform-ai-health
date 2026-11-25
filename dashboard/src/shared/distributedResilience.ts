@@ -60,6 +60,12 @@ export class ResilientRedisRateLimitStore implements Store {
         sendCommand: (command: string, ...args: string[]) => redis.call(command, ...args) as Promise<any>,
       });
       this.redisStore.init(this.options);
+      const scriptLoads = this.redisStore as unknown as {
+        incrementScriptSha?: Promise<string>;
+        getScriptSha?: Promise<string>;
+      };
+      scriptLoads.incrementScriptSha?.catch(() => {});
+      scriptLoads.getScriptSha?.catch(() => {});
     }
     return this.redisStore;
   }
@@ -70,7 +76,7 @@ export class ResilientRedisRateLimitStore implements Store {
       try {
         return await withTimeout(store.increment(key));
       } catch {
-        // fallback local
+        this.redisStore = null;
       }
     }
     return this.memory.increment(key);
