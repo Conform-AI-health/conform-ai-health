@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   # -------------------------------------------------------------
   # Redis: Fila BullMQ e Cache Operacional com Autenticação e Proteção
@@ -6,6 +12,7 @@ services:
     image: redis:7-alpine
     container_name: conformia-redis
     restart: unless-stopped
+    logging: *default-logging
     command: >
       redis-server --appendonly yes
       --maxmemory 256mb
@@ -37,12 +44,13 @@ services:
   # Backend REST API (Node.js 20 + Express + Prisma)
   # -------------------------------------------------------------
   dashboard-api:
-    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:${APP_VERSION:-latest}
+    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:${APP_VERSION:-dev}
     build:
       context: ./dashboard
       dockerfile: Dockerfile
     container_name: conformia-api
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - .env
     ports:
@@ -52,6 +60,13 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - API_PREFIX=/api/v1
+      - APP_VERSION=${APP_VERSION:-dev}
+      - APP_ENV=${APP_ENV:-production}
+      - SERVICE_NAME=conformia-api
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - OTEL_ENABLED=${OTEL_ENABLED:-true}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_EXPORTER_OTLP_HEADERS=${OTEL_EXPORTER_OTLP_HEADERS:-}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD é obrigatória}@redis:6379
       - JWT_SECRET=${JWT_SECRET}
@@ -103,12 +118,13 @@ services:
   # Worker Assíncrono de Auditoria Deontológica (BullMQ)
   # -------------------------------------------------------------
   audit-worker:
-    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:${APP_VERSION:-latest}
+    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:${APP_VERSION:-dev}
     build:
       context: ./dashboard
       dockerfile: Dockerfile
     container_name: conformia-worker
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - .env
     command: ["node", "dist/worker.js"]
@@ -120,6 +136,13 @@ services:
       - PORT=3001
       - WORKER_HEALTH_PORT=3001
       - API_PREFIX=/api/v1
+      - APP_VERSION=${APP_VERSION:-dev}
+      - APP_ENV=${APP_ENV:-production}
+      - SERVICE_NAME=conformia-worker
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - OTEL_ENABLED=${OTEL_ENABLED:-true}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_EXPORTER_OTLP_HEADERS=${OTEL_EXPORTER_OTLP_HEADERS:-}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD é obrigatória}@redis:6379
       - JWT_SECRET=${JWT_SECRET}
@@ -171,14 +194,14 @@ services:
   # Frontend SPA (Vite + React + Nginx Proxy)
   # -------------------------------------------------------------
   dashboard-web:
-    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-web:${APP_VERSION:-latest}
+    image: ghcr.io/conform-ai-health/conform-ai-health/dashboard-web:${APP_VERSION:-dev}
     build:
       context: ./dashboard-web
       dockerfile: Dockerfile
     container_name: conformia-web
     restart: unless-stopped
+    logging: *default-logging
     ports:
-    #liberado devido a porta 80 está em uso
       - "0.0.0.0:${WEB_PORT:-3000}:80"
     depends_on:
       dashboard-api:

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { encryptSecret, decryptSecret, maskSecret, maskPassword } from '../shared/encryption.js';
 import { errorHandler } from '../middlewares/errorHandler.js';
+import { logger } from '../shared/logger.js';
 import { env } from '../config/env.js';
 
 describe('T48: Cifragem AES-256-GCM e Mascaramento de Credenciais de Agente', () => {
@@ -50,16 +51,16 @@ describe('T48: Cifragem AES-256-GCM e Mascaramento de Credenciais de Agente', ()
 
 describe('T49: Blindagem do ErrorHandler Global contra Vazamento de Dados em Produção', () => {
   let originalNodeEnv: string | undefined;
-  let mockConsoleError: any;
+  let mockLoggerError: any;
 
   beforeEach(() => {
     originalNodeEnv = env.NODE_ENV;
-    mockConsoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockLoggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined as any);
   });
 
   afterEach(() => {
     (env as any).NODE_ENV = originalNodeEnv;
-    mockConsoleError.mockRestore();
+    mockLoggerError.mockRestore();
   });
 
   function createMockResponse() {
@@ -96,7 +97,10 @@ describe('T49: Blindagem do ErrorHandler Global contra Vazamento de Dados em Pro
       code: 'INTERNAL_SERVER_ERROR',
     });
     expect(res.body.stack).toBeUndefined();
-    expect(mockConsoleError).toHaveBeenCalledWith('[Unhandled Error]:', sensitiveError);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.objectContaining({ err: sensitiveError, status: 500 }),
+      'Unhandled HTTP error'
+    );
   });
 
   it('em produção: erros de cliente (400, 404, 409) devem manter mensagem informativa legítima', () => {

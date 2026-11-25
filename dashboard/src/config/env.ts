@@ -70,6 +70,15 @@ const envSchema = z
     GITHUB_TOKEN: z.string().optional().default(''),
     IS_DOCKER: z.string().optional().default('false'),
     RUN_WORKER: z.string().optional().default('false'),
+    APP_VERSION: z.string().default('dev'),
+    APP_ENV: z.enum(['development', 'test', 'staging', 'production']).optional(),
+    SERVICE_NAME: z.string().default('conformia-api'),
+    LOG_LEVEL: z
+      .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+      .default(process.env.NODE_ENV === 'test' ? 'silent' : 'info'),
+    OTEL_ENABLED: z.string().optional().default('true'),
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional().default(''),
+    OTEL_EXPORTER_OTLP_HEADERS: z.string().optional().default(''),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {

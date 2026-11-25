@@ -1,6 +1,7 @@
 import http from 'http';
 import crypto from 'crypto';
 import { Worker, Job } from 'bullmq';
+import { SpanKind } from '@opentelemetry/api';
 import { getRedisConnection } from './config/redis.js';
 import { prisma } from './config/prisma.js';
 import { env } from './config/env.js';
@@ -8,6 +9,16 @@ import { AuditExecutionService } from './services/auditExecutionService.js';
 import { AuditSchedulerService } from './services/auditSchedulerService.js';
 import { LegalNormCrawlerService } from './services/legalNormCrawlerService.js';
 import { ExtractionMode } from '@prisma/client';
+import { createLogger } from './shared/logger.js';
+import {
+  extractTraceContext,
+  initTracing,
+  runWithContext,
+  shutdownTracing,
+  withSpan,
+} from './shared/tracing.js';
+
+const workerLog = createLogger('AuditWorker');
 
 export interface AuditJobData {
   auditReportId?: string;
@@ -21,6 +32,7 @@ export interface AuditJobData {
     username?: string;
     password?: string;
   };
+  traceContext?: Record<string, string>;
 }
 
 export interface WorkerTelemetryMetrics {
@@ -81,6 +93,8 @@ export function getWorkerMetrics(): WorkerTelemetryMetrics & { uptimeSeconds: nu
 export async function getWorkerHealth(): Promise<{
   status: 'UP' | 'DEGRADED' | 'DOWN';
   service: string;
+  version: string;
+  environment: string;
   uptimeSeconds: number;
   redis: 'CONNECTED' | 'DISCONNECTED';
   worker: {
@@ -112,6 +126,8 @@ export async function getWorkerHealth(): Promise<{
   return {
     status,
     service: 'conformia-audit-worker',
+    version: env.APP_VERSION,
+    environment: env.APP_ENV || env.NODE_ENV,
     uptimeSeconds: Math.floor((Date.now() - workerMetrics.startTime) / 1000),
     redis: redisConnected ? 'CONNECTED' : 'DISCONNECTED',
     worker: {
@@ -232,7 +248,7 @@ export function startWorkerHealthServer(port: number = Number(process.env.WORKER
   });
 
   server.listen(port, '0.0.0.0', () => {
-    console.log(`🩺 [WorkerHealthServer] Probe HTTP ativo na porta ${port} (/health, /metrics)`);
+    workerLog.info({ port }, 'WorkerHealthServer Probe HTTP ativo (/health, /metrics)');
   });
 
   healthServerInstance = server;
@@ -253,7 +269,8 @@ export function stopWorkerHealthServer(): Promise<void> {
 }
 
 export function startAuditWorker() {
-  console.log('👷 [AuditWorker] Inicializando worker assíncrono BullMQ...');
+  initTracing(process.env.SERVICE_NAME || 'conformia-worker');
+  workerLog.info('Inicializando worker assíncrono BullMQ...');
 
   const worker = new Worker<AuditJobData>(
     'auditQueue',
@@ -262,42 +279,74 @@ export function startAuditWorker() {
       workerMetrics.processedTotal++;
       workerMetrics.lastProcessedAt = new Date().toISOString();
 
-      try {
-        // Caso seja um job disparado pelo agendador cron
-        if (job.name === 'cronAuditJob' && job.data.agentModuleId) {
-          console.log(`[Job ${job.id}] Executando auditoria contínua programada via Cron para Agente: ${job.data.agentModuleId}`);
-          const res = await AuditSchedulerService.triggerScheduledAudit(job.data.agentModuleId);
-          workerMetrics.completedTotal++;
-          return res;
-        }
+      const parentContext = extractTraceContext(job.data?.traceContext);
+      const jobIdStr = job.id ? String(job.id) : undefined;
+      const requestId = job.data?.traceContext?.['x-request-id'];
 
-        const { auditReportId, clientId, targetUrl, extractionMode, agentModuleId, skill, auth } = job.data;
-        if (!auditReportId) {
-          console.warn(`[Job ${job.id}] Job de auditoria recebido sem auditReportId. Ignorando.`);
-          return;
-        }
-        console.log(`[Job ${job.id}] Iniciando processamento de auditoria para Report: ${auditReportId} (${targetUrl})`);
+      return await runWithContext(
+        {
+          jobId: jobIdStr,
+          auditReportId: job.data?.auditReportId,
+          clientId: job.data?.clientId || undefined,
+          requestId,
+        },
+        async () =>
+          await withSpan(
+            `bullmq.process.${job.name}`,
+            {
+              'messaging.system': 'bullmq',
+              'messaging.operation': 'process',
+              'messaging.job_id': jobIdStr,
+              'audit.report_id': job.data?.auditReportId,
+              'tenant.client_id': job.data?.clientId || undefined,
+            },
+            async () => {
+              try {
+                // Caso seja um job disparado pelo agendador cron
+                if (job.name === 'cronAuditJob' && job.data.agentModuleId) {
+                  workerLog.info(
+                    { jobId: job.id, agentModuleId: job.data.agentModuleId },
+                    'Executando auditoria contínua programada via Cron'
+                  );
+                  const res = await AuditSchedulerService.triggerScheduledAudit(job.data.agentModuleId);
+                  workerMetrics.completedTotal++;
+                  return res;
+                }
 
-        const result = await AuditExecutionService.execute({
-          auditReportId,
-          clientId,
-          targetUrl,
-          extractionMode,
-          agentModuleId,
-          skill,
-          auth,
-          jobId: job.id,
-        });
+                const { auditReportId, clientId, targetUrl, extractionMode, agentModuleId, skill, auth } = job.data;
+                if (!auditReportId) {
+                  workerLog.warn({ jobId: job.id }, 'Job de auditoria recebido sem auditReportId. Ignorando.');
+                  return;
+                }
+                workerLog.info(
+                  { jobId: job.id, auditReportId, targetUrl },
+                  'Iniciando processamento de auditoria'
+                );
 
-        workerMetrics.completedTotal++;
-        return result;
-      } catch (err: any) {
-        workerMetrics.failedTotal++;
-        workerMetrics.lastError = err.message;
-        throw err;
-      } finally {
-        workerMetrics.activeCount = Math.max(0, workerMetrics.activeCount - 1);
-      }
+                const result = await AuditExecutionService.execute({
+                  auditReportId,
+                  clientId,
+                  targetUrl,
+                  extractionMode,
+                  agentModuleId,
+                  skill,
+                  auth,
+                  jobId: job.id,
+                });
+
+                workerMetrics.completedTotal++;
+                return result;
+              } catch (err: any) {
+                workerMetrics.failedTotal++;
+                workerMetrics.lastError = err.message;
+                throw err;
+              } finally {
+                workerMetrics.activeCount = Math.max(0, workerMetrics.activeCount - 1);
+              }
+            },
+            { kind: SpanKind.CONSUMER, parentContext }
+          )
+      );
     },
     {
       connection: getRedisConnection(),
@@ -306,16 +355,19 @@ export function startAuditWorker() {
   );
 
   worker.on('failed', (job, err) => {
-    console.error(`[AuditWorker] Job ${job?.id} falhou definitivamente: ${err.message}`);
+    workerLog.error(
+      { jobId: job?.id, auditReportId: job?.data?.auditReportId, err },
+      `Job falhou definitivamente: ${err.message}`
+    );
   });
 
   worker.on('error', (err) => {
-    console.warn(`[AuditWorker] Evento de erro no worker: ${err.message}`);
+    workerLog.warn({ err }, `Evento de erro no worker: ${err.message}`);
   });
 
   // Inicia o serviço de agendamento contínuo
   AuditSchedulerService.init().catch((err) => {
-    console.warn(`[AuditWorker] Falha ao iniciar agendador no worker: ${err.message}`);
+    workerLog.warn({ err }, `Falha ao iniciar agendador no worker: ${err.message}`);
   });
 
   activeWorkerInstance = worker;
@@ -324,8 +376,32 @@ export function startAuditWorker() {
   const crawlWorker = new Worker(
     'normCrawlQueue',
     async (job: Job) => {
-      console.log(`👷 [NormCrawlWorker] Iniciando job de varredura normativa ${job.id} (JobId: ${job.data?.jobId})`);
-      return await LegalNormCrawlerService.executeCrawlJob(job.data);
+      const parentContext = extractTraceContext(job.data?.traceContext);
+      const jobIdStr = job.id ? String(job.id) : undefined;
+      return await runWithContext(
+        {
+          jobId: jobIdStr,
+          requestId: job.data?.traceContext?.['x-request-id'],
+        },
+        async () =>
+          await withSpan(
+            `bullmq.process.${job.name}`,
+            {
+              'messaging.system': 'bullmq',
+              'messaging.operation': 'process',
+              'messaging.job_id': jobIdStr,
+              'crawl.job_id': job.data?.jobId,
+            },
+            async () => {
+              workerLog.info(
+                { bullJobId: job.id, crawlJobId: job.data?.jobId },
+                'Iniciando job de varredura normativa'
+              );
+              return await LegalNormCrawlerService.executeCrawlJob(job.data);
+            },
+            { kind: SpanKind.CONSUMER, parentContext }
+          )
+      );
     },
     {
       connection: getRedisConnection(),
@@ -334,7 +410,10 @@ export function startAuditWorker() {
   );
 
   crawlWorker.on('failed', async (job, err) => {
-    console.error(`❌ [NormCrawlWorker] Job ${job?.id} falhou definitivamente: ${err.message}`);
+    workerLog.error(
+      { bullJobId: job?.id, crawlJobId: job?.data?.jobId, err },
+      `NormCrawlWorker falhou definitivamente: ${err.message}`
+    );
     const jobId = job?.data?.jobId;
     if (jobId) {
       try {
@@ -365,11 +444,11 @@ export function startAuditWorker() {
  * Encerramento gracioso (Graceful Shutdown) do Worker BullMQ e recursos de rede (INF-03)
  */
 export async function shutdownWorker(signal: string = 'SIGTERM'): Promise<void> {
-  console.log(`[AuditWorker] Sinal ${signal} detectado. Iniciando shutdown gracioso...`);
+  workerLog.info({ signal }, 'Sinal detectado. Iniciando shutdown gracioso...');
 
   // Timeout de segurança para evitar deadlocks caso conexões travem
   const forceExitTimeout = setTimeout(() => {
-    console.error('[AuditWorker] Timeout de segurança de shutdown excedido (10s). Forçando encerramento.');
+    workerLog.error('Timeout de segurança de shutdown excedido (10s). Forçando encerramento.');
     process.exit(1);
   }, 10000);
   forceExitTimeout.unref();
@@ -377,18 +456,18 @@ export async function shutdownWorker(signal: string = 'SIGTERM'): Promise<void> 
   try {
     if (activeWorkerInstance) {
       await activeWorkerInstance.close();
-      console.log('[AuditWorker] Fila BullMQ finalizada sem interrupção abrupta de jobs.');
+      workerLog.info('Fila BullMQ finalizada sem interrupção abrupta de jobs.');
       activeWorkerInstance = null;
     }
     if (activeCrawlWorkerInstance) {
       await activeCrawlWorkerInstance.close();
-      console.log('[AuditWorker] Fila normCrawlQueue finalizada.');
+      workerLog.info('Fila normCrawlQueue finalizada.');
       activeCrawlWorkerInstance = null;
     }
     if (healthServerInstance) {
       await new Promise<void>((resolve) => {
         healthServerInstance!.close(() => {
-          console.log('[AuditWorker] Servidor de métricas/health encerrado.');
+          workerLog.info('Servidor de métricas/health encerrado.');
           resolve();
         });
       });
@@ -396,13 +475,14 @@ export async function shutdownWorker(signal: string = 'SIGTERM'): Promise<void> 
     }
     if (typeof (prisma as any).$disconnect === 'function') {
       await prisma.$disconnect();
-      console.log('[AuditWorker] Conexão Prisma finalizada.');
+      workerLog.info('Conexão Prisma finalizada.');
     }
+    await shutdownTracing();
     clearTimeout(forceExitTimeout);
-    console.log('[AuditWorker] Shutdown gracioso finalizado com sucesso.');
+    workerLog.info('Shutdown gracioso finalizado com sucesso.');
   } catch (err: any) {
     clearTimeout(forceExitTimeout);
-    console.error(`[AuditWorker] Erro durante shutdown gracioso: ${err.message}`);
+    workerLog.error({ err }, `Erro durante shutdown gracioso: ${err.message}`);
   }
 }
 
@@ -422,5 +502,5 @@ if (
   });
 
   startAuditWorker();
-  console.log('🚀 Worker de auditoria rodando em background com probe de saúde e métricas...');
+  workerLog.info('Worker de auditoria rodando em background com probe de saúde e métricas');
 }

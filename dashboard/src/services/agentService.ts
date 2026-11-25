@@ -5,6 +5,7 @@ import { AuditSchedulerService } from './auditSchedulerService.js';
 import { auditQueue } from '../config/redis.js';
 import { encryptSecret, maskSecret, decryptSecret } from '../shared/encryption.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
+import { injectTraceCarrier } from '../shared/tracing.js';
 import { Role } from '@prisma/client';
 
 export class AgentService {
@@ -250,6 +251,7 @@ export class AgentService {
         agentModuleId: mod.id,
         skill: mod.description || undefined,
         auth: authPayload,
+        traceContext: injectTraceCarrier(),
       },
       { jobId: `audit-${report.id}` }
     );

@@ -1,0 +1,46 @@
+# ==============================================================================
+# Conform.AI Health - Docker Compose Override para Ambiente de STAGING
+# Uso: docker compose -p conformia-staging -f docker-compose.yml -f docker-compose.staging.yml up -d
+# ==============================================================================
+
+services:
+  redis:
+    container_name: conformia-staging-redis
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis_staging_data:/data
+
+  dashboard-api:
+    container_name: conformia-staging-api
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${API_PORT:-3334}:3000"
+    environment:
+      - APP_ENV=staging
+      - SERVICE_NAME=conformia-staging-api
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - EMAIL_FROM=${EMAIL_FROM:-staging-nao-responder@conformia.med.br}
+
+  audit-worker:
+    container_name: conformia-staging-worker
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${WORKER_HEALTH_PORT:-3002}:3001"
+    environment:
+      - APP_ENV=staging
+      - SERVICE_NAME=conformia-staging-worker
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - EMAIL_FROM=${EMAIL_FROM:-staging-nao-responder@conformia.med.br}
+
+  dashboard-web:
+    container_name: conformia-staging-web
+    ports:
+      # Em staging, vincular apenas ao loopback e expor atrás de Nginx com TLS + IP Allowlist/VPN
+      - "127.0.0.1:${WEB_PORT:-3080}:80"
+
+volumes:
+  redis_staging_data:
+    driver: local

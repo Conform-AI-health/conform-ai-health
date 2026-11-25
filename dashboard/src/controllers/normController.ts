@@ -10,6 +10,7 @@ import { normCrawlQueue } from '../config/redis.js';
 import { AIProviderFactory } from '../services/ai/aiProviderFactory.js';
 import { OllamaTaxonomyService } from '../services/ollamaTaxonomyService.js';
 import { TaxonomyInferenceInput } from '../services/deontologicalTaxonomyService.js';
+import { injectTraceCarrier } from '../shared/tracing.js';
 
 const crawlInputSchema = z.object({
   url: z.string().url('URL inválida'),
@@ -413,6 +414,7 @@ export class NormController {
         ...input,
         maxPages: input.maxPages ?? env.CRAWL_MAX_PAGES,
         jobId,
+        traceContext: injectTraceCarrier(),
       };
 
       // Inicializa e persiste estado preliminar do job no Redis/Memória

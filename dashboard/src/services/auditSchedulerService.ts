@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma.js';
 import { auditQueue, getRedisConnection } from '../config/redis.js';
 import { AuditExecutionService } from './auditExecutionService.js';
 import { decryptSecret } from '../shared/encryption.js';
+import { injectTraceCarrier } from '../shared/tracing.js';
 
 interface ScheduledAgentState {
   agentId: string;
@@ -321,6 +322,7 @@ export class AuditSchedulerService {
             agentModuleId: agent.id,
             skill: agent.description || undefined,
             auth: authPayload,
+            traceContext: injectTraceCarrier(),
           },
           { jobId: `audit-${report.id}` }
         );
@@ -370,6 +372,7 @@ export class AuditSchedulerService {
           agentModuleId: agentId,
           targetUrl,
           clientId: clientId || '',
+          traceContext: injectTraceCarrier(),
         },
         {
           repeat: {

@@ -1,14 +1,14 @@
-name: ConformIA CI/CD & AWS Deployment
+name: ConformIA CI/CD & Immutable Release Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
 
 jobs:
   # -------------------------------------------------------------
-  # Job 1: Verificação de Tipagem, Testes e Build
+  # Job 1: Verificação de Tipagem, Testes, Segurança e Build
   # -------------------------------------------------------------
   validate-and-test:
     name: Typecheck, Testes & Compilação
@@ -59,23 +59,32 @@ jobs:
         run: npm run build
 
   # -------------------------------------------------------------
-  # Job 2: Build & Push de Imagens Docker (GHCR)
+  # Job 2: Build & Push de Imagens Docker Imutáveis (GHCR)
   # -------------------------------------------------------------
   build-docker-images:
-    name: Build & Push Containers Docker (GHCR)
+    name: Build & Push Imagens Imutáveis (GHCR)
     needs: validate-and-test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
 
     steps:
       - name: Checkout Repositório
         uses: actions/checkout@v4
 
-      - name: Normalizar nome do repositório para minúsculas
-        run: echo "REPO_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      - name: Definir Tag Imutável da Release
+        id: meta
+        run: |
+          REPO_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)
+          IMAGE_TAG="sha-${SHORT_SHA}"
+          echo "REPO_LC=${REPO_LC}" >> "$GITHUB_ENV"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Release tag calculada: ${IMAGE_TAG}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -87,36 +96,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & Push Imagem Backend API
+      - name: Build & Push Imagem Backend API (Tag Imutável)
         uses: docker/build-push-action@v5
         with:
           context: ./dashboard
           file: ./dashboard/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ env.REPO_LC }}/dashboard-api:latest
-            ghcr.io/${{ env.REPO_LC }}/dashboard-api:${{ github.sha }}
-            ghcr.io/${{ env.REPO_LC }}/dashboard-api:1.0.0
+            ghcr.io/${{ env.REPO_LC }}/dashboard-api:${{ steps.meta.outputs.image_tag }}
 
-      - name: Build & Push Imagem Frontend Web
+      - name: Build & Push Imagem Frontend Web (Tag Imutável)
         uses: docker/build-push-action@v5
         with:
           context: ./dashboard-web
           file: ./dashboard-web/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ env.REPO_LC }}/dashboard-web:latest
-            ghcr.io/${{ env.REPO_LC }}/dashboard-web:${{ github.sha }}
-            ghcr.io/${{ env.REPO_LC }}/dashboard-web:1.0.0
+            ghcr.io/${{ env.REPO_LC }}/dashboard-web:${{ steps.meta.outputs.image_tag }}
 
   # -------------------------------------------------------------
-  # Job 3: Deploy Automatizado Seguro na AWS EC2
+  # Job 3: Deploy Obrigatório em Staging (Gate pré-produção)
   # -------------------------------------------------------------
-  deploy-aws-ec2:
-    name: Deploy Seguro na AWS EC2
+  deploy-staging:
+    name: Deploy & Validação em Staging
     needs: build-docker-images
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     runs-on: ubuntu-latest
+    environment: staging
     permissions:
       contents: read
       packages: read
@@ -125,61 +131,111 @@ jobs:
       - name: Checkout Repositório
         uses: actions/checkout@v4
 
-      - name: Sincronizar arquivos de deploy e scripts na EC2
+      - name: Verificar Configuração do Host de Staging
+        id: check_staging
+        env:
+          HAS_STAGING_HOST: ${{ secrets.STAGING_EC2_HOST != '' }}
+        run: |
+          if [ "$HAS_STAGING_HOST" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secret STAGING_EC2_HOST não configurado no GitHub Environment 'staging'. Configure STAGING_EC2_HOST, STAGING_EC2_USER e STAGING_EC2_SSH_KEY (com banco isolado) para ativar o deploy automático em homologação."
+          fi
+
+      - name: Sincronizar arquivos de Staging na EC2
+        if: steps.check_staging.outputs.enabled == 'true'
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
+        with:
+          host: ${{ secrets.STAGING_EC2_HOST }}
+          username: ${{ secrets.STAGING_EC2_USER }}
+          key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+          source: "docker-compose.yml,docker-compose.staging.yml,scripts/ec2-disk-cleanup.sh,scripts/ec2-deploy-release.sh"
+          target: "/opt/conformia-staging/"
+          overwrite: true
+
+      - name: Executar Deploy Imutável em Staging com Auto-Rollback
+        if: steps.check_staging.outputs.enabled == 'true'
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: ${{ needs.build-docker-images.outputs.image_tag }}
+          DEPLOY_ACTOR: ${{ github.actor }}
+        with:
+          host: ${{ secrets.STAGING_EC2_HOST }}
+          username: ${{ secrets.STAGING_EC2_USER }}
+          key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+          envs: GHCR_USER,GHCR_TOKEN,APP_VERSION,DEPLOY_ACTOR
+          script: |
+            set -euo pipefail
+            mkdir -p /opt/conformia-staging/scripts
+            mv -f /opt/conformia-staging/ec2-disk-cleanup.sh /opt/conformia-staging/scripts/ec2-disk-cleanup.sh 2>/dev/null || true
+            mv -f /opt/conformia-staging/ec2-deploy-release.sh /opt/conformia-staging/scripts/ec2-deploy-release.sh 2>/dev/null || true
+            chmod +x /opt/conformia-staging/scripts/ec2-disk-cleanup.sh /opt/conformia-staging/scripts/ec2-deploy-release.sh
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            DEPLOY_ENV=staging \
+            DEPLOY_DIR=/opt/conformia-staging \
+            COMPOSE_PROJECT_NAME=conformia-staging \
+            COMPOSE_FILES="-f docker-compose.yml -f docker-compose.staging.yml" \
+            API_HEALTH_URL="http://127.0.0.1:3334/health" \
+            WORKER_HEALTH_URL="http://127.0.0.1:3002/health" \
+            ACTION=DEPLOY \
+            DEPLOY_REASON="CI Staging Deployment (${APP_VERSION})" \
+            /opt/conformia-staging/scripts/ec2-deploy-release.sh
+
+  # -------------------------------------------------------------
+  # Job 4: Promoção da Mesma Imagem Imutável para Produção (AWS EC2)
+  # -------------------------------------------------------------
+  deploy-production:
+    name: Promoção Imutável para Produção (AWS EC2)
+    needs: [build-docker-images, deploy-staging]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout Repositório
+        uses: actions/checkout@v4
+
+      - name: Sincronizar arquivos de Produção na EC2
         uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
           username: ${{ secrets.AWS_EC2_USER }}
           key: ${{ secrets.AWS_EC2_SSH_KEY }}
-          source: "docker-compose.yml,scripts/ec2-disk-cleanup.sh"
+          source: "docker-compose.yml,scripts/ec2-disk-cleanup.sh,scripts/ec2-deploy-release.sh"
           target: "/opt/conformia/"
           overwrite: true
 
-      - name: Executar Deploy Remoto via SSH
+      - name: Executar Deploy Imutável em Produção com Auto-Rollback
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APP_VERSION: latest
+          APP_VERSION: ${{ needs.build-docker-images.outputs.image_tag }}
+          DEPLOY_ACTOR: ${{ github.actor }}
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
-          username: ${{ secrets.AWS_EC2_USER }} 
+          username: ${{ secrets.AWS_EC2_USER }}
           key: ${{ secrets.AWS_EC2_SSH_KEY }}
-          envs: GHCR_USER,GHCR_TOKEN,APP_VERSION
+          envs: GHCR_USER,GHCR_TOKEN,APP_VERSION,DEPLOY_ACTOR
           script: |
-            cd /opt/conformia
-            echo "🔑 Autenticando no GitHub Container Registry (GHCR)..."
+            set -euo pipefail
+            mkdir -p /opt/conformia/scripts
+            mv -f /opt/conformia/ec2-disk-cleanup.sh /opt/conformia/scripts/ec2-disk-cleanup.sh 2>/dev/null || true
+            mv -f /opt/conformia/ec2-deploy-release.sh /opt/conformia/scripts/ec2-deploy-release.sh 2>/dev/null || true
+            chmod +x /opt/conformia/scripts/ec2-disk-cleanup.sh /opt/conformia/scripts/ec2-deploy-release.sh
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-
-            echo "🧹 [1/4] Executando script de limpeza preventiva de disco no servidor..."
-            if [ -f "/opt/conformia/scripts/ec2-disk-cleanup.sh" ]; then
-              chmod +x /opt/conformia/scripts/ec2-disk-cleanup.sh
-              /opt/conformia/scripts/ec2-disk-cleanup.sh || sudo /opt/conformia/scripts/ec2-disk-cleanup.sh || true
-            elif [ -f "/usr/local/bin/ec2-disk-cleanup.sh" ]; then
-              chmod +x /usr/local/bin/ec2-disk-cleanup.sh
-              /usr/local/bin/ec2-disk-cleanup.sh || sudo /usr/local/bin/ec2-disk-cleanup.sh || true
-            else
-              docker image prune -af || sudo docker image prune -af || true
-              docker volume prune -f || sudo docker volume prune -f || true
-              docker builder prune -af || sudo docker builder prune -af || true
-            fi
-
-            echo "📥 [2/4] Baixando novas imagens de produção..."
-            APP_VERSION=latest docker compose pull || APP_VERSION=latest sudo docker compose pull
-
-            echo "🔄 [3/4] Reiniciando containers da ConformIA..."
-            APP_VERSION=latest docker compose up -d --remove-orphans || APP_VERSION=latest sudo docker compose up -d --remove-orphans
-
-            echo "🧹 [4/4] Limpeza pós-deploy (purgando imagens substituídas e volumes órfãos)..."
-            docker image prune -af || sudo docker image prune -af || true
-            docker volume prune -f || sudo docker volume prune -f || true
-
-            echo "📊 Espaço em disco atualizado pós-deploy:"
-            df -h /
-            docker system df || sudo docker system df || true
-
-            echo "⏳ Aguardando inicialização e estabilização dos serviços..."
-            sleep 15
-            echo "🩺 Verificando integridade dos serviços..."
-            curl --fail http://localhost:3333/health || curl --fail http://localhost:3000/health || curl --fail http://localhost/health || exit 1
-            echo "✅ Deploy concluído com sucesso e disco 100% higienizado!"
+            DEPLOY_ENV=production \
+            DEPLOY_DIR=/opt/conformia \
+            COMPOSE_PROJECT_NAME=conformia \
+            COMPOSE_FILES="-f docker-compose.yml" \
+            API_HEALTH_URL="http://127.0.0.1:3333/health" \
+            WORKER_HEALTH_URL="http://127.0.0.1:3001/health" \
+            ACTION=DEPLOY \
+            DEPLOY_REASON="CI Production Promotion (${APP_VERSION})" \
+            /opt/conformia/scripts/ec2-deploy-release.sh

@@ -10,12 +10,16 @@ import { AIGuardrails } from '../shared/aiGuardrails.js';
 import { AIStructuredContractAdapter, StructuredAuditContract } from '../shared/aiStructuredContract.js';
 import { AIProviderFactory } from './ai/aiProviderFactory.js';
 import { HeuristicProvider } from './ai/heuristicProvider.js';
+import { createLogger } from '../shared/logger.js';
+import { withSpan } from '../shared/tracing.js';
 import {
   violationSchema,
   reconciliationOutputSchema,
   ReconciliationOutput,
   AgentContext,
 } from '../shared/reconciliationTypes.js';
+
+const reconLog = createLogger('ReconciliationEngine');
 
 export {
   violationSchema,
@@ -204,10 +208,18 @@ Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da audit
     agentModuleId?: string,
     resolvedContext?: AgentContext
   ): Promise<ReconciliationOutput> {
-    const agentContext = resolvedContext || await this.resolveAgentContext(
-      agentModuleId,
-      scrape.cleanMarkdown,
-      scrape.detectedTags
+    const agentContext = resolvedContext || await withSpan(
+      'audit.rag_retrieval',
+      {
+        'audit.agent_module_id': agentModuleId,
+        'http.url': scrape.url,
+      },
+      async () =>
+        await this.resolveAgentContext(
+          agentModuleId,
+          scrape.cleanMarkdown,
+          scrape.detectedTags
+        )
     );
     if (agentContext.activeNorms.length === 0) {
       const retrievalStatus = agentContext.retrievalStatus || 'NO_MATCH';
@@ -233,13 +245,37 @@ Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da audit
     }
 
     const activeModel = await this.getActiveModelConfig();
-    console.log(`[ReconciliationEngine] Iniciando auditoria para ${scrape.url} usando modelo: ${activeModel.name} (${activeModel.provider})`);
-    const rawOutput = await AIProviderFactory.reconcile(scrape, agentContext);
+    reconLog.info(
+      { url: scrape.url, model: activeModel.name, provider: activeModel.provider },
+      'Iniciando inferência de reconciliação deontológica'
+    );
 
-    const { sanitizedOutput } = await AIGuardrails.validateAndSanitizeOutput(
-      rawOutput,
-      scrape,
-      agentContext.activeNorms
+    const rawOutput = await withSpan(
+      'audit.ai_inference',
+      {
+        'ai.provider': activeModel.provider,
+        'ai.model': activeModel.modelId,
+        'audit.norms_count': agentContext.activeNorms.length,
+      },
+      async (span) => {
+        const out = await AIProviderFactory.reconcile(scrape, agentContext);
+        span.setAttribute('ai.tokens.total', out.totalTokens ?? 0);
+        return out;
+      }
+    );
+
+    const { sanitizedOutput } = await withSpan(
+      'audit.guardrails',
+      {
+        'ai.model_used': rawOutput.aiModelUsed,
+        'audit.raw_violations_count': rawOutput.violations.length,
+      },
+      async () =>
+        await AIGuardrails.validateAndSanitizeOutput(
+          rawOutput,
+          scrape,
+          agentContext.activeNorms
+        )
     );
     return sanitizedOutput;
   }

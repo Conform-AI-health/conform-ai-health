@@ -1,0 +1,60 @@
+{
+  "family": "conformia-worker",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/conformiaWorkerTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "audit-worker",
+      "image": "ghcr.io/conform-ai-health/conform-ai-health/dashboard-api:REPLACE_WITH_SHA_TAG",
+      "command": ["node", "dist/worker.js"],
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3001,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "3001" },
+        { "name": "WORKER_HEALTH_PORT", "value": "3001" },
+        { "name": "API_PREFIX", "value": "/api/v1" },
+        { "name": "APP_ENV", "value": "production" },
+        { "name": "APP_VERSION", "value": "REPLACE_WITH_SHA_TAG" },
+        { "name": "SERVICE_NAME", "value": "conformia-worker" },
+        { "name": "LOG_LEVEL", "value": "info" },
+        { "name": "OTEL_ENABLED", "value": "true" },
+        { "name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": "http://localhost:4318/v1/traces" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:conformia/prod:DATABASE_URL::" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:conformia/prod:REDIS_URL::" },
+        { "name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:conformia/prod:JWT_SECRET::" },
+        { "name": "JWT_REFRESH_SECRET", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:conformia/prod:JWT_REFRESH_SECRET::" },
+        { "name": "ADMIN_PASSWORD", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:conformia/prod:ADMIN_PASSWORD::" },
+        { "name": "MONITORING_API_KEY", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:conformia/prod:MONITORING_API_KEY::" },
+        { "name": "GEMINI_API_KEY", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:conformia/prod:GEMINI_API_KEY::" },
+        { "name": "FIRECRAWL_API_KEY", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:conformia/prod:FIRECRAWL_API_KEY::" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3001/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""],
+        "interval": 15,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 20
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/conformia-prod/worker",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "worker"
+        }
+      }
+    }
+  ]
+}

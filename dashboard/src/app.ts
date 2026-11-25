@@ -4,12 +4,14 @@ import helmet from 'helmet';
 import { env } from './config/env.js';
 import routes from './routes/index.js';
 import { errorHandler } from './middlewares/errorHandler.js';
+import { requestObservability } from './middlewares/requestObservability.js';
 
 export function createApp(): Express {
   const app = express();
 
   // Configura proxy reverso seguro (Nginx / Docker)
   app.set('trust proxy', 1);
+  app.use(requestObservability);
 
   // 1. Hardening com Helmet & Content Security Policy
   app.use(
@@ -61,7 +63,17 @@ export function createApp(): Express {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'x-refresh-token', 'X-Requested-With', 'x-requested-with'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'x-refresh-token',
+        'X-Requested-With',
+        'x-requested-with',
+        'x-request-id',
+        'traceparent',
+        'tracestate',
+      ],
+      exposedHeaders: ['X-Request-Id', 'X-Trace-Id'],
     })
   );
 
@@ -76,9 +88,14 @@ export function createApp(): Express {
   });
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
-  // 4. Healthcheck simples
+  // 4. Healthcheck simples com metadados de release
   app.get('/health', (_req, res) => {
-    res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+    res.status(200).json({
+      status: 'UP',
+      version: env.APP_VERSION,
+      environment: env.APP_ENV || env.NODE_ENV,
+      timestamp: new Date().toISOString(),
+    });
   });
 
   // 5. Rotas principais da API REST
