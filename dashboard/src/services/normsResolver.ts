@@ -318,7 +318,7 @@ export class NormsResolver {
             });
             const hasModelMismatch = scopeMetadata.some(({ contextoSemantico }) => {
               const model = parseChunkMetadata(contextoSemantico).embedding_model;
-              return typeof model === 'string' && model !== 'PENDING_REINDEX'
+              return typeof model === 'string' && !model.startsWith('PENDING')
                 && model !== SemanticEmbeddingService.embeddingModelId;
             });
             if (hasModelMismatch) {
