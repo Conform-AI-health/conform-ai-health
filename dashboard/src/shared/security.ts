@@ -471,7 +471,7 @@ export async function safeHttpGet(urlString: string, options: SafeHttpClientOpti
 
 /**
  * T26: Valida se uma URL base aponta estritamente para host de loopback (localhost/127.0.0.1/[::1])
- * sem permitir desvios maliciosos como "localhost.evil.com" ou credenciais embutidas.
+ * ou para o host explicitamente configurado para o provedor Ollama / IA local via ambiente (ex: IP de VPN/Tailscale).
  */
 export function isAllowedLocalhostBaseUrl(rawUrl: string): boolean {
   if (!rawUrl || typeof rawUrl !== 'string') return false;
@@ -484,14 +484,31 @@ export function isAllowedLocalhostBaseUrl(rawUrl: string): boolean {
       return false;
     }
     const hostname = parsed.hostname.toLowerCase();
-    return [
+    const defaultHosts = [
       'localhost',
       '127.0.0.1',
       '::1',
       '[::1]',
       'host.docker.internal',
       'gateway.docker.internal',
-    ].includes(hostname);
+    ];
+
+    if (defaultHosts.includes(hostname)) {
+      return true;
+    }
+
+    // Permite explicitamente o endpoint de IA configurado no ambiente (ex: OLLAMA_BASE_URL ou OLLAMA_HOST)
+    const configuredOllama = process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST;
+    if (configuredOllama) {
+      try {
+        const parsedOllama = new URL(configuredOllama.trim());
+        if (parsedOllama.hostname.toLowerCase() === hostname) {
+          return true;
+        }
+      } catch {}
+    }
+
+    return false;
   } catch {
     return false;
   }

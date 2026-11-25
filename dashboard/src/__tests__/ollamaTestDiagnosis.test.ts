@@ -28,6 +28,22 @@ describe('Diagnóstico e Teste de Modelos de IA — Ollama Provider', () => {
       expect(resolved).toBe('http://host.docker.internal:11434');
       delete process.env.IS_DOCKER;
     });
+
+    it('deve priorizar OLLAMA_BASE_URL configurado no ambiente quando o banco tiver o default localhost', () => {
+      process.env.OLLAMA_BASE_URL = 'http://100.106.169.126:11434';
+      const resolved = resolveOllamaBaseUrl('http://localhost:11434');
+      expect(resolved).toBe('http://100.106.169.126:11434');
+      delete process.env.OLLAMA_BASE_URL;
+    });
+  });
+
+  describe('isAllowedLocalhostBaseUrl anti-SSRF para Ollama', () => {
+    it('deve permitir IP customizado de Tailscale configurado em OLLAMA_BASE_URL sem bloquear como SSRF', () => {
+      process.env.OLLAMA_BASE_URL = 'http://100.106.169.126:11434';
+      const isAllowed = security.isAllowedLocalhostBaseUrl('http://100.106.169.126:11434/api/generate');
+      expect(isAllowed).toBe(true);
+      delete process.env.OLLAMA_BASE_URL;
+    });
   });
 
   describe('OllamaProvider.testConnection', () => {
