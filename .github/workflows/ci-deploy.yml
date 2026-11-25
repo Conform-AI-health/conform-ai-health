@@ -139,8 +139,8 @@ jobs:
           if [ "$HAS_STAGING_HOST" = "true" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Secret STAGING_EC2_HOST não configurado no GitHub Environment 'staging'. Configure STAGING_EC2_HOST, STAGING_EC2_USER e STAGING_EC2_SSH_KEY (com banco isolado) para ativar o deploy automático em homologação."
+            echo "::error::Secret STAGING_EC2_HOST não configurado no GitHub Environment 'staging'. Configure STAGING_EC2_HOST, STAGING_EC2_USER e STAGING_EC2_SSH_KEY (com banco isolado). A promoção para produção exige staging validado."
+            exit 1
           fi
 
       - name: Sincronizar arquivos de Staging na EC2

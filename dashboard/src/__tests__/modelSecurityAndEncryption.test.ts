@@ -16,6 +16,17 @@ describe('T26 & T32 — Segurança de Modelos de IA: BaseUrl e Cifragem AES-256-
       expect(isAllowedLocalhostBaseUrl('http://gateway.docker.internal:11434')).toBe(true);
     });
 
+    it('deve aceitar apenas IPs literais da faixa Tailscale 100.64.0.0/10', () => {
+      expect(isAllowedLocalhostBaseUrl('http://100.64.0.1:11434')).toBe(true);
+      expect(isAllowedLocalhostBaseUrl('http://100.127.255.254:11434')).toBe(true);
+
+      expect(isAllowedLocalhostBaseUrl('http://100.63.255.255:11434')).toBe(false);
+      expect(isAllowedLocalhostBaseUrl('http://100.128.0.1:11434')).toBe(false);
+      expect(isAllowedLocalhostBaseUrl('http://100.24.0.1:11434')).toBe(false);
+      expect(isAllowedLocalhostBaseUrl('http://100.attacker.com:11434')).toBe(false);
+      expect(isAllowedLocalhostBaseUrl('http://100.64.attacker.com:11434')).toBe(false);
+    });
+
     it('deve rejeitar categoricamente bypasses maliciosos contendo substring localhost em domínios externos', () => {
       // Subdomínios externos fingindo ser localhost
       expect(isAllowedLocalhostBaseUrl('http://localhost.evil.com:11434')).toBe(false);
