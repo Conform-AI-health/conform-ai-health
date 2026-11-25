@@ -74,7 +74,8 @@ services:
       - CRAWL_MAX_LINKS_PER_PAGE=${CRAWL_MAX_LINKS_PER_PAGE:-50}
       - CRAWL_BATCH_SIZE=${CRAWL_BATCH_SIZE:-4}
       - RAG_MAX_CANDIDATE_CHUNKS=${RAG_MAX_CANDIDATE_CHUNKS:-10000}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://100.106.169.126:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-${OLLAMA_HOST:-http://localhost:11434}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -141,7 +142,8 @@ services:
       - CRAWL_MAX_LINKS_PER_PAGE=${CRAWL_MAX_LINKS_PER_PAGE:-50}
       - CRAWL_BATCH_SIZE=${CRAWL_BATCH_SIZE:-4}
       - RAG_MAX_CANDIDATE_CHUNKS=${RAG_MAX_CANDIDATE_CHUNKS:-10000}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://100.106.169.126:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-${OLLAMA_HOST:-http://localhost:11434}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

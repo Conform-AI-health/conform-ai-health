@@ -317,7 +317,7 @@ export async function runInitialSeed(): Promise<void> {
           name: 'Ollama Local (Qwen 2.5)',
           provider: 'ollama',
           modelId: 'qwen2.5:7b',
-          baseUrl: env.OLLAMA_BASE_URL || 'http://100.106.169.126:11434',
+          baseUrl: process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL || env.OLLAMA_BASE_URL || 'http://localhost:11434',
           isActive: false,
           isDefault: false,
           temperature: 0.2,
@@ -350,25 +350,34 @@ export async function runInitialSeed(): Promise<void> {
       },
     });
 
-    // Atualização de endpoint do Ollama se configurado via variáveis de ambiente com IP/host dedicado
-    const targetOllamaUrl =
-      (env.OLLAMA_BASE_URL && !env.OLLAMA_BASE_URL.includes('localhost') && !env.OLLAMA_BASE_URL.includes('127.0.0.1'))
-        ? env.OLLAMA_BASE_URL
-        : 'http://100.106.169.126:11434';
+    // Atualização de endpoint do Ollama se configurado via variáveis de ambiente com IP/host dedicado (ex: OLLAMA_HOST)
+    const rawOllamaEnv = process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL || env.OLLAMA_BASE_URL;
+    const isCustomOllama =
+      rawOllamaEnv &&
+      !rawOllamaEnv.includes('localhost') &&
+      !rawOllamaEnv.includes('127.0.0.1') &&
+      !rawOllamaEnv.includes('host.docker.internal');
 
-    await prisma.aiModelConfig.updateMany({
-      where: {
-        provider: 'ollama',
-        OR: [
-          { baseUrl: null },
-          { baseUrl: 'http://localhost:11434' },
-          { baseUrl: 'http://host.docker.internal:11434' },
-        ],
-      },
-      data: {
-        baseUrl: targetOllamaUrl,
-      },
-    });
+    if (isCustomOllama) {
+      const targetOllamaUrl =
+        rawOllamaEnv.startsWith('http://') || rawOllamaEnv.startsWith('https://')
+          ? rawOllamaEnv.trim()
+          : `http://${rawOllamaEnv.trim()}`;
+
+      await prisma.aiModelConfig.updateMany({
+        where: {
+          provider: 'ollama',
+          OR: [
+            { baseUrl: null },
+            { baseUrl: 'http://localhost:11434' },
+            { baseUrl: 'http://host.docker.internal:11434' },
+          ],
+        },
+        data: {
+          baseUrl: targetOllamaUrl,
+        },
+      });
+    }
   }
 }
 

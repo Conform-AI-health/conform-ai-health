@@ -497,11 +497,14 @@ export function isAllowedLocalhostBaseUrl(rawUrl: string): boolean {
       return true;
     }
 
-    // Permite explicitamente o endpoint de IA configurado no ambiente (ex: OLLAMA_BASE_URL ou OLLAMA_HOST)
-    const configuredOllama = process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST;
-    if (configuredOllama) {
+    // Permite explicitamente o endpoint de IA configurado no ambiente (ex: OLLAMA_HOST ou OLLAMA_BASE_URL)
+    const configuredOllama = process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL;
+    if (configuredOllama && configuredOllama.trim()) {
       try {
-        const parsedOllama = new URL(configuredOllama.trim());
+        const normalized = configuredOllama.trim().startsWith('http://') || configuredOllama.trim().startsWith('https://')
+          ? configuredOllama.trim()
+          : `http://${configuredOllama.trim()}`;
+        const parsedOllama = new URL(normalized);
         if (parsedOllama.hostname.toLowerCase() === hostname) {
           return true;
         }

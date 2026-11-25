@@ -444,7 +444,7 @@ export const AgentsPage: React.FC = () => {
     const active = aiModels.find((m) => m.isActive);
     const initialId = modelId || active?.id || aiModels[0]?.id || '';
     const initialModel = aiModels.find((m) => m.id === initialId);
-    const initialUrl = initialModel?.baseUrl || (initialModel?.provider === 'ollama' ? 'http://100.106.169.126:11434' : '');
+    const initialUrl = initialModel?.baseUrl || '';
     setSelectedModelIdForTest(initialId);
     setTestEndpointUrl(initialUrl);
     setShowTestModal(true);
@@ -2117,7 +2117,7 @@ export const AgentsPage: React.FC = () => {
                     onChange={(e) => {
                       const newId = e.target.value;
                       const sel = aiModels.find((m) => m.id === newId);
-                      const newUrl = sel?.baseUrl || (sel?.provider === 'ollama' ? 'http://100.106.169.126:11434' : '');
+                      const newUrl = sel?.baseUrl || '';
                       setSelectedModelIdForTest(newId);
                       setTestEndpointUrl(newUrl);
                       handleRunModelTest(newId, newUrl);
@@ -2169,7 +2169,7 @@ export const AgentsPage: React.FC = () => {
                           type="text"
                           value={testEndpointUrl}
                           onChange={(e) => setTestEndpointUrl(e.target.value)}
-                          placeholder="Ex: http://100.106.169.126:11434"
+                          placeholder="Ex: http://localhost:11434 ou IP do servidor Ollama"
                           className="w-full bg-[#080d1a] border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
                         />
                         <span className="text-[10px] text-slate-500 block">
