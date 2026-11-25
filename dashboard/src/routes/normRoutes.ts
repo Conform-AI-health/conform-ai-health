@@ -22,5 +22,6 @@ router.get('/', NormController.listNorms);
 router.get('/tags', NormController.listDistinctTags);
 router.get('/:normId', NormController.getNormById);
 router.get('/:normId/chunks', NormController.getNormChunks);
+router.post('/:normId/generate-tags', authorize(Role.ADMIN, Role.AUDITOR), NormController.generateThematicTags);
 
 export default router;

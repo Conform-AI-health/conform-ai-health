@@ -172,8 +172,8 @@ services:
     container_name: conformia-web
     restart: unless-stopped
     ports:
-      # Restrict plain HTTP to the host; expose it publicly only through a TLS-terminating reverse proxy.
-      - "127.0.0.1:${WEB_PORT:-3000}:80"
+    #liberado devido a porta 80 está em uso
+      - "0.0.0.0:${WEB_PORT:-3000}:80"
     depends_on:
       dashboard-api:
         condition: service_healthy

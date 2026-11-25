@@ -114,8 +114,9 @@ export const ScrapingPage: React.FC = () => {
   const [url, setUrl] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadingInProgress, setUploadingInProgress] = useState(false);
-  const [selectedTags, setSelectedTags] = useState<string[]>(['CFM']);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedMode, setSelectedMode] = useState('CHEERIO');
+  const [generatingTagsNormId, setGeneratingTagsNormId] = useState<string | null>(null);
 
   // Preview de Markdown das páginas legadas
   const [previewPage, setPreviewPage] = useState<any>(null);
@@ -334,6 +335,48 @@ export const ScrapingPage: React.FC = () => {
     }
   };
 
+  /**
+   * Aciona o modelo de IA ativo para inferir tags temáticas abertas e macro-tema da norma (--ollama --clean --apply)
+   */
+  const handleGenerateTags = async (normId: string) => {
+    try {
+      setGeneratingTagsNormId(normId);
+      const res = await api.post(`/norms/${encodeURIComponent(normId)}/generate-tags`);
+      if (res.data?.success) {
+        toast.success(
+          `Tags geradas com sucesso para ${normId} via IA (${res.data.provider}): [${(res.data.tags || []).join(', ')}]`,
+          'Taxonomia Atualizada'
+        );
+
+        // Atualiza a norma na listagem local
+        setNormsList((prev) =>
+          prev.map((n) =>
+            n.normId === normId
+              ? { ...n, tags: res.data.tags, macroTema: res.data.macroTema, status: res.data.status }
+              : n
+          )
+        );
+
+        // Atualiza o modal caso esteja aberto nesta norma
+        setSelectedNormModal((prev: any) =>
+          prev && prev.normId === normId
+            ? { ...prev, tags: res.data.tags, macroTema: res.data.macroTema, status: res.data.status }
+            : prev
+        );
+
+        fetchAvailableTags();
+        fetchStats();
+      }
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.error || err.message || 'Falha ao gerar tags da norma via IA.',
+        'Erro na Geração de Tags'
+      );
+    } finally {
+      setGeneratingTagsNormId(null);
+    }
+  };
+
   const handleOpenCompatibleAgents = async (pageId: string) => {
     try {
       setLoadingCompatible(true);
@@ -537,39 +580,6 @@ export const ScrapingPage: React.FC = () => {
               </div>
             </div>
           )}
-
-          {/* Seleção de Tags Regulatórias */}
-          <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-2 flex items-center gap-1.5">
-              <Tag className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Tags Regulatórias Aplicáveis:</span>
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {REGULATORY_TAG_OPTIONS.map((tag) => {
-                const isSelected = selectedTags.includes(tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    onClick={() => toggleTag(tag.id)}
-                    className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
-                      isSelected
-                        ? `${tag.badgeClass} ring-1 ring-emerald-500/50`
-                        : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <span className="text-base">{tag.icon}</span>
-                    <div>
-                      <div className="text-xs font-bold text-white">{tag.label}</div>
-                      <div className="text-[10px] text-slate-400 leading-tight mt-0.5">
-                        {tag.description}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
 
           <div className="pt-2 flex justify-end">
             <button
@@ -901,8 +911,28 @@ export const ScrapingPage: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-right space-x-2">
+                      <td className="py-3.5 px-4 text-right space-x-2 whitespace-nowrap">
                         <button
+                          type="button"
+                          onClick={() => handleGenerateTags(norm.normId)}
+                          disabled={generatingTagsNormId === norm.normId}
+                          className="p-1.5 bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-400 border border-cyan-800/40 rounded-lg transition inline-flex items-center gap-1.5 text-[11px] font-semibold disabled:opacity-50"
+                          title="Gerar e persistir tags temáticas via Modelo de IA Ativo (--ollama --clean --apply)"
+                        >
+                          {generatingTagsNormId === norm.normId ? (
+                            <>
+                              <RefreshCw className="h-3 w-3 animate-spin text-cyan-400" />
+                              <span>Gerando Tags...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-3 w-3 text-cyan-400" />
+                              <span>Gerar Tags IA</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleOpenNormDetails(norm.normId)}
                           className="p-1.5 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-800/40 rounded-lg transition inline-flex items-center gap-1 text-[11px] font-semibold"
                           title="Inspecionar Norma e Chunks RAG"
@@ -1072,12 +1102,33 @@ export const ScrapingPage: React.FC = () => {
                   {selectedNormModal.tipo} {selectedNormModal.numero}/{selectedNormModal.ano} · Publicado em {selectedNormModal.dataPublicacao || 'N/D'}
                 </span>
               </div>
-              <button
-                onClick={() => setSelectedNormModal(null)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleGenerateTags(selectedNormModal.normId)}
+                  disabled={generatingTagsNormId === selectedNormModal.normId}
+                  className="px-3 py-1.5 bg-cyan-950/70 hover:bg-cyan-900 text-cyan-300 border border-cyan-800/60 rounded-xl transition inline-flex items-center gap-1.5 text-xs font-semibold disabled:opacity-50"
+                  title="Gerar e persistir tags temáticas via IA (--ollama --clean --apply)"
+                >
+                  {generatingTagsNormId === selectedNormModal.normId ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+                      <span>Gerando Tags...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+                      <span>Gerar Tags IA</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setSelectedNormModal(null)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             {/* Abas do Modal */}
@@ -1150,6 +1201,35 @@ export const ScrapingPage: React.FC = () => {
                       <span className="text-base font-bold text-white font-mono">
                         {selectedNormModal.tokensEstimados?.toLocaleString('pt-BR')}
                       </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/40 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Tags & Taxonomia Deontológica:
+                      </span>
+                      {selectedNormModal.macroTema && (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40 text-cyan-300 font-bold">
+                          Macro-Tema: {selectedNormModal.macroTema}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedNormModal.tags && selectedNormModal.tags.length > 0 ? (
+                        selectedNormModal.tags.map((t: string) => (
+                          <span
+                            key={t}
+                            className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-cyan-300 border border-slate-700"
+                          >
+                            {t}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-slate-500 italic text-[11px]">
+                          Nenhuma tag populada. Clique no botão "Gerar Tags IA" acima para classificar esta norma.
+                        </span>
+                      )}
                     </div>
                   </div>
 

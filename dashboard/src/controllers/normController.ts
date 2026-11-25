@@ -6,6 +6,9 @@ import { z } from 'zod';
 import { LegalNormCrawlerService } from '../services/legalNormCrawlerService.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { env } from '../config/env.js';
+import { AIProviderFactory } from '../services/ai/aiProviderFactory.js';
+import { OllamaTaxonomyService } from '../services/ollamaTaxonomyService.js';
+import { TaxonomyInferenceInput } from '../services/deontologicalTaxonomyService.js';
 
 const crawlInputSchema = z.object({
   url: z.string().url('URL inválida'),
@@ -470,6 +473,98 @@ export class NormController {
           vigentes,
           revogadas,
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /norms/:normId/generate-tags
+   * Gera e aplica tags e macro-tema com o modelo de IA ativo (ou Ollama) com política --clean e persistência --apply
+   */
+  public static async generateThematicTags(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const rawNormId = (req.params.normId || '').trim();
+      if (!rawNormId) {
+        res.status(400).json({ error: 'Parâmetro normId obrigatório.' });
+        return;
+      }
+
+      // Busca a norma pelo id ObjectId ou pelo código canônico normId
+      const whereClause = isMongoObjectId.test(rawNormId)
+        ? { OR: [{ id: rawNormId }, { normId: rawNormId }] }
+        : { normId: rawNormId };
+
+      const norm = await prisma.norm.findFirst({
+        where: whereClause,
+      });
+
+      if (!norm) {
+        res.status(404).json({ error: `Norma não encontrada no acervo: "${rawNormId}".` });
+        return;
+      }
+
+      // 1. Identifica a configuração do modelo de IA atualmente ativo no sistema
+      let activeModel: any = null;
+      try {
+        activeModel = await AIProviderFactory.getActiveModelConfig();
+      } catch (err) {
+        console.warn('[NormController] Não foi possível carregar modelo ativo da factory:', err);
+      }
+
+      // 2. Prepara o input da norma com a lógica de --clean (currentTags vazio para recalcular sem resquício)
+      const input: TaxonomyInferenceInput = {
+        normId: norm.normId,
+        orgao: norm.orgao,
+        tipo: norm.tipo,
+        numero: norm.numero,
+        ano: norm.ano,
+        ementa: norm.ementaHigienizada,
+        content: norm.cleanMarkdown,
+        currentTags: [], // Lógica --clean
+        status: norm.status,
+      };
+
+      // 3. Executa a inferência com Ollama / IA ativa
+      const ollamaOptions = {
+        baseUrl: activeModel?.baseUrl || env.OLLAMA_BASE_URL,
+        modelId: activeModel?.provider === 'ollama' ? activeModel.modelId : env.OLLAMA_MODEL,
+        temperature: activeModel?.temperature ?? 0.1,
+      };
+
+      const result = await OllamaTaxonomyService.inferTags(input, ollamaOptions);
+
+      // 4. Persiste a alteração no MongoDB (Lógica --apply)
+      const updatedNorm = await prisma.norm.update({
+        where: { id: norm.id },
+        data: {
+          tags: result.allTags,
+          macroTema: result.macroTema,
+          status: result.statusTag,
+        },
+        select: {
+          id: true,
+          normId: true,
+          tags: true,
+          macroTema: true,
+          status: true,
+          updatedAt: true,
+        },
+      });
+
+      res.status(200).json({
+        success: true,
+        normId: updatedNorm.normId,
+        tags: updatedNorm.tags,
+        macroTema: updatedNorm.macroTema,
+        status: updatedNorm.status,
+        thematicTags: result.thematicTags,
+        confidence: result.confidence,
+        reasoning: result.reasoning,
+        provider: result.provider,
+        modelUsed: result.modelUsed,
+        updatedAt: updatedNorm.updatedAt,
       });
     } catch (error) {
       next(error);

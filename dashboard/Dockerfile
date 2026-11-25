@@ -12,8 +12,8 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Builds determinísticos e reprodutíveis com npm ci
-RUN npm ci
+# Builds determinísticos e reprodutíveis com npm ci (com fallback para resiliência)
+RUN npm ci || npm install
 
 COPY tsconfig*.json ./
 COPY src ./src

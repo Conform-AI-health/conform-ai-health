@@ -3,9 +3,16 @@ import { env } from '../../config/env.js';
 import { CircuitBreaker } from '../../shared/circuitBreaker.js';
 import { AIGuardrails } from '../../shared/aiGuardrails.js';
 import { ScrapeResult } from '../scraperService.js';
-import { AgentContext, ReconciliationOutput, reconciliationOutputSchema } from '../../shared/reconciliationTypes.js';
+import {
+  AgentContext,
+  ReconciliationOutput,
+  reconciliationOutputSchema,
+  normalizeSeverity,
+  normalizeVerdict,
+} from '../../shared/reconciliationTypes.js';
 import { safeHttpPostJson } from '../../shared/security.js';
 import { IAIProvider, AIProviderHealth, AIProviderType } from './aiProvider.interface.js';
+import { resolveOllamaBaseUrl } from './aiUrlResolver.js';
 
 export class OllamaProvider implements IAIProvider {
   public readonly providerId: AIProviderType = 'ollama';
@@ -28,7 +35,7 @@ export class OllamaProvider implements IAIProvider {
     modelConfig?: any
   ): Promise<ReconciliationOutput> {
     return await this.circuitBreaker.execute(async () => {
-      const ollamaUrl = modelConfig?.baseUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434';
+      const ollamaUrl = resolveOllamaBaseUrl(modelConfig?.baseUrl);
       const model = modelConfig?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b';
 
       const relevantNorms = agentContext.activeNorms
@@ -59,13 +66,13 @@ ${secureAudit.secureBlock}
 Retorne APENAS um JSON válido no formato:
 {
   "verdict": "CONFORME" | "PARCIALMENTE_CONFORME" | "NAO_CONFORME" | "INCONCLUSIVO",
-  "score": number,
+  "score": number (0 a 100),
   "summary": string,
   "violations": [
     {
       "normArticle": string,
       "normCode": string,
-      "severity": "LEVE" | "MEDIA" | "GRAVE" | "CRITICA",
+      "severity": "LEVE" | "MEDIA" | "GRAVE" | "CRITICA" (ATENÇÃO: use estritamente uma destas 4 opções: nunca use 'ALTA' ou 'BAIXA', use 'GRAVE' para gravidade alta e 'LEVE' para baixa),
       "detectedText": string,
       "correctiveAdvice": string
     }
@@ -101,6 +108,16 @@ Retorne APENAS um JSON válido no formato:
         }
       }
 
+      if (Array.isArray(parsed?.violations)) {
+        parsed.violations = parsed.violations.map((v: any) => ({
+          ...v,
+          severity: normalizeSeverity(v?.severity),
+        }));
+      }
+      if (parsed?.verdict) {
+        parsed.verdict = normalizeVerdict(parsed.verdict);
+      }
+
       const promptTokens = response.data?.prompt_eval_count || Math.ceil(prompt.length / 4);
       const completionTokens = response.data?.eval_count || Math.ceil(jsonText.length / 4);
       const totalTokens = promptTokens + completionTokens;
@@ -119,7 +136,7 @@ Retorne APENAS um JSON válido no formato:
 
   public async testConnection(customPrompt?: string, targetModel?: any): Promise<AIProviderHealth> {
     const startTime = Date.now();
-    const ollamaUrl = targetModel?.baseUrl || env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    const ollamaUrl = resolveOllamaBaseUrl(targetModel?.baseUrl);
     const model = targetModel?.modelId || env.OLLAMA_MODEL || 'qwen2.5:7b';
     const prompt =
       customPrompt ||
@@ -144,12 +161,14 @@ Retorne APENAS um JSON válido no formato:
         testedAt: new Date().toISOString(),
       };
     } catch (err: any) {
+      const serverError = err.response?.data?.error || err.response?.data?.message;
+      const detailMsg = serverError ? `${err.message} (${serverError})` : err.message;
       return {
         provider: 'ollama',
         model,
         status: 'OFFLINE',
         latencyMs: Date.now() - startTime,
-        response: `Falha ao conectar com o Ollama em ${ollamaUrl}: ${err.message}`,
+        response: `Falha ao conectar com o Ollama em ${ollamaUrl}: ${detailMsg}`,
         testedAt: new Date().toISOString(),
       };
     }
