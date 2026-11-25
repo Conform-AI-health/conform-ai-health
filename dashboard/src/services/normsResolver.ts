@@ -309,6 +309,22 @@ export class NormsResolver {
             dbNorms.map((norm) => norm.id),
             safeTopK
           );
+          if (vectorChunks) {
+            // O shortlist do Atlas não enxerga chunks de outro modelo; checa o escopo inteiro sem carregar vetores
+            const scopeMetadata = await prisma.normChunk.findMany({
+              where: { normId: { in: dbNorms.map((norm) => norm.id) } },
+              take: maxCandidateChunks,
+              select: { contextoSemantico: true },
+            });
+            const hasModelMismatch = scopeMetadata.some(({ contextoSemantico }) => {
+              const model = parseChunkMetadata(contextoSemantico).embedding_model;
+              return typeof model === 'string' && model !== 'PENDING_REINDEX'
+                && model !== SemanticEmbeddingService.embeddingModelId;
+            });
+            if (hasModelMismatch) {
+              vectorChunks = null;
+            }
+          }
         } catch {
           precomputedQueryEmbedding = null;
         }
