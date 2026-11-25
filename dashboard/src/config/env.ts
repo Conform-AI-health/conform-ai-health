@@ -64,6 +64,11 @@ const envSchema = z
     MONITORING_API_KEY: z.string().optional().default(''),
     ADMIN_EMAIL: z.string().email().optional().default('admin@conform.ai'),
     ADMIN_PASSWORD: z.string().optional().default(''),
+    WORKER_HEALTH_PORT: z.coerce.number().default(3001),
+    PUPPETEER_EXECUTABLE_PATH: z.string().optional().default(''),
+    GITHUB_TOKEN: z.string().optional().default(''),
+    IS_DOCKER: z.string().optional().default('false'),
+    RUN_WORKER: z.string().optional().default('false'),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {
