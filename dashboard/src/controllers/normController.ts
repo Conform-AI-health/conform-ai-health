@@ -440,9 +440,12 @@ export class NormController {
       };
       await LegalNormCrawlerService.saveJobState(initialJobState);
 
-      // Desacoplamento assíncrono: enfileira no BullMQ para processamento pelo Worker
+      // Desacoplamento assíncrono: enfileira no BullMQ para processamento pelo Worker com 1 única tentativa (sem retry automático de 3x)
       try {
-        await normCrawlQueue.add('normCrawlJob', crawlPayload, { jobId: `norm-crawl-${jobId}` });
+        await normCrawlQueue.add('normCrawlJob', crawlPayload, {
+          jobId: `norm-crawl-${jobId}`,
+          attempts: 1,
+        });
         console.log(`📬 [NormController] Job de crawl de normas enfileirado no BullMQ: norm-crawl-${jobId}`);
       } catch (queueErr: any) {
         console.warn(`⚠️ [NormController] Redis em fallback (${queueErr.message}). Executando crawl diretamente...`);

@@ -333,8 +333,24 @@ export function startAuditWorker() {
     }
   );
 
-  crawlWorker.on('failed', (job, err) => {
+  crawlWorker.on('failed', async (job, err) => {
     console.error(`❌ [NormCrawlWorker] Job ${job?.id} falhou definitivamente: ${err.message}`);
+    const jobId = job?.data?.jobId;
+    if (jobId) {
+      try {
+        const state = await LegalNormCrawlerService.getJob(jobId);
+        if (state && state.status !== 'completed' && state.status !== 'failed') {
+          state.status = 'failed';
+          state.finishedAt = new Date().toISOString();
+          state.errors.push({
+            url: state.rootUrl,
+            message: `Job abortado pelo worker: ${err.message}`,
+          });
+          state.counters.errors++;
+          await LegalNormCrawlerService.saveJobState(state);
+        }
+      } catch {}
+    }
   });
 
   activeCrawlWorkerInstance = crawlWorker;

@@ -51,5 +51,11 @@ const queueOptions: QueueOptions = {
 };
 
 export const auditQueue = new Queue('auditQueue', queueOptions);
-export const normCrawlQueue = new Queue('normCrawlQueue', queueOptions);
+export const normCrawlQueue = new Queue('normCrawlQueue', {
+  ...queueOptions,
+  defaultJobOptions: {
+    ...queueOptions.defaultJobOptions,
+    attempts: 1, // Crawl de normas é uma operação pesada e não deve retentar automaticamente 3 vezes
+  },
+});
 

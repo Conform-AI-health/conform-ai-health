@@ -17,7 +17,6 @@ interface ScheduledAgentState {
 export class AuditSchedulerService {
   private static activeSchedules: Map<string, ScheduledAgentState> = new Map();
   private static runningAudits: Set<string> = new Set();
-  private static pollTimer: NodeJS.Timeout | null = null;
   private static isInitialized = false;
 
   /**
@@ -48,7 +47,8 @@ export class AuditSchedulerService {
   }
 
   /**
-   * Inicializa o motor de agendamento contínuo
+   * Inicializa o motor de agendamento contínuo baseado exclusivamente no BullMQ
+   * (sem polling em memória/setInterval, garantindo fonte única de verdade no Redis)
    */
   public static async init(): Promise<void> {
     if (this.isInitialized) {
@@ -56,22 +56,13 @@ export class AuditSchedulerService {
       return;
     }
 
-    console.log('⏱️ [AuditSchedulerService] Inicializando motor de agendamento contínuo de auditorias...');
+    console.log('⏱️ [AuditSchedulerService] Inicializando agendador BullMQ (event-driven, sem setInterval)...');
     this.isInitialized = true;
 
-    // Sincroniza todos os agentes ativos cadastrados no MongoDB
+    // Sincroniza todos os agentes ativos cadastrados no MongoDB com a fila de jobs repetíveis do BullMQ
     await this.syncAllAgents();
 
-    // Inicia verificação periódica contínua a cada 30 segundos
-    if (!this.pollTimer) {
-      this.pollTimer = setInterval(async () => {
-        await this.checkDueSchedules();
-      }, 30000);
-      // Não impede finalização limpa do processo Node
-      this.pollTimer.unref();
-    }
-
-    console.log(`✅ [AuditSchedulerService] Scheduler ativo com ${this.activeSchedules.size} agente(s) programado(s).`);
+    console.log(`✅ [AuditSchedulerService] Agendamentos BullMQ sincronizados para ${this.activeSchedules.size} agente(s).`);
   }
 
   /**
@@ -210,7 +201,8 @@ export class AuditSchedulerService {
       }
     }
 
-    // Mutex distribuído via Redis: bloqueia disparos concorrentes entre workers/processos
+    // 1. Mutex distribuído via Redis (primeira linha de defesa, sub-milissegundo)
+    let redisAcquired = false;
     try {
       const redis = getRedisConnection();
       const lockKey = `lock:sched:${agentId}`;
@@ -219,20 +211,51 @@ export class AuditSchedulerService {
         console.log(`⏳ [AuditSchedulerService] Disparo bloqueado por Mutex distribuído para o agente ${agentId}.`);
         return null;
       }
+      redisAcquired = true;
     } catch {
-      // Falha graciosa se Redis estiver offline
+      // Redis offline: fallback para a trava atômica no MongoDB abaixo
     }
 
-    // Verifica se já existe um laudo PENDING ou RUNNING recente (últimos 5 minutos)
+    // 2. Trava atômica no MongoDB Atlas (segunda linha de defesa caso o Redis reinicie ou falhe)
+    // Atualiza atômico garantindo que nenhum outro processo assuma o mesmo agente nos próximos 120s
+    const twoMinutesAgo = new Date(Date.now() - 120 * 1000);
+    try {
+      const claim = await prisma.agentModule.updateMany({
+        where: {
+          id: agentId,
+          enabled: true,
+          OR: [
+            { updatedAt: null },
+            { updatedAt: { lt: twoMinutesAgo } },
+          ],
+        },
+        data: {
+          updatedAt: new Date(),
+        },
+      });
+
+      if (claim.count === 0 && !redisAcquired) {
+        console.log(`⏳ [AuditSchedulerService] Disparo bloqueado por trava atômica no banco (MongoDB) para o agente ${agentId}.`);
+        return null;
+      }
+    } catch {
+      // Ignora erro de schema em mocks de teste sem updatedAt
+    }
+
+    // 3. Verifica se já existe um laudo PENDING ou RUNNING recente (ou criado nos últimos 5 minutos)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     const existingRunning = await prisma.auditReport.findFirst({
       where: {
         targetUrl: agent.targetUrl,
-        status: { in: ['PENDING', 'RUNNING'] },
+        OR: [
+          { status: { in: ['PENDING', 'RUNNING'] } },
+          { createdAt: { gte: fiveMinutesAgo } },
+        ],
       },
     });
 
     if (existingRunning) {
-      console.log(`⏳ [AuditSchedulerService] Já existe auditoria pendente/em execução para "${agent.targetUrl}". Ignorando disparo duplicado.`);
+      console.log(`⏳ [AuditSchedulerService] Já existe auditoria recente ou em execução para "${agent.targetUrl}". Ignorando disparo duplicado.`);
       return null;
     }
 
@@ -323,22 +346,6 @@ export class AuditSchedulerService {
   }
 
   /**
-   * Checagem periódica das tarefas que atingiram o momento de disparo
-   */
-  private static async checkDueSchedules(): Promise<void> {
-    const now = new Date();
-    for (const [agentId, state] of this.activeSchedules.entries()) {
-      if (state.nextRunAt && state.nextRunAt.getTime() <= now.getTime()) {
-        try {
-          await this.triggerScheduledAudit(agentId);
-        } catch (err: any) {
-          console.error(`[AuditSchedulerService] Erro ao executar auditoria programada para ${agentId}:`, err);
-        }
-      }
-    }
-  }
-
-  /**
    * Registra job repetível no BullMQ de forma segura
    */
   private static async registerBullMQRepeatable(
@@ -384,13 +391,9 @@ export class AuditSchedulerService {
   }
 
   /**
-   * Encerra o serviço e limpa timers e agendamentos em memória
+   * Encerra o serviço e limpa agendamentos em memória
    */
   public static shutdown(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
     this.activeSchedules.clear();
     this.runningAudits.clear();
     this.isInitialized = false;
