@@ -1,4 +1,5 @@
 import { URL } from 'url';
+import crypto from 'crypto';
 import dns from 'dns';
 import net from 'net';
 import http from 'http';
@@ -409,13 +410,58 @@ export function createSecureLookup() {
   };
 }
 
-const secureHttpAgent = new http.Agent({ lookup: createSecureLookup() });
-const secureHttpsAgent = new https.Agent({ lookup: createSecureLookup() });
+export const DEFAULT_BROWSER_HEADERS: Record<string, string> = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,*/*;q=0.8',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Upgrade-Insecure-Requests': '1',
+  Connection: 'close',
+};
+
+const RETRYABLE_NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'EPIPE',
+  'ETIMEDOUT',
+  'ECONNABORTED',
+  'EAI_AGAIN',
+  'ERR_SOCKET_CLOSED',
+  'EPROTO',
+  'ERR_SSL_UNEXPECTED_EOF_WHILE_READING',
+  'ERR_TLS_HANDSHAKE_TIMEOUT',
+]);
+
+export function isRetryableNetworkError(err: any): boolean {
+  if (!err) return false;
+  if (err.response) return false;
+
+  const message = String(err.message || '');
+  if (/SSRF/i.test(message)) {
+    return false;
+  }
+
+  const code = String(err.code || err.cause?.code || '').toUpperCase();
+  if (code && RETRYABLE_NETWORK_ERROR_CODES.has(code)) {
+    return true;
+  }
+
+  return /ECONNRESET|socket hang up|EPIPE|ETIMEDOUT|EPROTO|ERR_SSL|TLS|unexpected eof/i.test(message);
+}
+
+const secureHttpAgent = new http.Agent({ lookup: createSecureLookup(), keepAlive: false });
+const secureHttpsAgent = new https.Agent({ lookup: createSecureLookup(), keepAlive: false });
+const legacySecureHttpsAgent = new https.Agent({
+  lookup: createSecureLookup(),
+  keepAlive: false,
+  minVersion: 'TLSv1.2',
+  secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+});
 
 export interface SafeHttpClientOptions extends AxiosRequestConfig {
   maxRedirects?: number;
   timeout?: number;
   maxContentLength?: number;
+  retries?: number;
 }
 
 /**
@@ -428,24 +474,41 @@ export async function safeHttpGet(urlString: string, options: SafeHttpClientOpti
   }
 
   const maxRedirects = options.maxRedirects ?? 3;
+  const { retries = 2, headers: customHeaders, ...axiosOptions } = options;
+  const maxRetries = Math.max(0, retries);
   let currentUrl = urlString;
   let redirectCount = 0;
 
   while (redirectCount <= maxRedirects) {
-    const resp = await axios.get(currentUrl, {
-      ...options,
-      httpAgent: secureHttpAgent,
-      httpsAgent: secureHttpsAgent,
-      maxRedirects: 0,
-      validateStatus: (status) => status >= 200 && status < 400,
-      timeout: options.timeout || 25000,
-      maxContentLength: options.maxContentLength || 25 * 1024 * 1024,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 (ConformIA Regulatory Auditor)',
-        ...options.headers,
-      },
-    });
+    let resp: AxiosResponse | undefined;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        resp = await axios.get(currentUrl, {
+          ...axiosOptions,
+          httpAgent: secureHttpAgent,
+          httpsAgent: attempt === 0 ? secureHttpsAgent : legacySecureHttpsAgent,
+          maxRedirects: 0,
+          validateStatus: (status) => status >= 200 && status < 400,
+          timeout: axiosOptions.timeout || 25000,
+          maxContentLength: axiosOptions.maxContentLength || 25 * 1024 * 1024,
+          headers: {
+            ...DEFAULT_BROWSER_HEADERS,
+            ...(customHeaders as Record<string, any> | undefined),
+          },
+        });
+        break;
+      } catch (err: any) {
+        if (attempt >= maxRetries || !isRetryableNetworkError(err)) {
+          throw err;
+        }
+        const delayMs = process.env.NODE_ENV === 'test' ? 10 : 500 * (attempt + 1);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    if (!resp) {
+      throw new Error('Falha ao processar requisição HTTP segura.');
+    }
 
     // Trata redirects manualmente revalidando o endereço de destino contra SSRF
     if (resp.status >= 300 && resp.status < 400 && resp.headers.location) {

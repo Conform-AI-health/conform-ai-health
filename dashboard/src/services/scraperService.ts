@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { ExtractionMode } from '@prisma/client';
 import { env } from '../config/env.js';
-import { safeHttpGet, validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
+import { DEFAULT_BROWSER_HEADERS, safeHttpGet, validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
 import { startSafeScrapingProxy } from '../shared/safeScrapingProxy.js';
 import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 import {
@@ -220,8 +220,7 @@ export class ScraperService {
     console.log(`📑 [Scraper PDF] Baixando e extraindo documento PDF oficial: ${url}`);
 
     const headers: Record<string, string> = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 (ConformIA Regulatory Auditor)',
+      'User-Agent': DEFAULT_BROWSER_HEADERS['User-Agent'],
       Accept: 'application/pdf,application/octet-stream,*/*',
     };
 
@@ -979,8 +978,7 @@ export class ScraperService {
    */
   private static async scrapeWithCheerio(url: string, auth?: { username?: string; password?: string }): Promise<ScrapeResult> {
     const headers: Record<string, string> = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 (ConformIA Regulatory Auditor)',
+      'User-Agent': DEFAULT_BROWSER_HEADERS['User-Agent'],
       Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,*/*;q=0.8',
       'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
     };
@@ -1047,9 +1045,7 @@ export class ScraperService {
       });
 
       const page = await browser.newPage();
-      await page.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 (ConformIA)'
-      );
+      await page.setUserAgent(DEFAULT_BROWSER_HEADERS['User-Agent']);
       await page.setViewport({ width: 1280, height: 800 });
 
       // Suporte à autenticação HTTP Basic/Digest autorizada
