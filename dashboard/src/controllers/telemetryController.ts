@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/prisma.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
+import { formatResolvedClientName, matchClientFromList } from '../shared/clientIdentityResolver.js';
 
 export class TelemetryController {
   // Preços de referência para Gemini 2.0 / 3.5 Flash por milhão de tokens
@@ -140,19 +141,39 @@ export class TelemetryController {
         };
       });
 
-      // 9. Histórico de Prompts e Versões dos Agentes
-      const agentModules = await prisma.agentModule.findMany({
-        select: {
-          id: true,
-          name: true,
-          version: true,
-          regulatoryFramework: true,
-          systemPrompt: true,
-          tags: true,
-          updatedAt: true,
-        },
-        orderBy: { updatedAt: 'desc' },
-      });
+      // 9. Histórico de Prompts e Versões dos Agentes + Catálogo de Clientes para resolução de nomes
+      const [agentModules, allClients] = await Promise.all([
+        prisma.agentModule.findMany({
+          select: {
+            id: true,
+            name: true,
+            targetUrl: true,
+            clientId: true,
+            version: true,
+            regulatoryFramework: true,
+            systemPrompt: true,
+            tags: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+        }),
+        prisma.client?.findMany
+          ? prisma.client
+              .findMany({
+                select: {
+                  id: true,
+                  name: true,
+                  tradeName: true,
+                  crmResponsavel: true,
+                  crmUf: true,
+                  websiteUrl: true,
+                  instagramHandle: true,
+                },
+                take: 500,
+              })
+              .catch(() => [])
+          : Promise.resolve([]),
+      ]);
 
       const promptVersionHistory = agentModules.map((m) => ({
         moduleId: m.id,
@@ -217,11 +238,30 @@ export class TelemetryController {
         sourcesDistribution,
         auditsTelemetry: reports.map((r) => {
           const cost = calculateCost(r.promptTokens || 0, r.completionTokens || 0);
+          const matchedMod = r.targetUrl
+            ? agentModules.find((m: any) => m.targetUrl && m.targetUrl.trim() === r.targetUrl?.trim())
+            : undefined;
+          const strongClientMatch = matchClientFromList(allClients, r.targetUrl, matchedMod?.name);
+          const resolvedClient =
+            strongClientMatch ||
+            r.client ||
+            (matchedMod?.clientId ? allClients.find((c: any) => c.id === matchedMod.clientId) : null);
+
+          const resolvedClientName = formatResolvedClientName({
+            client: resolvedClient,
+            moduleName: matchedMod?.name,
+            targetUrl: r.targetUrl,
+            fallback: 'Clínica Médica',
+          });
+          const resolvedCrm = resolvedClient?.crmResponsavel
+            ? `CRM/${resolvedClient.crmUf || '-'} ${resolvedClient.crmResponsavel}`
+            : 'Não informado';
+
           return {
             id: r.id,
             targetUrl: r.targetUrl || 'N/A',
-            clientName: r.client?.tradeName || r.client?.name || 'Clínica Médica',
-            crm: `CRM/${r.client?.crmUf} ${r.client?.crmResponsavel}`,
+            clientName: resolvedClientName,
+            crm: resolvedCrm,
             verdict: r.verdict,
             score: r.score ?? 0,
             aiModelUsed: r.aiModelUsed || 'gemini-3.5-flash',
@@ -237,7 +277,50 @@ export class TelemetryController {
             createdAt: r.createdAt,
           };
         }),
-        systemLogs: recentLogs,
+        systemLogs: recentLogs.map((log) => {
+          if (!log.message || !log.message.includes('Clínica Auditada')) {
+            return log;
+          }
+          let parsedDetails: any = null;
+          if (log.details) {
+            try {
+              parsedDetails = JSON.parse(log.details);
+            } catch {
+              parsedDetails = null;
+            }
+          }
+          const linkedReport = log.correlationId
+            ? reports.find((r) => r.id === log.correlationId)
+            : undefined;
+          const targetUrl = parsedDetails?.targetUrl || parsedDetails?.url || linkedReport?.targetUrl || null;
+          const matchedMod = targetUrl
+            ? agentModules.find((m: any) => m.targetUrl && m.targetUrl.trim() === String(targetUrl).trim())
+            : undefined;
+          const resolvedClient =
+            matchClientFromList(allClients, targetUrl, matchedMod?.name) ||
+            linkedReport?.client ||
+            (parsedDetails?.clientId ? allClients.find((c: any) => c.id === parsedDetails.clientId) : null) ||
+            (matchedMod?.clientId ? allClients.find((c: any) => c.id === matchedMod.clientId) : null);
+
+          const resolvedName = formatResolvedClientName({
+            client: resolvedClient,
+            moduleName: matchedMod?.name,
+            targetUrl,
+            fallback: 'Clínica Auditada',
+          });
+
+          if (resolvedName === 'Clínica Auditada') {
+            return log;
+          }
+
+          return {
+            ...log,
+            message: log.message.replace(/Clínica Auditada/g, resolvedName),
+            details: parsedDetails
+              ? JSON.stringify({ ...parsedDetails, clientName: resolvedName })
+              : log.details,
+          };
+        }),
       });
     } catch (error) {
       next(error);

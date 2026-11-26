@@ -48,6 +48,7 @@ const updateAgentSchema = agentFieldsSchema.partial().extend({
 });
 
 const runAuditSchema = z.object({
+  clientId: z.string().optional().nullable(),
   targetUrl: z
     .string()
     .url('Formato de URL inválido')
