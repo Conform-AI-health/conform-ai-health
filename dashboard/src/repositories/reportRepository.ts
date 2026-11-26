@@ -1,5 +1,5 @@
 import { prisma } from '../config/prisma.js';
-import { Prisma, AuditReport } from '@prisma/client';
+import { Prisma, AuditReport, RuleSeverity } from '@prisma/client';
 
 export class ReportRepository {
   public static async findById(id: string, options?: { includeClient?: boolean; includeViolations?: boolean }): Promise<any | null> {
@@ -83,6 +83,11 @@ export class ReportRepository {
                 tradeName: true,
                 crmResponsavel: true,
                 crmUf: true,
+                rqeResponsavel: true,
+                especialidade: true,
+                email: true,
+                websiteUrl: true,
+                users: { select: { email: true } },
               },
             }
           : false,
@@ -90,10 +95,14 @@ export class ReportRepository {
           ? {
               select: {
                 id: true,
+                auditReportId: true,
                 severity: true,
                 normCode: true,
                 normArticle: true,
+                detectedText: true,
+                correctiveAdvice: true,
                 resolved: true,
+                createdAt: true,
               },
             }
           : false,
@@ -142,5 +151,32 @@ export class ReportRepository {
         resolved: false,
       },
     });
+  }
+
+  public static async findClientIdsBySearch(search: string): Promise<string[]> {
+    const trimmed = search.trim();
+    if (!trimmed || !prisma.client?.findMany) return [];
+    const clients = await prisma.client.findMany({
+      where: {
+        OR: [
+          { name: { contains: trimmed, mode: 'insensitive' } },
+          { tradeName: { contains: trimmed, mode: 'insensitive' } },
+          { crmResponsavel: { contains: trimmed, mode: 'insensitive' } },
+          { email: { contains: trimmed, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+      take: 200,
+    });
+    return clients.map((c) => c.id);
+  }
+
+  public static async findReportIdsByViolationSeverity(severity: RuleSeverity): Promise<string[]> {
+    if (!prisma.violation?.findMany) return [];
+    const rows = await prisma.violation.findMany({
+      where: { severity },
+      select: { auditReportId: true },
+    });
+    return Array.from(new Set(rows.map((r) => r.auditReportId).filter(Boolean)));
   }
 }

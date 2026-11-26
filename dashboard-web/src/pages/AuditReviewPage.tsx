@@ -25,8 +25,13 @@ import {
   X,
   MailX,
   Ban,
+  Search,
+  Filter,
+  RotateCcw,
+  Calendar,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { Pagination } from '../components/Pagination';
 import { useToast } from '../context/ToastContext';
 import { InfoTooltip } from '../components/Tooltip';
 import { METRIC_GLOSSARY } from '../utils/metricGlossary';
@@ -62,11 +67,17 @@ interface ReportItem {
     normArticle?: string;
     normCode?: string;
     severity: string;
-    detectedText?: string;
-    correctiveAdvice?: string;
+    detectedText?: string | null;
+    correctiveAdvice?: string | null;
+    description?: string | null;
+    sourceVersion?: string | null;
+    validityStatus?: string;
+    requiresHumanReview?: boolean;
     resolved: boolean;
   }[];
   sourcesUsed?: string[];
+  riskLevel?: string;
+  confidence?: number;
 }
 
 export const AuditReviewPage: React.FC = () => {
@@ -79,11 +90,31 @@ export const AuditReviewPage: React.FC = () => {
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [checkedAgreements, setCheckedAgreements] = useState<Record<string, boolean>>({});
   const [auditorNotes, setAuditorNotes] = useState<Record<string, string>>({});
+  const [pendingPage, setPendingPage] = useState(1);
+  const [pendingLimit, setPendingLimit] = useState(10);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [pendingTotalPages, setPendingTotalPages] = useState(1);
 
   // Estados da aba de Processados
   const [processedReports, setProcessedReports] = useState<ReportItem[]>([]);
   const [loadingProcessed, setLoadingProcessed] = useState(false);
   const [resendingEmailId, setResendingEmailId] = useState<string | null>(null);
+  const [processedPage, setProcessedPage] = useState(1);
+  const [processedLimit, setProcessedLimit] = useState(10);
+  const [processedTotal, setProcessedTotal] = useState(0);
+  const [processedTotalPages, setProcessedTotalPages] = useState(1);
+
+  // Estados de Filtros Dinâmicos
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const [verdictFilter, setVerdictFilter] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('');
+  const [reviewStatusFilter, setReviewStatusFilter] = useState('');
+  const [emailStatusFilter, setEmailStatusFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [clientsList, setClientsList] = useState<{ id: string; name: string; tradeName?: string }[]>([]);
 
   // Estados para Modal de Recusa de Laudo
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
@@ -94,18 +125,87 @@ export const AuditReviewPage: React.FC = () => {
   // Expansão de cards
   const [expandedReports, setExpandedReports] = useState<Record<string, boolean>>({});
 
-  const fetchPendingReports = async () => {
+  // Debounce da busca textual (350ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+      setPendingPage(1);
+      setProcessedPage(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Carrega lista de clínicas para o seletor de filtro
+  useEffect(() => {
+    api
+      .get('/clients?limit=100')
+      .then((res) => {
+        setClientsList(res.data?.data || []);
+      })
+      .catch(() => {});
+  }, []);
+
+  const buildQueryParams = (tab: 'pending' | 'processed', page: number, limit: number): string => {
+    const params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('limit', String(limit));
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    if (selectedClientId) params.set('clientId', selectedClientId);
+    if (verdictFilter) params.set('verdict', verdictFilter);
+    if (severityFilter) params.set('severity', severityFilter);
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    if (tab === 'processed') {
+      if (reviewStatusFilter) params.set('reviewStatus', reviewStatusFilter);
+      if (emailStatusFilter) params.set('emailStatus', emailStatusFilter);
+    }
+    return params.toString();
+  };
+
+  const hasActiveFilters = Boolean(
+    searchInput.trim() ||
+      selectedClientId ||
+      verdictFilter ||
+      severityFilter ||
+      startDate ||
+      endDate ||
+      (activeTab === 'processed' && (reviewStatusFilter || emailStatusFilter))
+  );
+
+  const handleClearFilters = () => {
+    setSearchInput('');
+    setDebouncedSearch('');
+    setSelectedClientId('');
+    setVerdictFilter('');
+    setSeverityFilter('');
+    setReviewStatusFilter('');
+    setEmailStatusFilter('');
+    setStartDate('');
+    setEndDate('');
+    setPendingPage(1);
+    setProcessedPage(1);
+  };
+
+  const fetchPendingReports = async (page = pendingPage, limit = pendingLimit) => {
     try {
       setLoadingPending(true);
-      const res = await api.get('/reports/pending-review');
+      const qs = buildQueryParams('pending', page, limit);
+      const res = await api.get(`/reports/pending-review?${qs}`);
       const list = res.data?.data || [];
       setPendingReports(list);
+      if (res.data?.pagination) {
+        setPendingTotal(res.data.pagination.total ?? list.length);
+        setPendingTotalPages(res.data.pagination.totalPages ?? 1);
+      } else {
+        setPendingTotal(list.length);
+        setPendingTotalPages(1);
+      }
 
       const initialExpanded: Record<string, boolean> = {};
       list.forEach((r: ReportItem, index: number) => {
         if (index === 0) initialExpanded[r.id] = true;
       });
-      setExpandedReports(initialExpanded);
+      setExpandedReports((prev) => ({ ...initialExpanded, ...prev }));
     } catch (err: any) {
       console.error('Erro ao carregar laudos pendentes de revisão:', err);
       toast.error(err.response?.data?.error || 'Erro ao carregar fila de revisão de laudos.');
@@ -114,11 +214,20 @@ export const AuditReviewPage: React.FC = () => {
     }
   };
 
-  const fetchProcessedReports = async () => {
+  const fetchProcessedReports = async (page = processedPage, limit = processedLimit) => {
     try {
       setLoadingProcessed(true);
-      const res = await api.get('/reports/processed-review');
-      setProcessedReports(res.data?.data || []);
+      const qs = buildQueryParams('processed', page, limit);
+      const res = await api.get(`/reports/processed-review?${qs}`);
+      const list = res.data?.data || [];
+      setProcessedReports(list);
+      if (res.data?.pagination) {
+        setProcessedTotal(res.data.pagination.total ?? list.length);
+        setProcessedTotalPages(res.data.pagination.totalPages ?? 1);
+      } else {
+        setProcessedTotal(list.length);
+        setProcessedTotalPages(1);
+      }
     } catch (err: any) {
       console.error('Erro ao carregar laudos processados:', err);
       toast.error(err.response?.data?.error || 'Erro ao carregar histórico de laudos processados.');
@@ -128,9 +237,23 @@ export const AuditReviewPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchPendingReports();
-    fetchProcessedReports();
-  }, []);
+    fetchPendingReports(pendingPage, pendingLimit);
+  }, [pendingPage, pendingLimit, debouncedSearch, selectedClientId, verdictFilter, severityFilter, startDate, endDate]);
+
+  useEffect(() => {
+    fetchProcessedReports(processedPage, processedLimit);
+  }, [
+    processedPage,
+    processedLimit,
+    debouncedSearch,
+    selectedClientId,
+    verdictFilter,
+    severityFilter,
+    reviewStatusFilter,
+    emailStatusFilter,
+    startDate,
+    endDate,
+  ]);
 
   const toggleExpand = (id: string) => {
     setExpandedReports((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -286,6 +409,119 @@ export const AuditReviewPage: React.FC = () => {
     }
   };
 
+  const getSeverityBadge = (severity?: string) => {
+    const normalized = (severity || 'MEDIA').toUpperCase();
+    switch (normalized) {
+      case 'CRITICA':
+        return (
+          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-rose-950/90 text-rose-300 border border-rose-700/80">
+            Severidade Crítica
+          </span>
+        );
+      case 'GRAVE':
+      case 'ALTA':
+        return (
+          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-orange-950/90 text-orange-300 border border-orange-700/80">
+            Severidade Grave
+          </span>
+        );
+      case 'MEDIA':
+        return (
+          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-950/90 text-amber-300 border border-amber-700/80">
+            Severidade Média
+          </span>
+        );
+      default:
+        return (
+          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-950/90 text-blue-300 border border-blue-700/80">
+            Severidade Leve
+          </span>
+        );
+    }
+  };
+
+  const renderViolationCard = (
+    v: NonNullable<ReportItem['violations']>[number],
+    idx: number
+  ) => {
+    const normCode = v.normCode || 'Normativo Vigente';
+    const normArticle = v.normArticle || 'Dispositivo Geral';
+    const validityLabel = v.validityStatus || (v.sourceVersion ? `VIGENTE (${v.sourceVersion})` : 'VIGENTE');
+    const isRevoked = validityLabel.toUpperCase().includes('REVOGADA');
+    const requiresReview =
+      v.requiresHumanReview ?? (v.severity === 'CRITICA' || v.severity === 'GRAVE');
+    const hasDistinctDescription =
+      v.description &&
+      v.description.trim().length > 0 &&
+      !v.description.toLowerCase().endsWith(': inadequação detectada');
+
+    return (
+      <div
+        key={v.id || idx}
+        className="p-4 rounded-xl bg-[#080f24] border border-slate-800/90 text-xs space-y-2.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold text-cyan-300">
+              {idx + 1}. {normCode} — {normArticle}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                isRevoked
+                  ? 'bg-rose-950/60 text-rose-300 border-rose-800/70'
+                  : 'bg-emerald-950/50 text-emerald-300 border-emerald-800/60'
+              }`}
+            >
+              {validityLabel}
+            </span>
+            {v.resolved && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                Regularizado
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {requiresReview && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 inline-flex items-center gap-1">
+                <UserCheck className="w-3 h-3" />
+                <span>Revisão Humana</span>
+              </span>
+            )}
+            {getSeverityBadge(v.severity)}
+          </div>
+        </div>
+
+        {hasDistinctDescription && (
+          <p className="text-slate-300 leading-relaxed">
+            <strong className="text-slate-200">Enquadramento Regulatório:</strong> {v.description}
+          </p>
+        )}
+
+        <div className="bg-slate-900/70 p-2.5 rounded-lg border border-slate-800/90 space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
+            Trecho de Evidência no Canal Auditado
+          </span>
+          {v.detectedText ? (
+            <p className="text-slate-200 italic leading-relaxed">"{v.detectedText}"</p>
+          ) : (
+            <p className="text-slate-500 italic">
+              Trecho literal não destacado individualmente — conferir evidência integral na URL auditada.
+            </p>
+          )}
+        </div>
+
+        <div className="pt-0.5">
+          <p className="text-slate-200 leading-relaxed">
+            <strong className="text-cyan-400">Recomendação Deontológica Corretiva:</strong>{' '}
+            {v.correctiveAdvice ||
+              'Adequar a comunicação institucional em estrita conformidade com o dispositivo normativo citado.'}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex-1 overflow-y-auto bg-[#070d1e] p-6 lg:p-8 space-y-6">
       {/* Cabeçalho */}
@@ -349,7 +585,7 @@ export const AuditReviewPage: React.FC = () => {
                 : 'bg-slate-800 text-slate-400'
             }`}
           >
-            {pendingReports.length}
+            {pendingTotal}
           </span>
         </button>
 
@@ -370,9 +606,177 @@ export const AuditReviewPage: React.FC = () => {
                 : 'bg-slate-800 text-slate-400'
             }`}
           >
-            {processedReports.length}
+            {processedTotal}
           </span>
         </button>
+      </div>
+
+      {/* Barra de Filtros Dinâmicos */}
+      <div className="p-4 rounded-2xl bg-[#0b1329] border border-slate-800/90 space-y-3 shadow-md shadow-black/20">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+            <Filter className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Filtros de Auditoria & Homologação</span>
+            {hasActiveFilters && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-700/60">
+                Filtros ativos
+              </span>
+            )}
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-300 bg-rose-950/30 hover:bg-rose-900/50 border border-rose-800/50 transition"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Limpar filtros</span>
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Busca livre */}
+          <div className="relative lg:col-span-2">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Buscar por clínica, CRM, e-mail, URL auditada ou auditor..."
+              className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                title="Limpar busca"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Filtro por Clínica */}
+          <select
+            value={selectedClientId}
+            onChange={(e) => {
+              setSelectedClientId(e.target.value);
+              setPendingPage(1);
+              setProcessedPage(1);
+            }}
+            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+          >
+            <option value="">Todas as clínicas</option>
+            {clientsList.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.tradeName || c.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Filtro por Veredito Semáforo */}
+          <select
+            value={verdictFilter}
+            onChange={(e) => {
+              setVerdictFilter(e.target.value);
+              setPendingPage(1);
+              setProcessedPage(1);
+            }}
+            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+          >
+            <option value="">Todos os vereditos</option>
+            <option value="CONFORME">Conforme</option>
+            <option value="PARCIALMENTE_CONFORME">Parcialmente Conforme</option>
+            <option value="NAO_CONFORME">Não Conforme</option>
+            <option value="INCONCLUSIVO">Inconclusivo</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+          {/* Filtro por Severidade de Apontamento */}
+          <select
+            value={severityFilter}
+            onChange={(e) => {
+              setSeverityFilter(e.target.value);
+              setPendingPage(1);
+              setProcessedPage(1);
+            }}
+            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+          >
+            <option value="">Todas as severidades</option>
+            <option value="CRITICA">Severidade Crítica</option>
+            <option value="GRAVE">Severidade Grave</option>
+            <option value="MEDIA">Severidade Média</option>
+            <option value="LEVE">Severidade Leve</option>
+          </select>
+
+          {/* Filtros exclusivos da aba de Laudos Processados */}
+          {activeTab === 'processed' && (
+            <>
+              <select
+                value={reviewStatusFilter}
+                onChange={(e) => {
+                  setReviewStatusFilter(e.target.value);
+                  setProcessedPage(1);
+                }}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+              >
+                <option value="">Todas as decisões</option>
+                <option value="APPROVED">Homologados (Aprovados)</option>
+                <option value="REJECTED">Recusados pelo Auditor</option>
+                <option value="CHANGES_REQUESTED">Ajustes Solicitados</option>
+              </select>
+
+              <select
+                value={emailStatusFilter}
+                onChange={(e) => {
+                  setEmailStatusFilter(e.target.value);
+                  setProcessedPage(1);
+                }}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+              >
+                <option value="">Status do e-mail (Todos)</option>
+                <option value="SENT">E-mail Enviado</option>
+                <option value="PENDING">E-mail Pendente</option>
+              </select>
+            </>
+          )}
+
+          {/* Data Inicial */}
+          <div className="relative flex items-center">
+            <Calendar className="w-3.5 h-3.5 text-slate-500 absolute left-3 pointer-events-none" />
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setPendingPage(1);
+                setProcessedPage(1);
+              }}
+              title="Data inicial"
+              className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+            />
+          </div>
+
+          {/* Data Final */}
+          <div className="relative flex items-center">
+            <Calendar className="w-3.5 h-3.5 text-slate-500 absolute left-3 pointer-events-none" />
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setPendingPage(1);
+                setProcessedPage(1);
+              }}
+              title="Data final"
+              className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Alerta de Governança */}
@@ -407,11 +811,26 @@ export const AuditReviewPage: React.FC = () => {
               <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-950/40 border border-emerald-800/50 flex items-center justify-center text-emerald-400">
                 <CheckCircle className="w-7 h-7" />
               </div>
-              <h3 className="text-base font-bold text-slate-200">Nenhum laudo pendente de revisão</h3>
+              <h3 className="text-base font-bold text-slate-200">
+                {hasActiveFilters
+                  ? 'Nenhum laudo pendente encontrado para os filtros aplicados'
+                  : 'Nenhum laudo pendente de revisão'}
+              </h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Todas as auditorias geradas pela IA já foram homologadas e devidamente notificadas às clínicas clientes.
-                Novas auditorias concluídas aparecerão aqui automaticamente.
+                {hasActiveFilters
+                  ? 'Ajuste ou limpe os filtros selecionados para visualizar outros laudos aguardando homologação.'
+                  : 'Todas as auditorias geradas pela IA já foram homologadas e devidamente notificadas às clínicas clientes. Novas auditorias concluídas aparecerão aqui automaticamente.'}
               </p>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-800/60 transition"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Limpar filtros</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -525,40 +944,7 @@ export const AuditReviewPage: React.FC = () => {
                             </div>
                           ) : (
                             <div className="space-y-2.5">
-                              {violations.map((v, idx) => (
-                                <div
-                                  key={v.id || idx}
-                                  className="p-3.5 rounded-xl bg-[#080f24] border border-slate-800/80 text-xs space-y-2"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-bold text-cyan-300">
-                                      {idx + 1}. {v.normCode || 'Normativo Vigente'} — {v.normArticle || 'Artigo'}
-                                    </span>
-                                    <span
-                                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                        v.severity === 'ALTA'
-                                          ? 'bg-rose-950 text-rose-400 border border-rose-800'
-                                          : v.severity === 'MEDIA'
-                                          ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                                          : 'bg-blue-950 text-blue-400 border border-blue-800'
-                                      }`}
-                                    >
-                                      Severidade {v.severity}
-                                    </span>
-                                  </div>
-                                  {v.detectedText && (
-                                    <p className="text-slate-400 italic bg-slate-900/60 p-2 rounded border border-slate-800">
-                                      "{v.detectedText}"
-                                    </p>
-                                  )}
-                                  {v.correctiveAdvice && (
-                                    <p className="text-slate-300">
-                                      <strong className="text-cyan-400">Recomendação Deontológica:</strong>{' '}
-                                      {v.correctiveAdvice}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
+                              {violations.map((v, idx) => renderViolationCard(v, idx))}
                             </div>
                           )}
                         </div>
@@ -638,6 +1024,16 @@ export const AuditReviewPage: React.FC = () => {
                   </div>
                 );
               })}
+
+              <Pagination
+                currentPage={pendingPage}
+                totalPages={pendingTotalPages}
+                totalItems={pendingTotal}
+                itemsPerPage={pendingLimit}
+                onPageChange={setPendingPage}
+                onLimitChange={setPendingLimit}
+                itemLabel="laudos pendentes"
+              />
             </div>
           )}
         </>
@@ -658,11 +1054,26 @@ export const AuditReviewPage: React.FC = () => {
               <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-center text-slate-400">
                 <History className="w-7 h-7" />
               </div>
-              <h3 className="text-base font-bold text-slate-200">Nenhum laudo processado até o momento</h3>
+              <h3 className="text-base font-bold text-slate-200">
+                {hasActiveFilters
+                  ? 'Nenhum laudo processado encontrado para os filtros aplicados'
+                  : 'Nenhum laudo processado até o momento'}
+              </h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Os laudos homologados pelos auditores na aba de Pendências aparecerão aqui com os registros forenses de
-                aprovação e telemetria de e-mail.
+                {hasActiveFilters
+                  ? 'Ajuste ou limpe os critérios de filtro para visualizar outros registros no histórico de homologações.'
+                  : 'Os laudos homologados pelos auditores na aba de Pendências aparecerão aqui com os registros forenses de aprovação e telemetria de e-mail.'}
               </p>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-800/60 transition"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Limpar filtros</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -839,40 +1250,8 @@ export const AuditReviewPage: React.FC = () => {
                               <span>Nenhuma infração identificada. Laudo em total conformidade.</span>
                             </div>
                           ) : (
-                            <div className="space-y-2">
-                              {violations.map((v, idx) => (
-                                <div
-                                  key={v.id || idx}
-                                  className="p-3.5 rounded-xl bg-[#080f24] border border-slate-800/80 text-xs space-y-1.5"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-bold text-cyan-300">
-                                      {idx + 1}. {v.normCode || 'Normativo Vigente'} — {v.normArticle || 'Artigo'}
-                                    </span>
-                                    <span
-                                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                        v.severity === 'ALTA'
-                                          ? 'bg-rose-950 text-rose-400 border border-rose-800'
-                                          : v.severity === 'MEDIA'
-                                          ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                                          : 'bg-blue-950 text-blue-400 border border-blue-800'
-                                      }`}
-                                    >
-                                      {v.severity}
-                                    </span>
-                                  </div>
-                                  {v.detectedText && (
-                                    <p className="text-slate-400 italic bg-slate-900/60 p-2 rounded border border-slate-800">
-                                      "{v.detectedText}"
-                                    </p>
-                                  )}
-                                  {v.correctiveAdvice && (
-                                    <p className="text-slate-300">
-                                      <strong className="text-cyan-400">Recomendação:</strong> {v.correctiveAdvice}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
+                            <div className="space-y-2.5">
+                              {violations.map((v, idx) => renderViolationCard(v, idx))}
                             </div>
                           )}
                         </div>
@@ -881,6 +1260,16 @@ export const AuditReviewPage: React.FC = () => {
                   </div>
                 );
               })}
+
+              <Pagination
+                currentPage={processedPage}
+                totalPages={processedTotalPages}
+                totalItems={processedTotal}
+                itemsPerPage={processedLimit}
+                onPageChange={setProcessedPage}
+                onLimitChange={setProcessedLimit}
+                itemLabel="laudos processados"
+              />
             </div>
           )}
         </>

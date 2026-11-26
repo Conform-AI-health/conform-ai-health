@@ -2,9 +2,153 @@ import { ReportRepository } from '../repositories/reportRepository.js';
 import { SystemLogRepository } from '../repositories/systemLogRepository.js';
 import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
 import { EmailService } from './emailService.js';
-import { Role, Verdict, AuditStatus } from '@prisma/client';
+import { Role, Verdict, AuditStatus, RuleSeverity } from '@prisma/client';
+
+export interface ReviewListFilters {
+  search?: string;
+  clientId?: string;
+  verdict?: Verdict;
+  severity?: RuleSeverity;
+  reviewStatus?: 'APPROVED' | 'REJECTED' | 'CHANGES_REQUESTED';
+  emailStatus?: 'SENT' | 'PENDING';
+  startDate?: string;
+  endDate?: string;
+}
 
 export class ReportService {
+  /**
+   * Enriquecimento deontológico de violações (@compliance-specialist):
+   * Garante Código da Norma, Artigo/Parágrafo, Trecho de Evidência, Recomendação Corretiva e Situação de Vigência,
+   * reconciliando registros de `violations` com `structuredContract.findings` e `normSnapshots` quando necessário.
+   */
+  public static enrichReportViolations<T extends Record<string, any>>(report: T): T {
+    if (!report || typeof report !== 'object') return report;
+
+    let parsedContract: any = null;
+    if (typeof report.structuredContract === 'string' && report.structuredContract.trim().length > 0) {
+      try {
+        parsedContract = JSON.parse(report.structuredContract);
+      } catch {
+        parsedContract = null;
+      }
+    }
+
+    let parsedSnapshots: any[] = [];
+    if (typeof report.normSnapshots === 'string' && report.normSnapshots.trim().length > 0) {
+      try {
+        const snap = JSON.parse(report.normSnapshots);
+        if (Array.isArray(snap)) parsedSnapshots = snap;
+        else if (Array.isArray(snap?.norms)) parsedSnapshots = snap.norms;
+      } catch {
+        parsedSnapshots = [];
+      }
+    }
+
+    const contractFindings: any[] = Array.isArray(parsedContract?.findings) ? parsedContract.findings : [];
+    const rawViolations: any[] = Array.isArray(report.violations) ? report.violations : [];
+
+    const resolveValidityStatus = (normCode?: string, sourceVersion?: string | null): string => {
+      if (normCode && parsedSnapshots.length > 0) {
+        const normalizedCode = normCode.trim().toLowerCase();
+        const snapMatch = parsedSnapshots.find((s: any) => {
+          const cand = String(s?.normCode || s?.code || s?.title || '').trim().toLowerCase();
+          return cand && (cand.includes(normalizedCode) || normalizedCode.includes(cand));
+        });
+        if (snapMatch) {
+          if (snapMatch.isRevoked === true || String(snapMatch.status || '').toUpperCase() === 'REVOGADA') {
+            return 'REVOGADA';
+          }
+          return 'VIGENTE';
+        }
+      }
+      return sourceVersion ? `VIGENTE (${sourceVersion})` : 'VIGENTE';
+    };
+
+    let enrichedViolations: any[];
+
+    if (rawViolations.length > 0) {
+      enrichedViolations = rawViolations.map((v: any, idx: number) => {
+        const matchedFinding =
+          contractFindings[idx] ||
+          contractFindings.find(
+            (f: any) =>
+              (v.normArticle && f?.article && String(f.article).trim() === String(v.normArticle).trim()) ||
+              (v.normCode && f?.regulation && String(v.normCode).toUpperCase().includes(String(f.regulation).toUpperCase()))
+          );
+
+        const normCode = v.normCode || matchedFinding?.regulation || 'Normativo Vigente';
+        const normArticle = v.normArticle || matchedFinding?.article || 'Dispositivo Geral';
+        const detectedText =
+          (typeof v.detectedText === 'string' && v.detectedText.trim().length > 0 ? v.detectedText.trim() : null) ||
+          (typeof matchedFinding?.evidence === 'string' && matchedFinding.evidence.trim().length > 0
+            ? matchedFinding.evidence.trim()
+            : null);
+        const correctiveAdvice =
+          (typeof v.correctiveAdvice === 'string' && v.correctiveAdvice.trim().length > 0
+            ? v.correctiveAdvice.trim()
+            : null) ||
+          (typeof matchedFinding?.recommendation === 'string' && matchedFinding.recommendation.trim().length > 0
+            ? matchedFinding.recommendation.trim()
+            : null);
+        const description =
+          (typeof v.description === 'string' && v.description.trim().length > 0 ? v.description.trim() : null) ||
+          (typeof matchedFinding?.description === 'string' && matchedFinding.description.trim().length > 0
+            ? matchedFinding.description.trim()
+            : null);
+        const sourceVersion = matchedFinding?.source_version ?? null;
+        const severity = v.severity || 'MEDIA';
+        const requiresHumanReview =
+          matchedFinding?.requires_human_review ?? (severity === 'CRITICA' || severity === 'GRAVE');
+
+        return {
+          ...v,
+          severity,
+          normCode,
+          normArticle,
+          detectedText,
+          correctiveAdvice,
+          description,
+          sourceVersion,
+          validityStatus: resolveValidityStatus(normCode, sourceVersion),
+          requiresHumanReview,
+        };
+      });
+    } else if (contractFindings.length > 0) {
+      const fallbackSeverity =
+        parsedContract?.risk_level === 'CRITICAL'
+          ? 'CRITICA'
+          : parsedContract?.risk_level === 'HIGH'
+          ? 'GRAVE'
+          : 'MEDIA';
+
+      enrichedViolations = contractFindings.map((f: any, idx: number) => {
+        const normCode = f.regulation || 'Normativo Vigente';
+        const sourceVersion = f.source_version ?? null;
+        return {
+          id: `${report.id || 'rep'}-finding-${idx + 1}`,
+          severity: fallbackSeverity,
+          normCode,
+          normArticle: f.article || 'Dispositivo Geral',
+          detectedText: typeof f.evidence === 'string' && f.evidence.trim().length > 0 ? f.evidence.trim() : null,
+          correctiveAdvice:
+            typeof f.recommendation === 'string' && f.recommendation.trim().length > 0 ? f.recommendation.trim() : null,
+          description:
+            typeof f.description === 'string' && f.description.trim().length > 0 ? f.description.trim() : null,
+          sourceVersion,
+          validityStatus: resolveValidityStatus(normCode, sourceVersion),
+          requiresHumanReview: f.requires_human_review ?? true,
+          resolved: false,
+        };
+      });
+    } else {
+      enrichedViolations = rawViolations;
+    }
+
+    return {
+      ...report,
+      violations: enrichedViolations,
+    };
+  }
   /**
    * Listagem de laudos com paginação, filtros e isolamento multi-tenant
    */
@@ -41,7 +185,7 @@ export class ReportService {
       }),
     ]);
 
-    return { reports, total, page, limit };
+    return { reports: reports.map((r) => this.enrichReportViolations(r)), total, page, limit };
   }
 
   /**
@@ -57,7 +201,7 @@ export class ReportService {
       throw new Error('TENANT_FORBIDDEN');
     }
 
-    return report;
+    return this.enrichReportViolations(report);
   }
 
   /**
@@ -132,11 +276,14 @@ export class ReportService {
     ];
 
     const violationsList = (report.violations || []).map((v: any, index: number) => {
+      const articleLabel = v.normArticle || 'Dispositivo Geral';
+      const formattedArticle = /^art\.?/i.test(articleLabel) ? articleLabel : `Art. ${articleLabel}`;
       return [
-        `### ${index + 1}. [${v.severity}] ${v.normCode || 'Norma'} - Art. ${v.normArticle || 'N/A'}`,
-        `**Status:** ${v.resolved ? '✅ RESOLVIDO' : '❌ PENDENTE'}`,
-        `**Descrição da Não-Conformidade:**\n${v.description || 'Sem descrição.'}`,
-        `**Recomendação de Adequação:**\n${v.recommendation || 'Sem recomendação.'}`,
+        `### ${index + 1}. [${v.severity}] ${v.normCode || 'Normativo Vigente'} — ${formattedArticle}`,
+        `**Situação de Vigência:** ${v.validityStatus || 'VIGENTE'} | **Status do Apontamento:** ${v.resolved ? '✅ RESOLVIDO' : '❌ PENDENTE'}`,
+        v.description ? `**Descrição da Infração:**\n${v.description}` : '',
+        `**Trecho de Evidência Detectado:**\n${v.detectedText ? `> "${v.detectedText}"` : 'Sem trecho literal destacado.'}`,
+        `**Recomendação Deontológica Corretiva:**\n${v.correctiveAdvice || v.recommendation || 'Adequar a comunicação conforme o dispositivo normativo vigente.'}`,
         v.resolved ? `*Resolução registrada em ${new Date(v.resolvedAt).toLocaleString('pt-BR')} por ${v.resolvedBy || 'Auditor'}*` : '',
         `\n`,
       ].filter(Boolean).join('\n');
@@ -331,10 +478,96 @@ export class ReportService {
   }
 
   /**
-   * Laudos pendentes de revisão humana
+   * Constrói cláusulas adicionais de filtro para a tela de Revisão & Homologação de Laudos
    */
-  public static async getPendingReview(page: number = 1, limit: number = 20) {
-    const where: any = {
+  private static async buildReviewFilterClauses(
+    filters: ReviewListFilters | undefined,
+    mode: 'pending' | 'processed'
+  ): Promise<any[]> {
+    if (!filters) return [];
+
+    const clauses: any[] = [];
+
+    if (filters.clientId) {
+      clauses.push({ clientId: filters.clientId });
+    }
+
+    if (filters.verdict) {
+      clauses.push({ verdict: filters.verdict });
+    }
+
+    if (filters.severity) {
+      const matchingReportIds = await ReportRepository.findReportIdsByViolationSeverity(filters.severity);
+      clauses.push({ id: { in: matchingReportIds } });
+    }
+
+    if (mode === 'processed' && filters.reviewStatus) {
+      clauses.push({ reviewStatus: filters.reviewStatus });
+    }
+
+    if (mode === 'processed' && filters.emailStatus) {
+      if (filters.emailStatus === 'SENT') {
+        clauses.push({ emailSent: true });
+      } else if (filters.emailStatus === 'PENDING') {
+        clauses.push({
+          emailSent: false,
+          reviewStatus: { not: 'REJECTED' },
+        });
+      }
+    }
+
+    const dateRange: Record<string, Date> = {};
+    if (filters.startDate) {
+      const startStr = /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate)
+        ? `${filters.startDate}T00:00:00.000Z`
+        : filters.startDate;
+      const start = new Date(startStr);
+      if (!Number.isNaN(start.getTime())) {
+        dateRange.gte = start;
+      }
+    }
+    if (filters.endDate) {
+      const endStr = /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate)
+        ? `${filters.endDate}T23:59:59.999Z`
+        : filters.endDate;
+      const end = new Date(endStr);
+      if (!Number.isNaN(end.getTime())) {
+        dateRange.lte = end;
+      }
+    }
+    if (Object.keys(dateRange).length > 0) {
+      if (mode === 'processed') {
+        clauses.push({
+          OR: [{ reviewedAt: dateRange }, { reviewedAt: null, createdAt: dateRange }],
+        });
+      } else {
+        clauses.push({ createdAt: dateRange });
+      }
+    }
+
+    if (filters.search && filters.search.trim().length > 0) {
+      const term = filters.search.trim();
+      const matchingClientIds = await ReportRepository.findClientIdsBySearch(term);
+      const searchOr: any[] = [
+        { targetUrl: { contains: term, mode: 'insensitive' } },
+        { summary: { contains: term, mode: 'insensitive' } },
+        { reviewedBy: { contains: term, mode: 'insensitive' } },
+        { auditorNotes: { contains: term, mode: 'insensitive' } },
+      ];
+      if (matchingClientIds.length > 0) {
+        searchOr.push({ clientId: { in: matchingClientIds } });
+      }
+      clauses.push({ OR: searchOr });
+    }
+
+    return clauses;
+  }
+
+  /**
+   * Laudos pendentes de revisão humana (com suporte a filtros dinâmicos)
+   */
+  public static async getPendingReview(page: number = 1, limit: number = 20, filters?: ReviewListFilters) {
+    const baseWhere: any = {
       status: AuditStatus.COMPLETED,
       reviewStatus: { notIn: ['APPROVED', 'REJECTED'] },
       OR: [
@@ -342,6 +575,9 @@ export class ReportService {
         { auditorReviewed: false },
       ],
     };
+
+    const extraClauses = await this.buildReviewFilterClauses(filters, 'pending');
+    const where = extraClauses.length > 0 ? { AND: [baseWhere, ...extraClauses] } : baseWhere;
 
     const [total, reports] = await Promise.all([
       ReportRepository.count(where),
@@ -355,19 +591,22 @@ export class ReportService {
       }),
     ]);
 
-    return { reports, total, page, limit };
+    return { reports: reports.map((r) => this.enrichReportViolations(r)), total, page, limit };
   }
 
   /**
-   * Laudos já revisados por auditores
+   * Laudos já revisados por auditores (com suporte a filtros dinâmicos)
    */
-  public static async getProcessedReview(page: number = 1, limit: number = 20) {
-    const where: any = {
+  public static async getProcessedReview(page: number = 1, limit: number = 20, filters?: ReviewListFilters) {
+    const baseWhere: any = {
       OR: [
         { auditorReviewed: true },
         { reviewStatus: { in: ['APPROVED', 'REJECTED', 'CHANGES_REQUESTED'] } },
       ],
     };
+
+    const extraClauses = await this.buildReviewFilterClauses(filters, 'processed');
+    const where = extraClauses.length > 0 ? { AND: [baseWhere, ...extraClauses] } : baseWhere;
 
     const [total, reports] = await Promise.all([
       ReportRepository.count(where),
@@ -381,7 +620,7 @@ export class ReportService {
       }),
     ]);
 
-    return { reports, total, page, limit };
+    return { reports: reports.map((r) => this.enrichReportViolations(r)), total, page, limit };
   }
 
   /**
