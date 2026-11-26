@@ -2,7 +2,13 @@ import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { prisma } from '../config/prisma.js';
 import { env } from '../config/env.js';
-import { safeHttpGet, validateSafeUrlAsync } from '../shared/security.js';
+import {
+  DEFAULT_BROWSER_HEADERS,
+  isRetryableNetworkError,
+  safeHttpGet,
+  validateSafeUrlAsync,
+} from '../shared/security.js';
+import { startSafeScrapingProxy } from '../shared/safeScrapingProxy.js';
 import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 import { ScraperService } from './scraperService.js';
 import { cosineSimilarity, SemanticEmbeddingService } from './semanticEmbeddingService.js';
@@ -364,6 +370,13 @@ export class LegalNormCrawlerService {
       return 'docx';
     }
     if (
+      lowerCt.includes('text/html') ||
+      lowerCt.includes('application/xhtml+xml') ||
+      /\.(html?|xhtml)($|\?|#)/i.test(lowerUrl)
+    ) {
+      return 'html';
+    }
+    if (
       /(@@display-file|\/download\/|\/bitstream\/|arquivo=|download=)/i.test(lowerUrl) ||
       /\b(baixar\s+pdf|download\s+pdf|\.pdf)\b/i.test(lowerAnchor)
     ) {
@@ -430,8 +443,8 @@ export class LegalNormCrawlerService {
           return;
         }
 
-        // Se for um link de arquivo .md no GitHub (/blob/), converte para a URL de download direto (raw)
-        if (canonical.includes('/blob/') && /\.(md|markdown)($|\?|#)/i.test(canonical)) {
+        // Se for um link de arquivo .md/.htm/.html no GitHub (/blob/), converte para a URL de download direto (raw)
+        if (canonical.includes('/blob/') && /\.(md|markdown|html?|xhtml)($|\?|#)/i.test(canonical)) {
           canonical = this.convertGithubBlobToRawUrl(canonical);
           if (seenUrls.has(canonical)) return;
         }
@@ -515,7 +528,7 @@ export class LegalNormCrawlerService {
 
             if (owner && repo && Array.isArray(items)) {
               for (const item of items) {
-                if (item.contentType === 'file' && /\.(md|markdown|pdf|docx?)$/i.test(item.name || '')) {
+                if (item.contentType === 'file' && /\.(md|markdown|pdf|docx?|html?|xhtml)$/i.test(item.name || '')) {
                   const rawCandidate = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${item.path}`;
                   if (!seenUrls.has(rawCandidate)) {
                     seenUrls.add(rawCandidate);
@@ -523,7 +536,7 @@ export class LegalNormCrawlerService {
                       url: rawCandidate,
                       anchorText: item.name,
                       surroundingText: `Arquivo do repositório ${repo}: ${item.path}`,
-                      fileType: item.name.endsWith('.pdf') ? 'pdf' : 'markdown',
+                      fileType: this.classifyLinkFileType(rawCandidate, item.name),
                       depth: currentDepth + 1,
                       discoveredFrom: canonicalBase,
                       originChain: [...originChain, rawCandidate],
@@ -646,12 +659,34 @@ export class LegalNormCrawlerService {
 
     // 2. Remove ruído estrutural (sem depender de seletores fixos de um único portal)
     $(
-      'script, style, noscript, svg, iframe, nav, header, footer, aside, .menu, .navbar, .sidebar, .breadcrumb, .share, .social-links, .govbr-share, #barra-brasil, #footer-brasil, . cookie-banner'
+      'script, style, noscript, svg, iframe, nav, header, footer, aside, .menu, .navbar, .sidebar, .breadcrumb, .share, .social-links, .govbr-share, #barra-brasil, #footer-brasil, .cookie-banner'
     ).remove();
 
+    const rawTitleTag = $('title').first().text().trim();
+    const isPlanaltoCodeOnlyTitle = /^[a-z]{1,4}\d{3,6}(?:compilad[oa])?$/i.test(rawTitleTag);
+    let formalHeading = '';
+    if (isPlanaltoCodeOnlyTitle || !rawTitleTag) {
+      formalHeading = $('h1').first().text().trim();
+      if (!formalHeading) {
+        $('p[align="center"], p[align="CENTER"], p').each((_, el) => {
+          if (formalHeading) return;
+          const candidate = $(el).text().trim().replace(/\s+/g, ' ');
+          if (
+            candidate.length >= 10 &&
+            candidate.length <= 220 &&
+            /^(?:LEI(?:\s+COMPLEMENTAR)?|DECRETO(?:-LEI)?|PORTARIA|RESOLU[CÇ][AÃ]O|MEDIDA\s+PROVIS[OÓ]RIA|EMENDA\s+CONSTITUCIONAL|INSTRU[CÇ][AÃ]O\s+NORMATIVA)\s+N?[º°o.]?\s*[\d.]+/i.test(
+              candidate
+            )
+          ) {
+            formalHeading = candidate;
+          }
+        });
+      }
+    }
+
     const title = TextEncodingSanitizer.sanitizeAndRepairText(
-      $('title').first().text().trim() ||
-        $('h1').first().text().trim() ||
+      (isPlanaltoCodeOnlyTitle ? formalHeading || rawTitleTag : rawTitleTag) ||
+        formalHeading ||
         $('p[align="center"]').first().text().trim() ||
         'Documento sem título'
     ).replace(/\s+/g, ' ');
@@ -1884,6 +1919,84 @@ export class LegalNormCrawlerService {
   }
 
   /**
+   * Fallback headless browser (Puppeteer + proxy anti-SSRF) para páginas .htm/.html protegidas
+   * contra bots/TLS resets (ex: Planalto, portais .gov.br com Akamai/F5) quando HTTP nativo falha.
+   */
+  public static async fetchHtmlWithPuppeteerFallback(url: string): Promise<string | null> {
+    const targetCheck = await validateSafeUrlAsync(url);
+    if (!targetCheck.safe) {
+      throw new Error(`SSRF bloqueado: ${targetCheck.reason}`);
+    }
+
+    if (process.env.NODE_ENV === 'test') {
+      return null;
+    }
+
+    let browser: any = null;
+    let safeProxy: Awaited<ReturnType<typeof startSafeScrapingProxy>> | null = null;
+    try {
+      const puppeteerModule = await import('puppeteer');
+      const puppeteer = puppeteerModule.default || puppeteerModule;
+      safeProxy = await startSafeScrapingProxy();
+
+      const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+      browser = await puppeteer.launch({
+        headless: true,
+        executablePath,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-extensions',
+          `--proxy-server=http://127.0.0.1:${safeProxy.port}`,
+          '--proxy-bypass-list=<-loopback>',
+          '--disable-quic',
+        ],
+      });
+
+      const page = await browser.newPage();
+      await page.setUserAgent(DEFAULT_BROWSER_HEADERS['User-Agent']);
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': DEFAULT_BROWSER_HEADERS['Accept-Language'],
+      });
+      await page.setViewport({ width: 1280, height: 800 });
+
+      await page.setRequestInterception(true);
+      page.on('request', (req: any) => {
+        void (async () => {
+          const reqUrl = req.url();
+          const urlCheck = await validateSafeUrlAsync(reqUrl);
+          if (!urlCheck.safe || ['image', 'font', 'media', 'stylesheet'].includes(req.resourceType())) {
+            await req.abort();
+            return;
+          }
+          await req.continue();
+        })().catch(() => {
+          void req.abort().catch(() => {});
+        });
+      });
+
+      const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      if (response && response.status() >= 400) {
+        return null;
+      }
+
+      const html = await page.content();
+      return html && html.trim().length > 50 ? html : null;
+    } catch {
+      return null;
+    } finally {
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
+      if (safeProxy) {
+        await safeProxy.close().catch(() => {});
+      }
+    }
+  }
+
+  /**
    * Executa um Job de Crawling Recursivo Controlado a partir de uma URL de entrada
    */
   public static async executeCrawlJob(options: {
@@ -2031,7 +2144,7 @@ export class LegalNormCrawlerService {
       let pendingChildEnqueue: (() => Promise<void>) | null = null;
       try {
         let extracted: ExtractedDocumentContent | null = null;
-        let engine: 'firecrawl' | 'http' = 'http';
+        let engine: 'firecrawl' | 'http' | 'puppeteer' = 'http';
         const guessedType = this.classifyLinkFileType(normUrl, current.anchorText);
 
         // ADR-001 (PONTO 2): Para páginas HTML, usa FirecrawlClient v2 como PRIMEIRA opção de captura/renderização JS
@@ -2060,96 +2173,137 @@ export class LegalNormCrawlerService {
         }
 
         if (!extracted) {
-          const resp = await safeHttpGet(normUrl, {
-            responseType: 'arraybuffer',
-            timeout: 20000,
-            headers: {
-              'User-Agent': 'ConformIA-LegalNormCrawler/2.0 (+https://conform.ai)',
-              Accept: 'text/html,application/xhtml+xml,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,*/*',
-            },
-          });
-
-          jobState.counters.downloaded++;
-          const contentType = String(resp.headers?.['content-type'] || '').toLowerCase();
-          const buf = Buffer.isBuffer(resp.data) ? resp.data : Buffer.from(String(resp.data || ''));
-
-          // Limite de segurança de tamanho de arquivo (25 MB)
-          if (buf.length > 25 * 1024 * 1024) {
-            const sizeMsg = 'Arquivo excede limite máximo de 25MB';
-            await LinkTraceService.record({
-              jobId,
-              url: normUrl,
-              status: 'ERROR',
-              parentUrl: current.discoveredFrom,
-              depth: current.depth,
-              engine,
-              reason: sizeMsg,
-            });
-            jobState.counters.errors++;
-            jobState.errors.push({ url: normUrl, message: sizeMsg });
-            await prisma.systemLog.create({
-              data: {
-                level: 'ERROR',
-                module: 'LEGAL_NORM_CRAWLER',
-                correlationId: jobId,
-                message: `[CRAWLER_FILE_ERROR] Falha ao processar arquivo "${normUrl}": ${sizeMsg}`,
-                details: JSON.stringify({
-                  url: normUrl,
-                  sizeBytes: buf.length,
-                  discoveredFrom: current.discoveredFrom,
-                  error: sizeMsg,
-                }),
+          let resp: any = null;
+          try {
+            resp = await safeHttpGet(normUrl, {
+              responseType: 'arraybuffer',
+              timeout: 25000,
+              retries: 2,
+              headers: {
+                'User-Agent': DEFAULT_BROWSER_HEADERS['User-Agent'],
+                Accept:
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,*/*;q=0.8',
+                'Accept-Language': DEFAULT_BROWSER_HEADERS['Accept-Language'],
+                'Cache-Control': 'no-cache',
+                Connection: 'close',
               },
-            }).catch(() => {});
-            continue;
+            });
+          } catch (httpErr: any) {
+            const isSsrfBlock = /SSRF/i.test(String(httpErr?.message || ''));
+            const status = httpErr?.response?.status;
+            const canUseBrowserFallback =
+              guessedType === 'html' &&
+              !isSsrfBlock &&
+              (isRetryableNetworkError(httpErr) || [403, 406, 429, 503].includes(status));
+
+            if (canUseBrowserFallback) {
+              const fallbackHtml = await this.fetchHtmlWithPuppeteerFallback(normUrl);
+              if (fallbackHtml) {
+                jobState.counters.downloaded++;
+                engine = 'puppeteer';
+                extracted = this.extractCleanMarkdownFromHtml(
+                  normUrl,
+                  fallbackHtml,
+                  current.depth,
+                  current.originChain,
+                  allowedDomains
+                );
+              }
+            }
+
+            if (!extracted) {
+              throw httpErr;
+            }
           }
 
-          const effectiveType = this.classifyLinkFileType(normUrl, current.anchorText, contentType);
+          if (!extracted && resp) {
+            jobState.counters.downloaded++;
+            const contentType = String(resp.headers?.['content-type'] || '').toLowerCase();
+            const buf = Buffer.isBuffer(resp.data) ? resp.data : Buffer.from(String(resp.data || ''));
 
-          if (effectiveType === 'pdf' || buf.subarray(0, 5).toString('ascii').startsWith('%PDF')) {
-            extracted = await this.extractFromPdfBuffer(
-              normUrl,
-              buf,
-              current.depth,
-              current.originChain,
-              allowedDomains,
-              current.anchorText
-            );
-          } else if (effectiveType === 'docx') {
-            extracted = this.extractFromDocxBuffer(
-              normUrl,
-              buf,
-              current.depth,
-              current.originChain,
-              allowedDomains,
-              current.anchorText
-            );
-          } else if (effectiveType === 'markdown') {
-            const decodedMarkdown = TextEncodingSanitizer.decodeBufferWithAutoEncoding(buf, contentType);
-            extracted = this.extractFromMarkdownText(
-              normUrl,
-              decodedMarkdown,
-              current.depth,
-              current.originChain,
-              allowedDomains,
-              current.anchorText
-            );
-          } else {
-            const decodedHtml = TextEncodingSanitizer.decodeBufferWithAutoEncoding(buf, contentType);
-            extracted = this.extractCleanMarkdownFromHtml(
-              normUrl,
-              decodedHtml,
-              current.depth,
-              current.originChain,
-              allowedDomains
-            );
+            // Limite de segurança de tamanho de arquivo (25 MB)
+            if (buf.length > 25 * 1024 * 1024) {
+              const sizeMsg = 'Arquivo excede limite máximo de 25MB';
+              await LinkTraceService.record({
+                jobId,
+                url: normUrl,
+                status: 'ERROR',
+                parentUrl: current.discoveredFrom,
+                depth: current.depth,
+                engine,
+                reason: sizeMsg,
+              });
+              jobState.counters.errors++;
+              jobState.errors.push({ url: normUrl, message: sizeMsg });
+              await prisma.systemLog.create({
+                data: {
+                  level: 'ERROR',
+                  module: 'LEGAL_NORM_CRAWLER',
+                  correlationId: jobId,
+                  message: `[CRAWLER_FILE_ERROR] Falha ao processar arquivo "${normUrl}": ${sizeMsg}`,
+                  details: JSON.stringify({
+                    url: normUrl,
+                    sizeBytes: buf.length,
+                    discoveredFrom: current.discoveredFrom,
+                    error: sizeMsg,
+                  }),
+                },
+              }).catch(() => {});
+              continue;
+            }
+
+            const effectiveType = this.classifyLinkFileType(normUrl, current.anchorText, contentType);
+
+            if (effectiveType === 'pdf' || buf.subarray(0, 5).toString('ascii').startsWith('%PDF')) {
+              extracted = await this.extractFromPdfBuffer(
+                normUrl,
+                buf,
+                current.depth,
+                current.originChain,
+                allowedDomains,
+                current.anchorText
+              );
+            } else if (effectiveType === 'docx') {
+              extracted = this.extractFromDocxBuffer(
+                normUrl,
+                buf,
+                current.depth,
+                current.originChain,
+                allowedDomains,
+                current.anchorText
+              );
+            } else if (effectiveType === 'markdown') {
+              const decodedMarkdown = TextEncodingSanitizer.decodeBufferWithAutoEncoding(buf, contentType);
+              extracted = this.extractFromMarkdownText(
+                normUrl,
+                decodedMarkdown,
+                current.depth,
+                current.originChain,
+                allowedDomains,
+                current.anchorText
+              );
+            } else {
+              const decodedHtml = TextEncodingSanitizer.decodeBufferWithAutoEncoding(buf, contentType);
+              extracted = this.extractCleanMarkdownFromHtml(
+                normUrl,
+                decodedHtml,
+                current.depth,
+                current.originChain,
+                allowedDomains
+              );
+            }
           }
         }
+
+        if (!extracted) {
+          throw new Error(`Não foi possível extrair conteúdo da URL: ${normUrl}`);
+        }
+        const extractedDoc = extracted;
 
         // Prepara função para enfileirar links filhos após a conclusão e commit do arquivo atual
         const enqueueChildLinks = async () => {
           const traceBatch: any[] = [];
-          for (const skippedLink of extracted.skippedLinks || []) {
+          for (const skippedLink of extractedDoc.skippedLinks || []) {
             traceBatch.push({
               jobId,
               url: skippedLink.url,
@@ -2160,7 +2314,7 @@ export class LegalNormCrawlerService {
             });
           }
 
-          for (const childLink of extracted.discoveredLinks) {
+          for (const childLink of extractedDoc.discoveredLinks) {
             const childCanonical = this.normalizeCanonicalUrl(childLink.url);
             if (!childCanonical) continue;
 
@@ -2212,25 +2366,25 @@ export class LegalNormCrawlerService {
         pendingChildEnqueue = enqueueChildLinks;
 
         // Deduplicação em memória por content_hash dentro do mesmo job
-        if (visitedContentHashes.has(extracted.contentHash) && !force) {
+        if (visitedContentHashes.has(extractedDoc.contentHash) && !force) {
           await LinkTraceService.record({
             jobId,
             url: normUrl,
             status: 'DISCARDED_DUPLICATE_CONTENT',
             parentUrl: current.discoveredFrom,
             depth: current.depth,
-            title: extracted.title,
+            title: extractedDoc.title,
             engine,
             reason: 'Conteúdo idêntico (mesmo SHA-256) já processado neste job',
           });
           await enqueueChildLinks();
           continue;
         }
-        visitedContentHashes.add(extracted.contentHash);
+        visitedContentHashes.add(extractedDoc.contentHash);
 
         // Classifica "é norma legal?" (estrutura jurídica) e, separadamente, os temas aceitos
-        const classification = await this.classifyLegalNorm(extracted, tags);
-        const topicMatches = classifyNormTopics(extracted.title, extracted.activeContentMd);
+        const classification = await this.classifyLegalNorm(extractedDoc, tags);
+        const topicMatches = classifyNormTopics(extractedDoc.title, extractedDoc.activeContentMd);
         const detectedTopics = topicMatches.map((m) => m.topic);
         const topicsInScope = detectedTopics.filter((t) => allowedTopics.includes(t));
 
@@ -2239,7 +2393,7 @@ export class LegalNormCrawlerService {
           jobState.counters.discarded++;
           jobState.discards.push({
             url: normUrl,
-            title: extracted.title,
+            title: extractedDoc.title,
             status: 'discarded',
             reason: classification.reason,
             score: classification.score,
@@ -2253,8 +2407,8 @@ export class LegalNormCrawlerService {
             status: 'DISCARDED_NOT_NORM',
             parentUrl: current.discoveredFrom,
             depth: current.depth,
-            fileType: extracted.fileType,
-            title: extracted.title,
+            fileType: extractedDoc.fileType,
+            title: extractedDoc.title,
             engine,
             topics: detectedTopics,
             score: classification.score,
@@ -2272,7 +2426,7 @@ export class LegalNormCrawlerService {
                   : [classification.issuingBody || 'GERAL'];
 
           const persisted = await this.persistNormWithIdempotency({
-            doc: extracted,
+            doc: extractedDoc,
             classification,
             discoveredFrom: current.discoveredFrom,
             originChain: current.originChain,
@@ -2299,8 +2453,8 @@ export class LegalNormCrawlerService {
             status: traceStatus,
             parentUrl: current.discoveredFrom,
             depth: current.depth,
-            fileType: extracted.fileType,
-            title: extracted.title,
+            fileType: extractedDoc.fileType,
+            title: extractedDoc.title,
             engine,
             topics: effectiveTopics.map((t) => (TOPIC_LABELS[t as NormTopic] ? `${t} (${TOPIC_LABELS[t as NormTopic]})` : t)),
             normId: persisted.norm?.id,

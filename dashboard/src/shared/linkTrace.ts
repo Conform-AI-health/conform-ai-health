@@ -36,7 +36,7 @@ export interface LinkTraceEntry {
   topics?: string[];
   title?: string;
   reason?: string;
-  engine?: 'firecrawl' | 'http';
+  engine?: 'firecrawl' | 'http' | 'puppeteer';
   normId?: string;
   chunksCount?: number;
   score?: number;
