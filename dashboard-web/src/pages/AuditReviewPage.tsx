@@ -62,11 +62,17 @@ interface ReportItem {
     normArticle?: string;
     normCode?: string;
     severity: string;
-    detectedText?: string;
-    correctiveAdvice?: string;
+    detectedText?: string | null;
+    correctiveAdvice?: string | null;
+    description?: string | null;
+    sourceVersion?: string | null;
+    validityStatus?: string;
+    requiresHumanReview?: boolean;
     resolved: boolean;
   }[];
   sourcesUsed?: string[];
+  riskLevel?: string;
+  confidence?: number;
 }
 
 export const AuditReviewPage: React.FC = () => {
@@ -284,6 +290,119 @@ export const AuditReviewPage: React.FC = () => {
           </span>
         );
     }
+  };
+
+  const getSeverityBadge = (severity?: string) => {
+    const normalized = (severity || 'MEDIA').toUpperCase();
+    switch (normalized) {
+      case 'CRITICA':
+        return (
+          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-rose-950/90 text-rose-300 border border-rose-700/80">
+            Severidade Crítica
+          </span>
+        );
+      case 'GRAVE':
+      case 'ALTA':
+        return (
+          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-orange-950/90 text-orange-300 border border-orange-700/80">
+            Severidade Grave
+          </span>
+        );
+      case 'MEDIA':
+        return (
+          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-950/90 text-amber-300 border border-amber-700/80">
+            Severidade Média
+          </span>
+        );
+      default:
+        return (
+          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-950/90 text-blue-300 border border-blue-700/80">
+            Severidade Leve
+          </span>
+        );
+    }
+  };
+
+  const renderViolationCard = (
+    v: NonNullable<ReportItem['violations']>[number],
+    idx: number
+  ) => {
+    const normCode = v.normCode || 'Normativo Vigente';
+    const normArticle = v.normArticle || 'Dispositivo Geral';
+    const validityLabel = v.validityStatus || (v.sourceVersion ? `VIGENTE (${v.sourceVersion})` : 'VIGENTE');
+    const isRevoked = validityLabel.toUpperCase().includes('REVOGADA');
+    const requiresReview =
+      v.requiresHumanReview ?? (v.severity === 'CRITICA' || v.severity === 'GRAVE');
+    const hasDistinctDescription =
+      v.description &&
+      v.description.trim().length > 0 &&
+      !v.description.toLowerCase().endsWith(': inadequação detectada');
+
+    return (
+      <div
+        key={v.id || idx}
+        className="p-4 rounded-xl bg-[#080f24] border border-slate-800/90 text-xs space-y-2.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold text-cyan-300">
+              {idx + 1}. {normCode} — {normArticle}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                isRevoked
+                  ? 'bg-rose-950/60 text-rose-300 border-rose-800/70'
+                  : 'bg-emerald-950/50 text-emerald-300 border-emerald-800/60'
+              }`}
+            >
+              {validityLabel}
+            </span>
+            {v.resolved && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                Regularizado
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {requiresReview && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 inline-flex items-center gap-1">
+                <UserCheck className="w-3 h-3" />
+                <span>Revisão Humana</span>
+              </span>
+            )}
+            {getSeverityBadge(v.severity)}
+          </div>
+        </div>
+
+        {hasDistinctDescription && (
+          <p className="text-slate-300 leading-relaxed">
+            <strong className="text-slate-200">Enquadramento Regulatório:</strong> {v.description}
+          </p>
+        )}
+
+        <div className="bg-slate-900/70 p-2.5 rounded-lg border border-slate-800/90 space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
+            Trecho de Evidência no Canal Auditado
+          </span>
+          {v.detectedText ? (
+            <p className="text-slate-200 italic leading-relaxed">"{v.detectedText}"</p>
+          ) : (
+            <p className="text-slate-500 italic">
+              Trecho literal não destacado individualmente — conferir evidência integral na URL auditada.
+            </p>
+          )}
+        </div>
+
+        <div className="pt-0.5">
+          <p className="text-slate-200 leading-relaxed">
+            <strong className="text-cyan-400">Recomendação Deontológica Corretiva:</strong>{' '}
+            {v.correctiveAdvice ||
+              'Adequar a comunicação institucional em estrita conformidade com o dispositivo normativo citado.'}
+          </p>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -525,40 +644,7 @@ export const AuditReviewPage: React.FC = () => {
                             </div>
                           ) : (
                             <div className="space-y-2.5">
-                              {violations.map((v, idx) => (
-                                <div
-                                  key={v.id || idx}
-                                  className="p-3.5 rounded-xl bg-[#080f24] border border-slate-800/80 text-xs space-y-2"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-bold text-cyan-300">
-                                      {idx + 1}. {v.normCode || 'Normativo Vigente'} — {v.normArticle || 'Artigo'}
-                                    </span>
-                                    <span
-                                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                        v.severity === 'ALTA'
-                                          ? 'bg-rose-950 text-rose-400 border border-rose-800'
-                                          : v.severity === 'MEDIA'
-                                          ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                                          : 'bg-blue-950 text-blue-400 border border-blue-800'
-                                      }`}
-                                    >
-                                      Severidade {v.severity}
-                                    </span>
-                                  </div>
-                                  {v.detectedText && (
-                                    <p className="text-slate-400 italic bg-slate-900/60 p-2 rounded border border-slate-800">
-                                      "{v.detectedText}"
-                                    </p>
-                                  )}
-                                  {v.correctiveAdvice && (
-                                    <p className="text-slate-300">
-                                      <strong className="text-cyan-400">Recomendação Deontológica:</strong>{' '}
-                                      {v.correctiveAdvice}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
+                              {violations.map((v, idx) => renderViolationCard(v, idx))}
                             </div>
                           )}
                         </div>
@@ -839,40 +925,8 @@ export const AuditReviewPage: React.FC = () => {
                               <span>Nenhuma infração identificada. Laudo em total conformidade.</span>
                             </div>
                           ) : (
-                            <div className="space-y-2">
-                              {violations.map((v, idx) => (
-                                <div
-                                  key={v.id || idx}
-                                  className="p-3.5 rounded-xl bg-[#080f24] border border-slate-800/80 text-xs space-y-1.5"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-bold text-cyan-300">
-                                      {idx + 1}. {v.normCode || 'Normativo Vigente'} — {v.normArticle || 'Artigo'}
-                                    </span>
-                                    <span
-                                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                        v.severity === 'ALTA'
-                                          ? 'bg-rose-950 text-rose-400 border border-rose-800'
-                                          : v.severity === 'MEDIA'
-                                          ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                                          : 'bg-blue-950 text-blue-400 border border-blue-800'
-                                      }`}
-                                    >
-                                      {v.severity}
-                                    </span>
-                                  </div>
-                                  {v.detectedText && (
-                                    <p className="text-slate-400 italic bg-slate-900/60 p-2 rounded border border-slate-800">
-                                      "{v.detectedText}"
-                                    </p>
-                                  )}
-                                  {v.correctiveAdvice && (
-                                    <p className="text-slate-300">
-                                      <strong className="text-cyan-400">Recomendação:</strong> {v.correctiveAdvice}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
+                            <div className="space-y-2.5">
+                              {violations.map((v, idx) => renderViolationCard(v, idx))}
                             </div>
                           )}
                         </div>

@@ -100,6 +100,7 @@ export class ClientService {
         where: { clientId },
         take: 5,
         orderBy: { createdAt: 'desc' },
+        includeViolations: true,
       }),
       ReportRepository.count({ clientId, status: 'PENDING' }),
     ]);

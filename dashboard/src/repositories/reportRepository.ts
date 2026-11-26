@@ -83,6 +83,11 @@ export class ReportRepository {
                 tradeName: true,
                 crmResponsavel: true,
                 crmUf: true,
+                rqeResponsavel: true,
+                especialidade: true,
+                email: true,
+                websiteUrl: true,
+                users: { select: { email: true } },
               },
             }
           : false,
@@ -90,10 +95,14 @@ export class ReportRepository {
           ? {
               select: {
                 id: true,
+                auditReportId: true,
                 severity: true,
                 normCode: true,
                 normArticle: true,
+                detectedText: true,
+                correctiveAdvice: true,
                 resolved: true,
+                createdAt: true,
               },
             }
           : false,
