@@ -272,9 +272,11 @@ describe('📊 Observabilidade (Pino + LGPD Redact + OTel W3C) & Releases Imutá
       expect(content).toMatch(/\.previous_version/);
       expect(content).toMatch(/releases\.log/);
       expect(content).toMatch(/AUTO_ROLLBACK/);
+      expect(content.indexOf('[0/4]')).toBeGreaterThan(-1);
+      expect(content.indexOf('[0/4]')).toBeLessThan(content.indexOf('pull\n'));
     });
 
-    it('workflows CI/CD (ci-deploy.yml e rollback.yml) devem usar tags imutáveis sha- e gates staging/production', () => {
+    it('workflows CI/CD (ci-deploy.yml e rollback.yml) devem usar tags imutáveis sha- e gate de produção (staging desativado em homologação)', () => {
       const ciPath = path.join(rootDir, '.github/workflows/ci-deploy.yml');
       const rollbackPath = path.join(rootDir, '.github/workflows/rollback.yml');
 
@@ -283,9 +285,9 @@ describe('📊 Observabilidade (Pino + LGPD Redact + OTel W3C) & Releases Imutá
 
       const ciContent = fs.readFileSync(ciPath, 'utf8');
       expect(ciContent).toMatch(/sha-\$\{SHORT_SHA\}/);
-      expect(ciContent).toMatch(/environment:\s*staging/);
       expect(ciContent).toMatch(/environment:\s*production/);
-      expect(ciContent).toMatch(/needs:\s*\[build-docker-images,\s*deploy-staging\]/);
+      expect(ciContent).toMatch(/needs:\s*\[build-docker-images\]/);
+      expect(ciContent).not.toMatch(/^  deploy-staging:/m);
       expect(ciContent).not.toMatch(/dashboard-api:latest/);
       expect(ciContent).not.toMatch(/dashboard-api:1\.0\.0/);
 
