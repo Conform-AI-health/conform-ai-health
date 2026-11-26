@@ -272,6 +272,8 @@ describe('📊 Observabilidade (Pino + LGPD Redact + OTel W3C) & Releases Imutá
       expect(content).toMatch(/\.previous_version/);
       expect(content).toMatch(/releases\.log/);
       expect(content).toMatch(/AUTO_ROLLBACK/);
+      expect(content.indexOf('[0/4]')).toBeGreaterThan(-1);
+      expect(content.indexOf('[0/4]')).toBeLessThan(content.indexOf('pull\n'));
     });
 
     it('workflows CI/CD (ci-deploy.yml e rollback.yml) devem usar tags imutáveis sha- e gate de produção (staging desativado em homologação)', () => {
