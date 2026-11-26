@@ -263,7 +263,7 @@ describe('📊 Observabilidade (Pino + LGPD Redact + OTel W3C) & Releases Imutá
       expect(content).toMatch(/\.previous_version/);
     });
 
-    it('ec2-deploy-release.sh deve existir, rejeitar latest e implementar auto-rollback', () => {
+    it('ec2-deploy-release.sh deve existir, rejeitar latest e liberar a imagem atual antes do pull (auto-rollback desativado em homologação)', () => {
       const deployScriptPath = path.join(rootDir, 'scripts/ec2-deploy-release.sh');
       expect(fs.existsSync(deployScriptPath)).toBe(true);
 
@@ -271,7 +271,9 @@ describe('📊 Observabilidade (Pino + LGPD Redact + OTel W3C) & Releases Imutá
       expect(content).toMatch(/latest/);
       expect(content).toMatch(/\.previous_version/);
       expect(content).toMatch(/releases\.log/);
-      expect(content).toMatch(/AUTO_ROLLBACK/);
+      expect(content).toMatch(/AUTO-ROLLBACK DESATIVADO/);
+      expect(content).not.toMatch(/^\s*run_compose "\$PREVIOUS_VERSION" up/m);
+      expect(content.indexOf('remove_local_app_images\n')).toBeLessThan(content.indexOf('pull\n'));
       expect(content.indexOf('[0/4]')).toBeGreaterThan(-1);
       expect(content.indexOf('[0/4]')).toBeLessThan(content.indexOf('pull\n'));
     });
