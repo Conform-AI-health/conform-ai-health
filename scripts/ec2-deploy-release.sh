@@ -123,12 +123,19 @@ remove_local_app_images() {
   done
 }
 
+echo "🔎 Verificando se ${TARGET_VERSION} existe no GHCR antes de parar a stack..."
+for image in dashboard-api dashboard-web; do
+  if ! docker manifest inspect "ghcr.io/conform-ai-health/conform-ai-health/${image}:${TARGET_VERSION}" >/dev/null 2>&1; then
+    echo "❌ Imagem ${image}:${TARGET_VERSION} não encontrada no GHCR. Deploy abortado sem alterar a versão no ar."
+    log_release_event "ABORTED_IMAGE_NOT_FOUND" "$TARGET_VERSION"
+    exit 1
+  fi
+done
+
 echo "🧹 [0/4] Liberando espaço em disco antes do pull (modo disco reduzido)..."
-if [ -n "$PREVIOUS_VERSION" ]; then
-  echo "⏸️ Parando a stack atual (${PREVIOUS_VERSION}) para liberar a imagem em uso; volumes são preservados..."
-  run_compose "$PREVIOUS_VERSION" stop dashboard-api audit-worker dashboard-web || true
-  run_compose "$PREVIOUS_VERSION" rm -f dashboard-api audit-worker dashboard-web || true
-fi
+echo "⏸️ Parando a stack atual (${PREVIOUS_VERSION:-não registrada}) para liberar a imagem em uso; volumes são preservados..."
+run_compose "${PREVIOUS_VERSION:-$TARGET_VERSION}" stop dashboard-api audit-worker dashboard-web || true
+run_compose "${PREVIOUS_VERSION:-$TARGET_VERSION}" rm -f dashboard-api audit-worker dashboard-web || true
 remove_local_app_images
 run_disk_cleanup
 # O host só executa imagens prontas do GHCR; cache de build local não é necessário.
@@ -177,6 +184,10 @@ log_release_event "FAILED" "$TARGET_VERSION"
 # else
 #   echo "⚠️ Nenhuma versão anterior distinta disponível para rollback automático."
 # fi
-echo "⚠️ Auto-rollback desativado em homologação. Use o workflow 'ConformIA Manual Version Rollback' (target_version=previous)."
+if [ -n "$PREVIOUS_VERSION" ] && [ "$PREVIOUS_VERSION" != "$TARGET_VERSION" ]; then
+  echo "⚠️ Auto-rollback desativado em homologação. Para voltar à última versão saudável, rode o workflow 'ConformIA Manual Version Rollback' com target_version=${PREVIOUS_VERSION}."
+else
+  echo "⚠️ Auto-rollback desativado em homologação e não há versão saudável anterior registrada."
+fi
 
 exit 1
