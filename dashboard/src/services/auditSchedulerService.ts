@@ -4,6 +4,7 @@ import { auditQueue, getRedisConnection } from '../config/redis.js';
 import { AuditExecutionService } from './auditExecutionService.js';
 import { decryptSecret } from '../shared/encryption.js';
 import { injectTraceCarrier } from '../shared/tracing.js';
+import { formatResolvedClientName, resolveClientByIdOrUrl } from '../shared/clientIdentityResolver.js';
 
 interface ScheduledAgentState {
   agentId: string;
@@ -187,20 +188,18 @@ export class AuditSchedulerService {
       return null;
     }
 
-    let clientName = 'Geral';
-    if (agent.clientId) {
-      try {
-        const client = await prisma.client.findUnique({
-          where: { id: agent.clientId },
-          select: { tradeName: true, name: true },
-        });
-        if (client) {
-          clientName = client.tradeName || client.name || 'Geral';
-        }
-      } catch {
-        // Ignora falhas de busca de cliente
-      }
-    }
+    const resolvedClient = await resolveClientByIdOrUrl({
+      clientId: agent.clientId,
+      targetUrl: agent.targetUrl,
+      moduleName: agent.name,
+    });
+    const effectiveClientId = resolvedClient?.id || agent.clientId || null;
+    const clientName = formatResolvedClientName({
+      client: resolvedClient,
+      moduleName: agent.name,
+      targetUrl: agent.targetUrl,
+      fallback: 'Geral',
+    });
 
     // 1. Mutex distribuído via Redis (primeira linha de defesa, sub-milissegundo)
     let redisAcquired = false;
@@ -268,7 +267,7 @@ export class AuditSchedulerService {
       // 1. Cria o laudo formal no MongoDB Atlas
       const report = await prisma.auditReport.create({
         data: {
-          clientId: agent.clientId,
+          clientId: effectiveClientId,
           targetUrl: agent.targetUrl,
           extractionMode: agent.extractionMode || 'FIRECRAWL',
           status: 'PENDING',
@@ -282,13 +281,13 @@ export class AuditSchedulerService {
           level: 'INFO',
           module: 'AUDIT_SCHEDULER',
           correlationId: report.id,
-          message: `[AUDIT_SCHEDULER] Disparo contínuo programado executado para o agente "${agent.name}" (Cron: ${agent.cronSchedule}) | URL: ${agent.targetUrl}`,
+          message: `[AUDIT_SCHEDULER] Disparo contínuo programado executado para o agente "${agent.name}" (Cliente: ${clientName} | Cron: ${agent.cronSchedule}) | URL: ${agent.targetUrl}`,
           details: JSON.stringify({
             agentModuleId: agent.id,
             agentName: agent.name,
             cronSchedule: agent.cronSchedule,
             targetUrl: agent.targetUrl,
-            clientId: agent.clientId,
+            clientId: effectiveClientId,
             clientName,
           }),
         },
@@ -316,7 +315,7 @@ export class AuditSchedulerService {
           'auditJob',
           {
             auditReportId: report.id,
-            clientId: agent.clientId || '',
+            clientId: effectiveClientId || '',
             targetUrl: agent.targetUrl,
             extractionMode: agent.extractionMode,
             agentModuleId: agent.id,
@@ -331,7 +330,7 @@ export class AuditSchedulerService {
         console.warn(`[AuditSchedulerService] Redis em fallback (${queueErr.message}). Processando auditoria diretamente...`);
         executionResult = await AuditExecutionService.execute({
           auditReportId: report.id,
-          clientId: agent.clientId || '',
+          clientId: effectiveClientId || '',
           targetUrl: agent.targetUrl,
           extractionMode: agent.extractionMode,
           agentModuleId: agent.id,

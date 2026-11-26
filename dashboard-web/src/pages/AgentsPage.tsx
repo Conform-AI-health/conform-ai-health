@@ -137,6 +137,7 @@ export const AgentsPage: React.FC = () => {
   const [newAgentData, setNewAgentData] = useState({
     name: '',
     targetUrl: '',
+    clientId: '',
     description: '',
     tags: ['cfm'] as string[],
     cronSchedule: '0 */6 * * *',
@@ -144,6 +145,32 @@ export const AgentsPage: React.FC = () => {
     authUsername: '',
     authPassword: '',
   });
+
+  const findMatchingClientId = (moduleName?: string, targetUrl?: string): string | null => {
+    const cleanName = (moduleName || '')
+      .trim()
+      .replace(/^Auditor\s+Digital\s*[-—–:]\s*/i, '')
+      .toLowerCase();
+    const cleanUrl = (targetUrl || '').trim().replace(/\/+$/, '').toLowerCase();
+
+    if (cleanUrl) {
+      const byExactUrl = clients.find(
+        (c) => c.websiteUrl && String(c.websiteUrl).trim().replace(/\/+$/, '').toLowerCase() === cleanUrl
+      );
+      if (byExactUrl) return byExactUrl.id;
+    }
+
+    if (cleanName) {
+      const byName = clients.find((c) => {
+        const trade = String(c.tradeName || '').trim().toLowerCase();
+        const legal = String(c.name || '').trim().toLowerCase();
+        return (trade && trade === cleanName) || (legal && legal === cleanName);
+      });
+      if (byName) return byName.id;
+    }
+
+    return null;
+  };
   const [newTagInput, setNewTagInput] = useState('');
   const [creatingAgent, setCreatingAgent] = useState(false);
 
@@ -405,13 +432,22 @@ export const AgentsPage: React.FC = () => {
 
     try {
       setRunning(true);
+      const resolvedClientId =
+        findMatchingClientId(
+          cockpitData.name?.trim() || currentMod?.name,
+          effectiveUrl
+        ) ||
+        (cockpitData.clientId && cockpitData.clientId.trim().length > 0
+          ? cockpitData.clientId.trim()
+          : null);
+
       // Salva qualquer alteração recente no módulo de forma transparente
       await api.put(`/agents/${selectedModuleId}`, {
         name: cockpitData.name?.trim() || currentMod?.name,
         targetUrl: effectiveUrl,
         description: cockpitData.description?.trim() || currentMod?.description,
         systemPrompt: cockpitData.description?.trim() || currentMod?.description,
-        clientId: cockpitData.clientId && cockpitData.clientId.trim().length > 0 ? cockpitData.clientId.trim() : null,
+        clientId: resolvedClientId,
         tags: cockpitData.tags && cockpitData.tags.length > 0 ? cockpitData.tags : currentMod?.tags,
         cronSchedule: cockpitData.cronSchedule || currentMod?.cronSchedule || '0 */6 * * *',
         hasAuth: cockpitData.hasAuth,
@@ -419,9 +455,9 @@ export const AgentsPage: React.FC = () => {
         authPassword: cockpitData.authPassword?.trim() || null,
       });
 
-      // Dispara a auditoria usando o corpo unificado de URL Alvo Oficial e Persona/Skill
+      // Dispara a auditoria usando o corpo unificado de URL Alvo Oficial e Persona/Skill (sem fallback cego em clients[0])
       await api.post(`/agents/${selectedModuleId}/run`, {
-        clientId: cockpitData.clientId || clients[0]?.id || currentMod?.clientId,
+        clientId: resolvedClientId || undefined,
         targetUrl: effectiveUrl,
         skill: cockpitData.description?.trim() || currentMod?.description,
         extractionMode: 'FIRECRAWL',
@@ -593,9 +629,15 @@ export const AgentsPage: React.FC = () => {
     }
     try {
       setCreatingAgent(true);
+      const resolvedCreateClientId =
+        (newAgentData.clientId && newAgentData.clientId.trim()) ||
+        findMatchingClientId(newAgentData.name, newAgentData.targetUrl) ||
+        null;
+
       await api.post('/agents', {
         name: newAgentData.name.trim(),
         targetUrl: newAgentData.targetUrl.trim(),
+        clientId: resolvedCreateClientId,
         description: newAgentData.description.trim(),
         systemPrompt: newAgentData.description.trim(),
         tags: newAgentData.tags,
@@ -608,6 +650,7 @@ export const AgentsPage: React.FC = () => {
       setNewAgentData({
         name: '',
         targetUrl: '',
+        clientId: '',
         description: '',
         tags: ['cfm'],
         cronSchedule: '0 */6 * * *',
@@ -1103,7 +1146,15 @@ export const AgentsPage: React.FC = () => {
                         type="text"
                         required
                         value={cockpitData.name}
-                        onChange={(e) => setCockpitData({ ...cockpitData, name: e.target.value })}
+                        onChange={(e) => {
+                          const nextName = e.target.value;
+                          const matchedId = findMatchingClientId(nextName, cockpitData.targetUrl);
+                          setCockpitData({
+                            ...cockpitData,
+                            name: nextName,
+                            ...(matchedId ? { clientId: matchedId } : {}),
+                          });
+                        }}
                         placeholder="Ex: Auditor Deontológico Dermatológico"
                         className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-medium"
                       />
@@ -1118,7 +1169,15 @@ export const AgentsPage: React.FC = () => {
                           type="url"
                           required
                           value={cockpitData.targetUrl}
-                          onChange={(e) => setCockpitData({ ...cockpitData, targetUrl: e.target.value })}
+                          onChange={(e) => {
+                            const nextUrl = e.target.value;
+                            const matchedId = findMatchingClientId(cockpitData.name, nextUrl);
+                            setCockpitData({
+                              ...cockpitData,
+                              targetUrl: nextUrl,
+                              ...(matchedId ? { clientId: matchedId } : {}),
+                            });
+                          }}
                           placeholder="https://clinicaexemplo.med.br"
                           className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 pl-9 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
                         />
@@ -1593,7 +1652,15 @@ export const AgentsPage: React.FC = () => {
                   required
                   placeholder="Ex: Auditor Deontológico Dermatológico"
                   value={newAgentData.name}
-                  onChange={(e) => setNewAgentData({ ...newAgentData, name: e.target.value })}
+                  onChange={(e) => {
+                    const nextName = e.target.value;
+                    const matchedId = findMatchingClientId(nextName, newAgentData.targetUrl);
+                    setNewAgentData({
+                      ...newAgentData,
+                      name: nextName,
+                      ...(matchedId ? { clientId: matchedId } : {}),
+                    });
+                  }}
                   className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                 />
               </div>
@@ -1608,12 +1675,39 @@ export const AgentsPage: React.FC = () => {
                   required
                   placeholder="https://exemplo-clinica.com.br"
                   value={newAgentData.targetUrl}
-                  onChange={(e) => setNewAgentData({ ...newAgentData, targetUrl: e.target.value })}
+                  onChange={(e) => {
+                    const nextUrl = e.target.value;
+                    const matchedId = findMatchingClientId(newAgentData.name, nextUrl);
+                    setNewAgentData({
+                      ...newAgentData,
+                      targetUrl: nextUrl,
+                      ...(matchedId ? { clientId: matchedId } : {}),
+                    });
+                  }}
                   className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">
                   A página será extraída exclusivamente em formato Markdown limpo via motor Firecrawl com verificação criptográfica SHA-256.
                 </p>
+              </div>
+
+              {/* 2.1 Instituição Médica / Clínica Vinculada */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Instituição Médica / Clínica Vinculada
+                </label>
+                <select
+                  value={newAgentData.clientId}
+                  onChange={(e) => setNewAgentData({ ...newAgentData, clientId: e.target.value })}
+                  className="w-full bg-[#080d1a] border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-medium"
+                >
+                  <option value="">Auditoria Direta / Avulsa (Sem clínica fixa)</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.tradeName || c.name} ({c.crmResponsavel ? `CRM ${c.crmResponsavel}/${c.crmUf}` : c.cnpj || 'Cadastrado'})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Flag: Possui Autenticação? */}

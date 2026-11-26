@@ -9,6 +9,11 @@ import { ScraperService, ScrapeResult } from './scraperService.js';
 import { decryptSecret } from '../shared/encryption.js';
 import { createLogger } from '../shared/logger.js';
 import { getActiveTraceIds, runWithContext, withSpan } from '../shared/tracing.js';
+import {
+  extractMarkdownHeadingTitle,
+  formatResolvedClientName,
+  resolveClientByIdOrUrl,
+} from '../shared/clientIdentityResolver.js';
 
 const auditExecLog = createLogger('AuditExecutionService');
 
@@ -77,28 +82,47 @@ export class AuditExecutionService {
       const updatedReport = await prisma.auditReport.update({
         where: { id: auditReportId },
         data: { status: 'RUNNING' },
-        select: { clientId: true },
+        select: { clientId: true, targetUrl: true },
       }).catch(() => null);
 
+      const effectiveTargetUrl = targetUrl || updatedReport?.targetUrl || '';
       const effectiveClientId = clientId || updatedReport?.clientId;
 
-      // Recupera dados do módulo para contexto
+      // Recupera dados do módulo para contexto (por ID/code ou fallback por URL alvo)
       const mod = agentModuleId
         ? await prisma.agentModule.findFirst({
             where: { OR: [{ id: agentModuleId }, { code: agentModuleId }] },
           }).catch(() => null)
-        : null;
-
-      const finalClientId = effectiveClientId || mod?.clientId;
-
-      const client = finalClientId
-        ? await prisma.client.findUnique({
-            where: { id: finalClientId },
-            include: { users: { select: { email: true, name: true } } },
+        : effectiveTargetUrl && prisma.agentModule?.findFirst
+        ? await prisma.agentModule.findFirst({
+            where: { targetUrl: effectiveTargetUrl },
           }).catch(() => null)
         : null;
 
-      const clientName = client?.name || client?.tradeName || 'Clínica Auditada';
+      let client = await resolveClientByIdOrUrl({
+        clientId: effectiveClientId || mod?.clientId,
+        targetUrl: effectiveTargetUrl,
+        moduleName: mod?.name,
+        includeUsers: true,
+      });
+
+      let finalClientId = client?.id || effectiveClientId || mod?.clientId || undefined;
+
+      // Se o módulo estava com clientId defasado (ex.: reaproveitado de outra clínica), corrige o vínculo no módulo
+      if (mod?.id && client?.id && mod.clientId !== client.id && prisma.agentModule?.update) {
+        await Promise.resolve(
+          prisma.agentModule.update({
+            where: { id: mod.id },
+            data: { clientId: client.id },
+          })
+        ).catch(() => {});
+      }
+
+      let clientName = formatResolvedClientName({
+        client,
+        moduleName: mod?.name,
+        targetUrl: effectiveTargetUrl,
+      });
       const moduleName = mod?.name || 'Módulo Geral';
       const effectiveSkill = params.skill || mod?.description || 'compliance-specialist';
 
@@ -138,13 +162,31 @@ export class AuditExecutionService {
           'http.url': targetUrl,
           'audit.agent_module_id': agentModuleId,
         },
-        async () => await FirecrawlService.scrape(targetUrl, agentModuleId, clientId, authConfig)
+        async () => await FirecrawlService.scrape(targetUrl, agentModuleId, finalClientId, authConfig)
       );
 
       // T04: Validação estrita de integridade do conteúdo extraído
       if (!firecrawlResult || !firecrawlResult.markdown || firecrawlResult.markdown.trim().length === 0) {
         throw new Error('Conteúdo extraído vazio ou inexistente. Auditoria deontológica abortada para evitar geração de laudo inconsequente.');
       }
+
+      if (!client && firecrawlResult.clientId) {
+        client = await resolveClientByIdOrUrl({
+          clientId: firecrawlResult.clientId,
+          targetUrl: effectiveTargetUrl,
+          moduleName: mod?.name,
+          includeUsers: true,
+        });
+        if (client?.id) {
+          finalClientId = client.id;
+        }
+      }
+      clientName = formatResolvedClientName({
+        client,
+        moduleName: mod?.name,
+        scrapedTitle: extractMarkdownHeadingTitle(firecrawlResult.markdown),
+        targetUrl: effectiveTargetUrl,
+      });
 
       // Telemetria forense: Registra êxito de login / acesso restrito autorizado
       if (authConfig?.hasAuth && firecrawlResult.authSuccess) {
@@ -196,14 +238,16 @@ export class AuditExecutionService {
       const newlyDiscoveredTags = combinedAuditTags.filter((t) => !rawModuleTags.includes(t));
 
       // Atualiza o módulo de agente no banco se novas tags forem detectadas no canal digital auditado
-      if (newlyDiscoveredTags.length > 0 && mod?.id) {
-        await prisma.agentModule.update({
-          where: { id: mod.id },
-          data: {
-            tags: combinedAuditTags,
-            rulesCount: combinedAuditTags.length * 4,
-          },
-        }).catch(() => {});
+      if (newlyDiscoveredTags.length > 0 && mod?.id && prisma.agentModule?.update) {
+        await Promise.resolve(
+          prisma.agentModule.update({
+            where: { id: mod.id },
+            data: {
+              tags: combinedAuditTags,
+              rulesCount: combinedAuditTags.length * 4,
+            },
+          })
+        ).catch(() => {});
       }
 
       await prisma.systemLog.create({
@@ -390,6 +434,7 @@ export class AuditExecutionService {
             await tx.auditReport.update({
               where: { id: auditReportId },
               data: {
+                ...(finalClientId ? { clientId: finalClientId } : {}),
                 status: 'COMPLETED',
                 verdict: effectiveVerdict,
                 score: recon.score,

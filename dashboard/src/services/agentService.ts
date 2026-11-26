@@ -6,6 +6,7 @@ import { auditQueue } from '../config/redis.js';
 import { encryptSecret, maskSecret, decryptSecret } from '../shared/encryption.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { injectTraceCarrier } from '../shared/tracing.js';
+import { resolveClientByIdOrUrl } from '../shared/clientIdentityResolver.js';
 import { Role } from '@prisma/client';
 
 export class AgentService {
@@ -112,6 +113,13 @@ export class AgentService {
       ? data.tags.map((t: string) => t.trim().toLowerCase()).filter(Boolean)
       : ['cfm'];
 
+    const requestedClientId = data.clientId && data.clientId.trim().length > 0 ? data.clientId.trim() : null;
+    const matchedClientOnCreate = await resolveClientByIdOrUrl({
+      clientId: requestedClientId,
+      targetUrl: data.targetUrl?.trim() || null,
+      moduleName: data.name?.trim() || null,
+    });
+
     const agent = await AgentRepository.create({
       name: data.name.trim(),
       code: resolvedCode,
@@ -123,7 +131,7 @@ export class AgentService {
       rulesCount: tagsNormalized.length * 4,
       targetNorms: [],
       systemPrompt: data.systemPrompt ? data.systemPrompt.trim() : (data.description ? data.description.trim() : null),
-      clientId: data.clientId && data.clientId.trim().length > 0 ? data.clientId.trim() : null,
+      clientId: matchedClientOnCreate?.id || requestedClientId,
       regulatoryFramework: data.regulatoryFramework || 'Conformidade Deontológica em Saúde',
       cronSchedule: data.cronSchedule || '0 */6 * * *',
       hasAuth: data.hasAuth ?? false,
@@ -161,6 +169,27 @@ export class AgentService {
       }
     }
 
+    const nextName = typeof data.name === 'string' ? data.name.trim() : existing.name;
+    const nextUrl = typeof data.targetUrl === 'string' ? data.targetUrl.trim() : existing.targetUrl;
+    if (data.clientId !== undefined || data.name !== undefined || data.targetUrl !== undefined) {
+      const candidateClientId =
+        data.clientId !== undefined
+          ? data.clientId && String(data.clientId).trim().length > 0
+            ? String(data.clientId).trim()
+            : null
+          : existing.clientId;
+      const reconciledClient = await resolveClientByIdOrUrl({
+        clientId: candidateClientId,
+        targetUrl: nextUrl,
+        moduleName: nextName,
+      });
+      if (reconciledClient?.id) {
+        updateData.clientId = reconciledClient.id;
+      } else if (data.clientId !== undefined) {
+        updateData.clientId = candidateClientId;
+      }
+    }
+
     const updated = await AgentRepository.update(id, updateData);
     await AuditSchedulerService.syncAgentSchedule(updated.id);
 
@@ -183,7 +212,7 @@ export class AgentService {
   /**
    * Disparo imediato de auditoria para o módulo (Cockpit)
    */
-  public static async runAudit(agentModuleId: string, options: { targetUrl?: string | null; extractionMode?: any; authUsername?: string | null; authPassword?: string | null }, currentUser?: { role: string; clientId?: string | null }) {
+  public static async runAudit(agentModuleId: string, options: { clientId?: string | null; targetUrl?: string | null; extractionMode?: any; authUsername?: string | null; authPassword?: string | null }, currentUser?: { role: string; clientId?: string | null }) {
     const mod = await AgentRepository.findById(agentModuleId);
     if (!mod) {
       throw new Error('AGENT_NOT_FOUND');
@@ -210,8 +239,17 @@ export class AgentService {
 
       effectiveTargetUrl = (client.websiteUrl || '').trim();
     } else {
-      effectiveClientId = mod.clientId || undefined;
       effectiveTargetUrl = (options.targetUrl || mod.targetUrl || '').trim();
+      const explicitClientId =
+        options.clientId && options.clientId.trim().length > 0
+          ? options.clientId.trim()
+          : mod.clientId || null;
+      const reconciledClient = await resolveClientByIdOrUrl({
+        clientId: explicitClientId,
+        targetUrl: effectiveTargetUrl,
+        moduleName: mod.name,
+      });
+      effectiveClientId = reconciledClient?.id || explicitClientId || undefined;
     }
 
     if (!effectiveTargetUrl) {
