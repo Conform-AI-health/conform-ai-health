@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import { createRateLimitStore } from '../shared/distributedResilience.js';
 import { AuthController } from '../controllers/authController.js';
 import { authenticate, authorize, Role } from '../middlewares/auth.js';
 
@@ -13,6 +14,7 @@ const accountIpKeyGenerator = (req: any): string => {
 
 // T29: Contadores independentes por endpoint crítico de autenticação
 const loginLimiter = rateLimit({
+  store: createRateLimitStore('login'),
   windowMs: 15 * 60 * 1000,
   max: 10,
   keyGenerator: accountIpKeyGenerator,
@@ -25,6 +27,7 @@ const loginLimiter = rateLimit({
 });
 
 const registerLimiter = rateLimit({
+  store: createRateLimitStore('register'),
   windowMs: 15 * 60 * 1000,
   max: 10,
   keyGenerator: accountIpKeyGenerator,
@@ -37,6 +40,7 @@ const registerLimiter = rateLimit({
 });
 
 const forgotPasswordLimiter = rateLimit({
+  store: createRateLimitStore('forgotPassword'),
   windowMs: 15 * 60 * 1000,
   max: 5,
   keyGenerator: accountIpKeyGenerator,
@@ -49,6 +53,7 @@ const forgotPasswordLimiter = rateLimit({
 });
 
 const resetPasswordLimiter = rateLimit({
+  store: createRateLimitStore('resetPassword'),
   windowMs: 15 * 60 * 1000,
   max: 5,
   keyGenerator: (req) => req.ip || 'unknown',
@@ -61,6 +66,7 @@ const resetPasswordLimiter = rateLimit({
 });
 
 const refreshLimiter = rateLimit({
+  store: createRateLimitStore('refresh'),
   windowMs: 15 * 60 * 1000,
   max: 60,
   keyGenerator: (req) => req.ip || 'unknown',

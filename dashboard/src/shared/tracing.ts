@@ -12,7 +12,7 @@ import {
 } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { Resource } from '@opentelemetry/resources';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import {
@@ -72,7 +72,7 @@ export function initTracing(serviceName?: string): NodeTracerProvider {
   const effectiveService = serviceName || env.SERVICE_NAME || 'conformia-api';
   const environmentName = env.APP_ENV || env.NODE_ENV;
 
-  const resource = new Resource({
+  const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]: effectiveService,
     [ATTR_SERVICE_VERSION]: env.APP_VERSION,
     [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: environmentName,

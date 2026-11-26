@@ -245,10 +245,6 @@ export class AIProviderFactory {
         }
         if (customBaseUrl && customBaseUrl.trim()) {
           activeModel.baseUrl = customBaseUrl.trim();
-          await prisma.aiModelConfig.update({
-            where: { id: targetModelId },
-            data: { baseUrl: activeModel.baseUrl },
-          }).catch(() => null);
         } else if (activeModel.provider === 'ollama') {
           activeModel.baseUrl = resolveOllamaBaseUrl(activeModel.baseUrl);
         }

@@ -1,4 +1,6 @@
 import { prisma } from '../config/prisma.js';
+import { env } from '../config/env.js';
+import { SemanticEmbeddingService } from '../services/semanticEmbeddingService.js';
 
 /**
  * Script de Criação de Índices no MongoDB para `norms` e `norms_chunk`
@@ -49,29 +51,34 @@ export async function ensureNormsMongoIndexes(): Promise<void> {
   });
 
   console.log('✅ [MongoDB Indexes] Índices B-Tree e Text criados com sucesso em norms e norms_chunk.');
-  console.log('ℹ️ [Atlas Vector Search] Definição recomendada para o índice vetorial em norms_chunk.embedding:');
-  console.log(
-    JSON.stringify(
-      {
-        name: 'vector_index_norms_chunk',
-        type: 'vectorSearch',
-        definition: {
-          fields: [
-            {
-              type: 'vector',
-              path: 'embedding',
-              numDimensions: 768,
-              similarity: 'cosine',
-            },
-            { type: 'filter', path: 'tags' },
-            { type: 'filter', path: 'normId' },
-          ],
+
+  // 3. Índice Atlas Vector Search (usado quando RAG_VECTOR_SEARCH_ENABLED=true)
+  const vectorIndex = {
+    name: env.RAG_VECTOR_INDEX_NAME,
+    type: 'vectorSearch',
+    definition: {
+      fields: [
+        {
+          type: 'vector',
+          path: 'embedding',
+          numDimensions: SemanticEmbeddingService.vectorDimensions,
+          similarity: 'cosine',
         },
-      },
-      null,
-      2
-    )
-  );
+        { type: 'filter', path: 'tags' },
+        { type: 'filter', path: 'normId' },
+      ],
+    },
+  };
+  try {
+    await prisma.$runCommandRaw({ createSearchIndexes: 'norms_chunk', indexes: [vectorIndex] });
+    console.log(`✅ [Atlas Vector Search] Índice ${vectorIndex.name} solicitado em norms_chunk.embedding.`);
+  } catch (err: any) {
+    console.warn(
+      `ℹ️ [Atlas Vector Search] Não foi possível criar o índice automaticamente (${err.message}). ` +
+        'Crie manualmente no Atlas com a definição abaixo:'
+    );
+    console.log(JSON.stringify(vectorIndex, null, 2));
+  }
 }
 
 if (process.argv[1]?.includes('createNormsIndexes')) {

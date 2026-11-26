@@ -10,6 +10,9 @@ vi.mock('../config/prisma.js', () => ({
   prisma: {
     $runCommandRaw: vi.fn().mockResolvedValue({ ok: 1 }),
     systemLog: { create: vi.fn().mockResolvedValue({}) },
+    aiModelConfig: {
+      findUnique: vi.fn().mockResolvedValue({ baseUrl: 'https://ollama.cliente-exemplo.com.br' }),
+    },
     agentModule: {
       count: vi.fn().mockResolvedValue(2),
       findMany: vi.fn().mockResolvedValue([
@@ -95,6 +98,35 @@ describe('Testes de Paginação e Endpoint de Teste do Modelo de IA', () => {
       expect(res.body.status).toBeDefined();
       expect(res.body.latencyMs).toBeDefined();
       expect(res.body.response).toBeDefined();
+    });
+
+    it('deve rejeitar baseUrl fora da allowlist (SSRF) com HTTP 400', async () => {
+      const res = await request(app)
+        .post('/api/v1/system/test-ai')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ prompt: 'Ping', baseUrl: 'http://169.254.169.254/latest/meta-data' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('AI_TEST_BASE_URL_NOT_ALLOWED');
+    });
+
+    it('deve aceitar baseUrl pública quando é a já salva no modelo testado', async () => {
+      const res = await request(app)
+        .post('/api/v1/system/test-ai')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ modelConfigId: 'model-1', baseUrl: 'https://ollama.cliente-exemplo.com.br' });
+
+      expect(res.status).not.toBe(400);
+    });
+
+    it('deve rejeitar baseUrl em formato não-string com HTTP 400', async () => {
+      const res = await request(app)
+        .post('/api/v1/system/test-ai')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ baseUrl: ['http://localhost:11434'] });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('AI_TEST_INVALID_PAYLOAD');
     });
   });
 });

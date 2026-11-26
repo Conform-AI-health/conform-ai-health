@@ -159,7 +159,7 @@ export class AuthService {
     }
 
     const tokenHash = this.hashToken(rawToken);
-    if (user.refreshToken !== tokenHash && user.refreshToken !== rawToken) {
+    if (user.refreshToken !== tokenHash) {
       // Violação de segurança: token reutilizado ou inválido. Revoga tudo.
       await UserRepository.update(user.id, { refreshToken: null });
       throw new Error('REFRESH_TOKEN_REUSE_DETECTED');
@@ -194,10 +194,7 @@ export class AuthService {
   public static async resetPassword(tokenRaw: string, newPassword: string) {
     const tokenHash = this.hashToken(tokenRaw);
     const user = await UserRepository.findFirst({
-      OR: [
-        { resetPasswordToken: tokenHash },
-        { resetPasswordToken: tokenRaw },
-      ],
+      resetPasswordToken: tokenHash,
       resetPasswordExpires: { gt: new Date() },
     });
 

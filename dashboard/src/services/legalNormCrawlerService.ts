@@ -2352,9 +2352,9 @@ export class LegalNormCrawlerService {
             }),
           },
         }).catch(() => {});
-        // Persiste progresso periódico no Redis a cada ciclo para acompanhamento em tempo real
-        await this.saveJobState(jobState);
       }
+      // Persiste progresso no Redis a cada arquivo (sucesso ou erro) para acompanhamento em tempo real
+      await this.saveJobState(jobState);
     }
 
     // Links que ficaram na fila quando o limite de páginas do job foi atingido: registrados para auditoria
