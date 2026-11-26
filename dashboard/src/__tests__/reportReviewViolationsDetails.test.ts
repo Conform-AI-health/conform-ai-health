@@ -11,6 +11,12 @@ vi.mock('../config/prisma.js', () => ({
       findUnique: vi.fn(),
       count: vi.fn(),
     },
+    client: {
+      findMany: vi.fn(),
+    },
+    violation: {
+      findMany: vi.fn(),
+    },
   },
 }));
 
@@ -188,5 +194,81 @@ describe('⚖️ Revisão de Laudos — Detalhamento de Apontamentos & Violaçõ
     expect(exported.content).toContain('**Situação de Vigência:** VIGENTE');
     expect(exported.content).not.toContain('Sem descrição.');
     expect(exported.content).not.toContain('Sem recomendação.');
+  });
+
+  it('ReportController.getPendingReview deve aplicar filtros combinados (search, clientId, verdict, severity, datas) e limitar limit <= 100', async () => {
+    (prisma.client.findMany as any).mockResolvedValue([{ id: 'cli-search-1' }]);
+    (prisma.violation.findMany as any).mockResolvedValue([{ auditReportId: 'rep-crit-1' }, { auditReportId: 'rep-crit-2' }]);
+    (prisma.auditReport.count as any).mockResolvedValue(1);
+    (prisma.auditReport.findMany as any).mockResolvedValue([]);
+
+    const req: any = {
+      query: {
+        page: '1',
+        limit: '500',
+        search: 'Cardio',
+        clientId: 'cli-search-1',
+        verdict: 'NAO_CONFORME',
+        severity: 'CRITICA',
+        startDate: '2026-11-01',
+        endDate: '2026-11-26',
+      },
+    };
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+
+    await ReportController.getPendingReview(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json.mock.calls[0][0].pagination.limit).toBe(100);
+
+    const findManyArg = (prisma.auditReport.findMany as any).mock.calls[0][0];
+    expect(findManyArg.take).toBe(100);
+    expect(findManyArg.where.AND).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ clientId: 'cli-search-1' }),
+        expect.objectContaining({ verdict: 'NAO_CONFORME' }),
+        expect.objectContaining({ id: { in: ['rep-crit-1', 'rep-crit-2'] } }),
+        expect.objectContaining({
+          createdAt: {
+            gte: new Date('2026-11-01T00:00:00.000Z'),
+            lte: new Date('2026-11-26T23:59:59.999Z'),
+          },
+        }),
+      ])
+    );
+  });
+
+  it('ReportController.getProcessedReview deve aplicar filtros de reviewStatus e emailStatus e rejeitar enum inválido via Zod', async () => {
+    (prisma.auditReport.count as any).mockResolvedValue(0);
+    (prisma.auditReport.findMany as any).mockResolvedValue([]);
+
+    const reqOk: any = {
+      query: {
+        reviewStatus: 'APPROVED',
+        emailStatus: 'PENDING',
+      },
+    };
+    const resOk: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const nextOk = vi.fn();
+
+    await ReportController.getProcessedReview(reqOk, resOk, nextOk);
+
+    expect(resOk.status).toHaveBeenCalledWith(200);
+    const findManyArg = (prisma.auditReport.findMany as any).mock.calls[0][0];
+    expect(findManyArg.where.AND).toEqual(
+      expect.arrayContaining([
+        { reviewStatus: 'APPROVED' },
+        { emailSent: false, reviewStatus: { not: 'REJECTED' } },
+      ])
+    );
+
+    const reqBad: any = { query: { verdict: 'VEREDITO_INEXISTENTE' } };
+    const resBad: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const nextBad = vi.fn();
+
+    await ReportController.getProcessedReview(reqBad, resBad, nextBad);
+    expect(nextBad).toHaveBeenCalledTimes(1);
   });
 });

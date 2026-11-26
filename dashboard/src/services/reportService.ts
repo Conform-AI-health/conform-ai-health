@@ -2,7 +2,18 @@ import { ReportRepository } from '../repositories/reportRepository.js';
 import { SystemLogRepository } from '../repositories/systemLogRepository.js';
 import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
 import { EmailService } from './emailService.js';
-import { Role, Verdict, AuditStatus } from '@prisma/client';
+import { Role, Verdict, AuditStatus, RuleSeverity } from '@prisma/client';
+
+export interface ReviewListFilters {
+  search?: string;
+  clientId?: string;
+  verdict?: Verdict;
+  severity?: RuleSeverity;
+  reviewStatus?: 'APPROVED' | 'REJECTED' | 'CHANGES_REQUESTED';
+  emailStatus?: 'SENT' | 'PENDING';
+  startDate?: string;
+  endDate?: string;
+}
 
 export class ReportService {
   /**
@@ -467,10 +478,96 @@ export class ReportService {
   }
 
   /**
-   * Laudos pendentes de revisão humana
+   * Constrói cláusulas adicionais de filtro para a tela de Revisão & Homologação de Laudos
    */
-  public static async getPendingReview(page: number = 1, limit: number = 20) {
-    const where: any = {
+  private static async buildReviewFilterClauses(
+    filters: ReviewListFilters | undefined,
+    mode: 'pending' | 'processed'
+  ): Promise<any[]> {
+    if (!filters) return [];
+
+    const clauses: any[] = [];
+
+    if (filters.clientId) {
+      clauses.push({ clientId: filters.clientId });
+    }
+
+    if (filters.verdict) {
+      clauses.push({ verdict: filters.verdict });
+    }
+
+    if (filters.severity) {
+      const matchingReportIds = await ReportRepository.findReportIdsByViolationSeverity(filters.severity);
+      clauses.push({ id: { in: matchingReportIds } });
+    }
+
+    if (mode === 'processed' && filters.reviewStatus) {
+      clauses.push({ reviewStatus: filters.reviewStatus });
+    }
+
+    if (mode === 'processed' && filters.emailStatus) {
+      if (filters.emailStatus === 'SENT') {
+        clauses.push({ emailSent: true });
+      } else if (filters.emailStatus === 'PENDING') {
+        clauses.push({
+          emailSent: false,
+          reviewStatus: { not: 'REJECTED' },
+        });
+      }
+    }
+
+    const dateRange: Record<string, Date> = {};
+    if (filters.startDate) {
+      const startStr = /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate)
+        ? `${filters.startDate}T00:00:00.000Z`
+        : filters.startDate;
+      const start = new Date(startStr);
+      if (!Number.isNaN(start.getTime())) {
+        dateRange.gte = start;
+      }
+    }
+    if (filters.endDate) {
+      const endStr = /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate)
+        ? `${filters.endDate}T23:59:59.999Z`
+        : filters.endDate;
+      const end = new Date(endStr);
+      if (!Number.isNaN(end.getTime())) {
+        dateRange.lte = end;
+      }
+    }
+    if (Object.keys(dateRange).length > 0) {
+      if (mode === 'processed') {
+        clauses.push({
+          OR: [{ reviewedAt: dateRange }, { reviewedAt: null, createdAt: dateRange }],
+        });
+      } else {
+        clauses.push({ createdAt: dateRange });
+      }
+    }
+
+    if (filters.search && filters.search.trim().length > 0) {
+      const term = filters.search.trim();
+      const matchingClientIds = await ReportRepository.findClientIdsBySearch(term);
+      const searchOr: any[] = [
+        { targetUrl: { contains: term, mode: 'insensitive' } },
+        { summary: { contains: term, mode: 'insensitive' } },
+        { reviewedBy: { contains: term, mode: 'insensitive' } },
+        { auditorNotes: { contains: term, mode: 'insensitive' } },
+      ];
+      if (matchingClientIds.length > 0) {
+        searchOr.push({ clientId: { in: matchingClientIds } });
+      }
+      clauses.push({ OR: searchOr });
+    }
+
+    return clauses;
+  }
+
+  /**
+   * Laudos pendentes de revisão humana (com suporte a filtros dinâmicos)
+   */
+  public static async getPendingReview(page: number = 1, limit: number = 20, filters?: ReviewListFilters) {
+    const baseWhere: any = {
       status: AuditStatus.COMPLETED,
       reviewStatus: { notIn: ['APPROVED', 'REJECTED'] },
       OR: [
@@ -478,6 +575,9 @@ export class ReportService {
         { auditorReviewed: false },
       ],
     };
+
+    const extraClauses = await this.buildReviewFilterClauses(filters, 'pending');
+    const where = extraClauses.length > 0 ? { AND: [baseWhere, ...extraClauses] } : baseWhere;
 
     const [total, reports] = await Promise.all([
       ReportRepository.count(where),
@@ -495,15 +595,18 @@ export class ReportService {
   }
 
   /**
-   * Laudos já revisados por auditores
+   * Laudos já revisados por auditores (com suporte a filtros dinâmicos)
    */
-  public static async getProcessedReview(page: number = 1, limit: number = 20) {
-    const where: any = {
+  public static async getProcessedReview(page: number = 1, limit: number = 20, filters?: ReviewListFilters) {
+    const baseWhere: any = {
       OR: [
         { auditorReviewed: true },
         { reviewStatus: { in: ['APPROVED', 'REJECTED', 'CHANGES_REQUESTED'] } },
       ],
     };
+
+    const extraClauses = await this.buildReviewFilterClauses(filters, 'processed');
+    const where = extraClauses.length > 0 ? { AND: [baseWhere, ...extraClauses] } : baseWhere;
 
     const [total, reports] = await Promise.all([
       ReportRepository.count(where),

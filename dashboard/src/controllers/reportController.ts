@@ -1,7 +1,37 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { Verdict, AuditStatus } from '@prisma/client';
+import { Verdict, AuditStatus, RuleSeverity } from '@prisma/client';
 import { ReportService } from '../services/reportService.js';
+
+const emptyToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? undefined : val), schema);
+
+const reviewListQuerySchema = z.object({
+  page: z.preprocess(
+    (val) => {
+      if (val === undefined || val === '') return 1;
+      const parsed = parseInt(String(val), 10);
+      return Number.isNaN(parsed) ? 1 : Math.max(1, parsed);
+    },
+    z.number().int().min(1).default(1)
+  ),
+  limit: z.preprocess(
+    (val) => {
+      if (val === undefined || val === '') return 20;
+      const parsed = parseInt(String(val), 10);
+      return Number.isNaN(parsed) ? 20 : Math.min(100, Math.max(1, parsed));
+    },
+    z.number().int().min(1).max(100).default(20)
+  ),
+  search: emptyToUndefined(z.string().trim().max(200).optional()),
+  clientId: emptyToUndefined(z.string().trim().max(64).optional()),
+  verdict: emptyToUndefined(z.nativeEnum(Verdict).optional()),
+  severity: emptyToUndefined(z.nativeEnum(RuleSeverity).optional()),
+  reviewStatus: emptyToUndefined(z.enum(['APPROVED', 'REJECTED', 'CHANGES_REQUESTED']).optional()),
+  emailStatus: emptyToUndefined(z.enum(['SENT', 'PENDING']).optional()),
+  startDate: emptyToUndefined(z.string().trim().max(32).optional()),
+  endDate: emptyToUndefined(z.string().trim().max(32).optional()),
+});
 
 export class ReportController {
   /**
@@ -227,14 +257,18 @@ export class ReportController {
   }
 
   /**
-   * Listagem de laudos que requerem revisão humana pendente
+   * Listagem de laudos que requerem revisão humana pendente (com filtros validados via Zod)
    */
   public static async getPendingReview(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const page = Math.max(1, parseInt(req.query.page as string) || 1);
-      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const { page, limit, ...rawFilters } = reviewListQuerySchema.parse(req.query || {});
+      const hasAnyFilter = Object.values(rawFilters).some((v) => v !== undefined);
 
-      const { reports, total } = await ReportService.getPendingReview(page, limit);
+      const { reports, total } = await ReportService.getPendingReview(
+        page,
+        limit,
+        hasAnyFilter ? rawFilters : undefined
+      );
 
       res.status(200).json({
         data: reports.map((r: any) => ({
@@ -255,14 +289,18 @@ export class ReportController {
   }
 
   /**
-   * Listagem de laudos já revisados por auditores
+   * Listagem de laudos já revisados por auditores (com filtros validados via Zod)
    */
   public static async getProcessedReview(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const page = Math.max(1, parseInt(req.query.page as string) || 1);
-      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const { page, limit, ...rawFilters } = reviewListQuerySchema.parse(req.query || {});
+      const hasAnyFilter = Object.values(rawFilters).some((v) => v !== undefined);
 
-      const { reports, total } = await ReportService.getProcessedReview(page, limit);
+      const { reports, total } = await ReportService.getProcessedReview(
+        page,
+        limit,
+        hasAnyFilter ? rawFilters : undefined
+      );
 
       res.status(200).json({
         data: reports.map((r: any) => ({
