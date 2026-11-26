@@ -3,7 +3,10 @@
 # Conform.AI Health - Script Idempotente de Deploy e Rollback por Versão Imutável
 # - Proíbe deploys usando tag :latest ou :dev
 # - Registra .current_version, .previous_version e trilha auditável releases.log
-# - Executa rollback automático se o healthcheck da API ou do Worker falhar
+# - MODO DISCO REDUZIDO (homologação, EBS de 8 GB): para a stack e remove as
+#   imagens locais antes do pull, pois não há espaço para manter a versão atual
+#   e a nova ao mesmo tempo. Há indisponibilidade durante o pull e o
+#   auto-rollback fica desativado (o rollback manual baixa a versão do GHCR).
 # ==============================================================================
 set -euo pipefail
 
@@ -112,7 +115,21 @@ echo "📌 Versão anterior: ${PREVIOUS_VERSION:-nenhuma}"
 echo "👤 Ator: ${DEPLOY_ACTOR} | Motivo: ${DEPLOY_REASON}"
 echo "=========================================================="
 
-echo "🧹 [0/4] Liberando espaço em disco antes do pull (imagens em uso são preservadas)..."
+remove_local_app_images() {
+  local ref
+  for ref in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^ghcr.io/conform-ai-health/' || true); do
+    echo "🗑️ Removendo imagem local: $ref"
+    docker image rm "$ref" || true
+  done
+}
+
+echo "🧹 [0/4] Liberando espaço em disco antes do pull (modo disco reduzido)..."
+if [ -n "$PREVIOUS_VERSION" ]; then
+  echo "⏸️ Parando a stack atual (${PREVIOUS_VERSION}) para liberar a imagem em uso; volumes são preservados..."
+  run_compose "$PREVIOUS_VERSION" stop dashboard-api audit-worker dashboard-web || true
+  run_compose "$PREVIOUS_VERSION" rm -f dashboard-api audit-worker dashboard-web || true
+fi
+remove_local_app_images
 run_disk_cleanup
 # O host só executa imagens prontas do GHCR; cache de build local não é necessário.
 docker builder prune -af || true
@@ -143,19 +160,23 @@ echo "❌ Healthcheck falhou para a versão ${TARGET_VERSION}. Últimos logs:"
 run_compose "$TARGET_VERSION" logs --tail=60 dashboard-api audit-worker || true
 log_release_event "FAILED" "$TARGET_VERSION"
 
-if [ -n "$PREVIOUS_VERSION" ] && [ "$PREVIOUS_VERSION" != "$TARGET_VERSION" ]; then
-  echo "⏪ [AUTO-ROLLBACK] Revertendo imediatamente para a versão estável anterior: ${PREVIOUS_VERSION}..."
-  run_compose "$PREVIOUS_VERSION" up -d --remove-orphans
-  if verify_health "$PREVIOUS_VERSION"; then
-    echo "$PREVIOUS_VERSION" > "$CURRENT_FILE"
-    log_release_event "AUTO_ROLLBACK_SUCCESS" "$PREVIOUS_VERSION"
-    echo "✅ Auto-rollback para ${PREVIOUS_VERSION} concluído com sistema saudável."
-  else
-    log_release_event "AUTO_ROLLBACK_FAILED" "$PREVIOUS_VERSION"
-    echo "🚨 Falha crítica também no auto-rollback para ${PREVIOUS_VERSION}!"
-  fi
-else
-  echo "⚠️ Nenhuma versão anterior distinta disponível para rollback automático."
-fi
+# AUTO-ROLLBACK DESATIVADO: o disco da EC2 de homologação não comporta manter a
+# versão anterior. Para reativar (com EBS >= 20 GB), remova o bloco [0/4] de parada
+# e remoção de imagens e descomente o trecho abaixo.
+# if [ -n "$PREVIOUS_VERSION" ] && [ "$PREVIOUS_VERSION" != "$TARGET_VERSION" ]; then
+#   echo "⏪ [AUTO-ROLLBACK] Revertendo imediatamente para a versão estável anterior: ${PREVIOUS_VERSION}..."
+#   run_compose "$PREVIOUS_VERSION" up -d --remove-orphans
+#   if verify_health "$PREVIOUS_VERSION"; then
+#     echo "$PREVIOUS_VERSION" > "$CURRENT_FILE"
+#     log_release_event "AUTO_ROLLBACK_SUCCESS" "$PREVIOUS_VERSION"
+#     echo "✅ Auto-rollback para ${PREVIOUS_VERSION} concluído com sistema saudável."
+#   else
+#     log_release_event "AUTO_ROLLBACK_FAILED" "$PREVIOUS_VERSION"
+#     echo "🚨 Falha crítica também no auto-rollback para ${PREVIOUS_VERSION}!"
+#   fi
+# else
+#   echo "⚠️ Nenhuma versão anterior distinta disponível para rollback automático."
+# fi
+echo "⚠️ Auto-rollback desativado em homologação. Use o workflow 'ConformIA Manual Version Rollback' (target_version=previous)."
 
 exit 1
