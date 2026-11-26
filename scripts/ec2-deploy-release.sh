@@ -65,6 +65,19 @@ run_compose() {
   APP_VERSION="$ver" COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME" docker compose $COMPOSE_FILES "$@"
 }
 
+run_disk_cleanup() {
+  local script=""
+  if [ -f "${DEPLOY_DIR}/scripts/ec2-disk-cleanup.sh" ]; then
+    script="${DEPLOY_DIR}/scripts/ec2-disk-cleanup.sh"
+  elif [ -f "${DEPLOY_DIR}/ec2-disk-cleanup.sh" ]; then
+    script="${DEPLOY_DIR}/ec2-disk-cleanup.sh"
+  fi
+  if [ -n "$script" ]; then
+    chmod +x "$script"
+    DEPLOY_DIR="$DEPLOY_DIR" KEEP_RELEASES=3 "$script" || true
+  fi
+}
+
 verify_health() {
   local expected_ver="$1"
   local i=1
@@ -99,6 +112,12 @@ echo "📌 Versão anterior: ${PREVIOUS_VERSION:-nenhuma}"
 echo "👤 Ator: ${DEPLOY_ACTOR} | Motivo: ${DEPLOY_REASON}"
 echo "=========================================================="
 
+echo "🧹 [0/4] Liberando espaço em disco antes do pull (imagens em uso são preservadas)..."
+run_disk_cleanup
+# O host só executa imagens prontas do GHCR; cache de build local não é necessário.
+docker builder prune -af || true
+df -h / || true
+
 echo "📥 [1/4] Baixando imagens imutáveis (${TARGET_VERSION})..."
 run_compose "$TARGET_VERSION" pull
 
@@ -114,13 +133,7 @@ if verify_health "$TARGET_VERSION"; then
   log_release_event "SUCCESS" "$TARGET_VERSION"
 
   echo "🧹 [4/4] Executando limpeza segura com retenção de releases..."
-  if [ -f "${DEPLOY_DIR}/scripts/ec2-disk-cleanup.sh" ]; then
-    chmod +x "${DEPLOY_DIR}/scripts/ec2-disk-cleanup.sh"
-    DEPLOY_DIR="$DEPLOY_DIR" KEEP_RELEASES=3 "${DEPLOY_DIR}/scripts/ec2-disk-cleanup.sh" || true
-  elif [ -f "${DEPLOY_DIR}/ec2-disk-cleanup.sh" ]; then
-    chmod +x "${DEPLOY_DIR}/ec2-disk-cleanup.sh"
-    DEPLOY_DIR="$DEPLOY_DIR" KEEP_RELEASES=3 "${DEPLOY_DIR}/ec2-disk-cleanup.sh" || true
-  fi
+  run_disk_cleanup
 
   echo "✅ ${ACTION} da versão ${TARGET_VERSION} concluído com sucesso!"
   exit 0
