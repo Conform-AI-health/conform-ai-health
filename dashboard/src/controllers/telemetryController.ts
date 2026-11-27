@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/prisma.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { formatResolvedClientName, matchClientFromList } from '../shared/clientIdentityResolver.js';
+import { TelemetryStreamService } from '../services/telemetryStreamService.js';
 
 export class TelemetryController {
   // Preços de referência para Gemini 2.0 / 3.5 Flash por milhão de tokens
@@ -11,6 +12,22 @@ export class TelemetryController {
 
   public static async getTelemetry(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      const payload = await TelemetryStreamService.getSnapshot(() => TelemetryController.buildTelemetryPayload());
+      res.status(200).json(payload);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Stream SSE: envia a telemetria quando o worker/API publica eventos no Redis (sem polling do navegador).
+   */
+  public static streamTelemetry(req: Request, res: Response): void {
+    TelemetryStreamService.handleStream(req, res, () => TelemetryController.buildTelemetryPayload());
+  }
+
+  public static async buildTelemetryPayload(): Promise<Record<string, unknown>> {
+    {
       // 1. Relatórios de Auditoria Concluídos
       const reports = await prisma.auditReport.findMany({
         where: { status: 'COMPLETED' },
@@ -200,7 +217,7 @@ export class TelemetryController {
         .slice(0, 10);
 
       // 10. Resposta consolidada
-      res.status(200).json({
+      return {
         metrics: {
           totalPromptTokens,
           totalCompletionTokens,
@@ -321,9 +338,7 @@ export class TelemetryController {
               : log.details,
           };
         }),
-      });
-    } catch (error) {
-      next(error);
+      };
     }
   }
 }

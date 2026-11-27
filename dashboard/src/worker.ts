@@ -4,6 +4,7 @@ import { Worker, Job } from 'bullmq';
 import { SpanKind } from '@opentelemetry/api';
 import { getRedisConnection } from './config/redis.js';
 import { initDistributedResilience } from './shared/distributedResilience.js';
+import { publishTelemetryEvent } from './shared/telemetryEvents.js';
 import { prisma } from './config/prisma.js';
 import { env } from './config/env.js';
 import { AuditExecutionService } from './services/auditExecutionService.js';
@@ -356,7 +357,10 @@ export function startAuditWorker() {
     }
   );
 
+  worker.on('completed', () => publishTelemetryEvent('AUDIT_COMPLETED'));
+
   worker.on('failed', (job, err) => {
+    publishTelemetryEvent('AUDIT_FAILED');
     workerLog.error(
       { jobId: job?.id, auditReportId: job?.data?.auditReportId, err },
       `Job falhou definitivamente: ${err.message}`
@@ -411,7 +415,10 @@ export function startAuditWorker() {
     }
   );
 
+  crawlWorker.on('completed', () => publishTelemetryEvent('CRAWL_FINISHED'));
+
   crawlWorker.on('failed', async (job, err) => {
+    publishTelemetryEvent('CRAWL_FINISHED');
     workerLog.error(
       { bullJobId: job?.id, crawlJobId: job?.data?.jobId, err },
       `NormCrawlWorker falhou definitivamente: ${err.message}`

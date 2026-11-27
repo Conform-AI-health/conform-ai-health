@@ -9,6 +9,7 @@ const router = Router();
 router.get('/status', SystemController.status);
 router.get('/worker-status', authenticate, authorize(Role.ADMIN, Role.AUDITOR), SystemController.workerStatus);
 router.get('/telemetry', authenticate, authorize(Role.ADMIN, Role.AUDITOR), TelemetryController.getTelemetry);
+router.get('/telemetry/stream', authenticate, authorize(Role.ADMIN, Role.AUDITOR), TelemetryController.streamTelemetry);
 router.get('/link-trace', authenticate, authorize(Role.ADMIN, Role.AUDITOR), LinkTraceController.list);
 
 router.post('/toggle-provider', authenticate, authorize(Role.ADMIN), SystemController.toggleProvider);
