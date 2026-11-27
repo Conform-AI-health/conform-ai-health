@@ -25,10 +25,13 @@ import {
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import { safeHttpUrl } from '../utils/urlSecurity';
 
 export const ClientsPage: React.FC = () => {
   const toast = useToast();
+  const { user } = useAuth();
+  const isVisitor = user?.role === 'VIEWER';
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -351,13 +354,15 @@ export const ClientsPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm py-2.5 px-4 rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-2 transition"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Cadastrar Nova Clínica</span>
-        </button>
+        {!isVisitor && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm py-2.5 px-4 rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-2 transition"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Cadastrar Nova Clínica</span>
+          </button>
+        )}
       </div>
 
       {/* Filtros e Busca */}
@@ -396,7 +401,7 @@ export const ClientsPage: React.FC = () => {
             <thead className="text-[11px] uppercase tracking-wider font-bold text-slate-400 border-b border-slate-800 bg-slate-900/60">
               <tr>
                 <th className="py-3.5 px-4">Clínica & Nome Fantasia</th>
-                <th className="py-3.5 px-4">Acesso ao Portal</th>
+                {!isVisitor && <th className="py-3.5 px-4">Acesso ao Portal</th>}
                 <th className="py-3.5 px-4">Responsável Técnico</th>
                 <th className="py-3.5 px-4">Especialidade / RQE</th>
                 <th className="py-3.5 px-4">Website Oficial</th>
@@ -407,13 +412,13 @@ export const ClientsPage: React.FC = () => {
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-xs text-slate-400">
+                  <td colSpan={isVisitor ? 6 : 7} className="py-8 text-center text-xs text-slate-400">
                     Carregando lista de estabelecimentos regulados...
                   </td>
                 </tr>
               ) : clients.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-xs text-slate-500">
+                  <td colSpan={isVisitor ? 6 : 7} className="py-8 text-center text-xs text-slate-500">
                     Nenhuma clínica encontrada para os filtros selecionados.
                   </td>
                 </tr>
@@ -424,7 +429,7 @@ export const ClientsPage: React.FC = () => {
                       <span className="font-semibold text-white block">{c.name}</span>
                       <span className="text-xs text-slate-400">{c.tradeName || c.email || 'Sem nome fantasia'}</span>
                     </td>
-                    <td className="py-3.5 px-4 text-xs">
+                    {!isVisitor && <td className="py-3.5 px-4 text-xs">
                       {c.users && c.users.length > 0 ? (
                         <div className="space-y-0.5">
                           <span className="inline-flex items-center gap-1 font-mono text-[11px] text-cyan-300 font-semibold bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-800/60">
@@ -440,7 +445,7 @@ export const ClientsPage: React.FC = () => {
                       ) : (
                         <span className="text-slate-500 italic text-[11px]">Sem acesso configurado</span>
                       )}
-                    </td>
+                    </td>}
                     <td className="py-3.5 px-4 text-xs">
                       {c.crmResponsavel ? (
                         <span className="font-mono text-emerald-400 font-semibold block">
@@ -497,14 +502,16 @@ export const ClientsPage: React.FC = () => {
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => handleOpenExtract(c)}
-                          className="bg-cyan-950/70 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-800/60 px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition shadow-sm"
-                          title="Buscar informações da clínica (Scraping, Datalink, MCP)"
-                        >
-                          <Globe className="h-3.5 w-3.5" />
-                          <span>Buscar Informações</span>
-                        </button>
+                        {!isVisitor && (
+                          <button
+                            onClick={() => handleOpenExtract(c)}
+                            className="bg-cyan-950/70 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-800/60 px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition shadow-sm"
+                            title="Buscar informações da clínica (Scraping, Datalink, MCP)"
+                          >
+                            <Globe className="h-3.5 w-3.5" />
+                            <span>Buscar Informações</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => handleViewExtractedDocs(c)}
                           className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-1.5 rounded-lg text-xs transition border border-slate-700/60"
@@ -512,27 +519,31 @@ export const ClientsPage: React.FC = () => {
                         >
                           <FileText className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleOpenAccessModal(c)}
-                          className="bg-slate-800 hover:bg-cyan-600 text-cyan-400 hover:text-white p-1.5 rounded-lg text-xs transition border border-cyan-800/40"
-                          title="Gerenciar credenciais de acesso / Redefinir senha da clínica"
-                        >
-                          <KeyRound className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleOpenEdit(c)}
-                          className="bg-slate-800 hover:bg-cyan-600 text-slate-300 hover:text-white p-1.5 rounded-lg text-xs transition"
-                          title="Editar dados da clínica"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleOpenDelete(c)}
-                          className="bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white p-1.5 rounded-lg text-xs transition"
-                          title="Excluir clínica"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {!isVisitor && (
+                          <>
+                            <button
+                              onClick={() => handleOpenAccessModal(c)}
+                              className="bg-slate-800 hover:bg-cyan-600 text-cyan-400 hover:text-white p-1.5 rounded-lg text-xs transition border border-cyan-800/40"
+                              title="Gerenciar credenciais de acesso / Redefinir senha da clínica"
+                            >
+                              <KeyRound className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleOpenEdit(c)}
+                              className="bg-slate-800 hover:bg-cyan-600 text-slate-300 hover:text-white p-1.5 rounded-lg text-xs transition"
+                              title="Editar dados da clínica"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleOpenDelete(c)}
+                              className="bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white p-1.5 rounded-lg text-xs transition"
+                              title="Excluir clínica"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

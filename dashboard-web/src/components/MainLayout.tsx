@@ -27,6 +27,7 @@ export const MainLayout: React.FC = () => {
   const navigate = useNavigate();
 
   const isClient = user?.role === 'CLIENT';
+  const isVisitor = user?.role === 'VIEWER';
 
   const handleLogout = () => {
     logout();
@@ -37,6 +38,15 @@ export const MainLayout: React.FC = () => {
     ? [
         { label: 'Portal da Clínica', path: '/portal', icon: Shield },
         { label: 'Laudos Técnicos', path: '/reports', icon: FileCheck2 },
+      ]
+    : isVisitor
+    ? [
+        { label: 'Cockpit do Auditor', path: '/cockpit', icon: LayoutDashboard },
+        { label: 'Acervo de Normas', path: '/scraping', icon: Globe },
+        { label: 'Clínicas & Clientes', path: '/clients', icon: Building2 },
+        { label: 'Módulos de Auditoria', path: '/agents', icon: Bot },
+        { label: 'Laudos Deontológicos', path: '/reports', icon: FileCheck2 },
+        { label: 'Logs & Telemetria IA', path: '/logs', icon: Terminal },
       ]
     : [
         { label: 'Cockpit do Auditor', path: '/cockpit', icon: LayoutDashboard },
@@ -81,7 +91,7 @@ export const MainLayout: React.FC = () => {
           {/* Navigation Links */}
           <nav className="p-3.5 space-y-1.5">
             <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400/90 flex items-center justify-between">
-              <span>{isClient ? 'Ambiente da Clínica' : 'Governança & Auditoria'}</span>
+              <span>{isClient ? 'Ambiente da Clínica' : isVisitor ? 'Demonstração' : 'Governança & Auditoria'}</span>
               <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-cyan-400 border border-slate-700/60">v1.2</span>
             </p>
             {navItems.map((item) => {
@@ -130,10 +140,12 @@ export const MainLayout: React.FC = () => {
                         ? 'bg-purple-500/20 text-purple-400'
                         : user?.role === 'AUDITOR'
                         ? 'bg-blue-500/20 text-blue-400'
+                        : user?.role === 'VIEWER'
+                        ? 'bg-amber-500/20 text-amber-300'
                         : 'bg-emerald-500/20 text-emerald-400'
                     }`}
                   >
-                    {user?.role}
+                    {user?.role === 'VIEWER' ? 'VISITANTE' : user?.role}
                   </span>
                   <span className="text-[10px] text-slate-400 truncate">
                     {user?.client ? user.client.tradeName || user.client.name : user?.email}
@@ -185,7 +197,7 @@ export const MainLayout: React.FC = () => {
             <div role="status" className="mb-6 flex items-start gap-3 rounded-xl border border-amber-700/50 bg-amber-950/30 px-4 py-3 text-amber-100">
               <Clock3 className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" />
               <div className="text-xs">
-                <p className="font-semibold">Conta temporária de demonstração — perfil ADMIN</p>
+                <p className="font-semibold">Conta temporária de demonstração — perfil VISITANTE</p>
                 <p className="mt-1 text-amber-200/80">
                   Esta sessão expira automaticamente
                   {user.demoExpiresAt

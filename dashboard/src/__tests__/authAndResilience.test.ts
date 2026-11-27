@@ -3,6 +3,7 @@ import { CircuitBreaker } from '../shared/circuitBreaker.js';
 import { Bulkhead } from '../shared/bulkhead.js';
 import { EmailService } from '../services/emailService.js';
 import { AuthController } from '../controllers/authController.js';
+import { authorize, Role } from '../middlewares/auth.js';
 import { prisma } from '../config/prisma.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -167,12 +168,24 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
     vi.clearAllMocks();
   });
 
-  it('cria uma sessão ADMIN de demonstração que expira em no máximo uma hora', async () => {
+  it('nega ao perfil VISITANTE o acesso a operações restritas a ADMIN e AUDITOR', () => {
+    const req: any = { user: { role: Role.VIEWER } };
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+
+    authorize(Role.ADMIN, Role.AUDITOR)(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'FORBIDDEN', userRole: 'VIEWER' }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('cria uma sessão VISITANTE de demonstração que expira em no máximo uma hora', async () => {
     const demoUser = {
       id: 'demo-user-001',
       name: 'Jurado HackBrasil #AB12CD34',
       email: 'jurado.hackbrasil.ab12cd34@demo.conform-ai.invalid',
-      role: 'ADMIN',
+      role: 'VIEWER',
       clientId: null,
       isDemo: true,
       demoExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
@@ -194,11 +207,11 @@ describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha'
 
     expect(res.status).toHaveBeenCalledWith(201);
     const responseData = res.json.mock.calls[0][0];
-    expect(responseData.user).toEqual(expect.objectContaining({ role: 'ADMIN', isDemo: true }));
+    expect(responseData.user).toEqual(expect.objectContaining({ role: 'VIEWER', isDemo: true }));
     expect(responseData.message).toContain('temporária');
     const decodedToken: any = jwt.decode(responseData.token);
     expect(decodedToken.isDemo).toBe(true);
-    expect(decodedToken.role).toBe('ADMIN');
+    expect(decodedToken.role).toBe('VIEWER');
     expect(decodedToken.exp - decodedToken.iat).toBeLessThanOrEqual(60 * 60);
   });
 

@@ -25,6 +25,7 @@ import {
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import { safeHttpUrl } from '../utils/urlSecurity';
 
 const REGULATORY_TAG_OPTIONS = [
@@ -67,6 +68,8 @@ const REGULATORY_TAG_OPTIONS = [
 
 export const ScrapingPage: React.FC = () => {
   const toast = useToast();
+  const { user } = useAuth();
+  const isVisitor = user?.role === 'VIEWER';
   // Aba ativa de visualização do repositório
   const [activeTab, setActiveTab] = useState<'norms' | 'scraped_pages'>('norms');
 
@@ -434,6 +437,12 @@ export const ScrapingPage: React.FC = () => {
         </button>
       </div>
 
+      {isVisitor && (
+        <div role="status" className="rounded-xl border border-amber-700/50 bg-amber-950/30 px-4 py-3 text-xs text-amber-100">
+          Perfil VISITANTE: acesso somente para consulta. Varreduras, ingestão e geração de tags estão indisponíveis.
+        </div>
+      )}
+
       {/* Cards de Métricas Consolidadas das Coleções do MongoDB */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
@@ -499,15 +508,15 @@ export const ScrapingPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Box de Ingestão e Varredura */}
-      <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+      {!isVisitor && (
+        <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
         <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-6">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-emerald-400" />
             <h2 className="text-base font-bold text-white">
               Nova Ingestão de Norma ou Varredura Web
             </h2>
-          </div>
+            </div>
 
           <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1">
             <button
@@ -606,6 +615,7 @@ export const ScrapingPage: React.FC = () => {
           </div>
         </form>
       </div>
+      )}
 
       {/* Navegador do Repositório de Normas com Abas */}
       <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-lg">
@@ -912,25 +922,27 @@ export const ScrapingPage: React.FC = () => {
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-right space-x-2 whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleGenerateTags(norm.normId)}
-                          disabled={generatingTagsNormId === norm.normId}
-                          className="p-1.5 bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-400 border border-cyan-800/40 rounded-lg transition inline-flex items-center gap-1.5 text-[11px] font-semibold disabled:opacity-50"
-                          title="Gerar e persistir tags temáticas via Modelo de IA Ativo (--ollama --clean --apply)"
-                        >
-                          {generatingTagsNormId === norm.normId ? (
-                            <>
-                              <RefreshCw className="h-3 w-3 animate-spin text-cyan-400" />
-                              <span>Gerando Tags...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="h-3 w-3 text-cyan-400" />
-                              <span>Gerar Tags IA</span>
-                            </>
-                          )}
-                        </button>
+                        {!isVisitor && (
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateTags(norm.normId)}
+                            disabled={generatingTagsNormId === norm.normId}
+                            className="p-1.5 bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-400 border border-cyan-800/40 rounded-lg transition inline-flex items-center gap-1.5 text-[11px] font-semibold disabled:opacity-50"
+                            title="Gerar e persistir tags temáticas via Modelo de IA Ativo (--ollama --clean --apply)"
+                          >
+                            {generatingTagsNormId === norm.normId ? (
+                              <>
+                                <RefreshCw className="h-3 w-3 animate-spin text-cyan-400" />
+                                <span>Gerando Tags...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="h-3 w-3 text-cyan-400" />
+                                <span>Gerar Tags IA</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleOpenNormDetails(norm.normId)}
@@ -1055,13 +1067,15 @@ export const ScrapingPage: React.FC = () => {
                           <Play className="h-3 w-3 fill-blue-400" />
                           <span>Agentes Compatíveis</span>
                         </button>
-                        <button
-                          onClick={() => handleDeletePage(p.id)}
-                          className="p-1.5 text-slate-600 hover:text-red-400 rounded-lg transition"
-                          title="Excluir da base"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {!isVisitor && (
+                          <button
+                            onClick={() => handleDeletePage(p.id)}
+                            className="p-1.5 text-slate-600 hover:text-red-400 rounded-lg transition"
+                            title="Excluir da base"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -1103,25 +1117,27 @@ export const ScrapingPage: React.FC = () => {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleGenerateTags(selectedNormModal.normId)}
-                  disabled={generatingTagsNormId === selectedNormModal.normId}
-                  className="px-3 py-1.5 bg-cyan-950/70 hover:bg-cyan-900 text-cyan-300 border border-cyan-800/60 rounded-xl transition inline-flex items-center gap-1.5 text-xs font-semibold disabled:opacity-50"
-                  title="Gerar e persistir tags temáticas via IA (--ollama --clean --apply)"
-                >
-                  {generatingTagsNormId === selectedNormModal.normId ? (
-                    <>
-                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-cyan-400" />
-                      <span>Gerando Tags...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-                      <span>Gerar Tags IA</span>
-                    </>
-                  )}
-                </button>
+                {!isVisitor && (
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateTags(selectedNormModal.normId)}
+                    disabled={generatingTagsNormId === selectedNormModal.normId}
+                    className="px-3 py-1.5 bg-cyan-950/70 hover:bg-cyan-900 text-cyan-300 border border-cyan-800/60 rounded-xl transition inline-flex items-center gap-1.5 text-xs font-semibold disabled:opacity-50"
+                    title="Gerar e persistir tags temáticas via IA (--ollama --clean --apply)"
+                  >
+                    {generatingTagsNormId === selectedNormModal.normId ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+                        <span>Gerando Tags...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+                        <span>Gerar Tags IA</span>
+                      </>
+                    )}
+                  </button>
+                )}
                 <button
                   onClick={() => setSelectedNormModal(null)}
                   className="p-1.5 text-slate-400 hover:text-white rounded-lg"

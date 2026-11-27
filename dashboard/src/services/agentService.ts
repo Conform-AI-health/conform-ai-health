@@ -13,7 +13,7 @@ export class AgentService {
   /**
    * Sanitização de visualização do módulo (mascaramento de senhas e ocultação de prompt para CLIENT)
    */
-  public static sanitizeModule(m: any, isClient: boolean = false) {
+  public static sanitizeModule(m: any, isClient: boolean = false, isVisitor: boolean = false) {
     const item = {
       ...m,
       code: m.code || `agent-${m.id.slice(-6)}`,
@@ -21,6 +21,10 @@ export class AgentService {
     };
     if (isClient) {
       delete (item as any).systemPrompt;
+    }
+    if (isVisitor) {
+      delete item.authUsername;
+      delete item.authPassword;
     }
     return item;
   }
@@ -35,6 +39,7 @@ export class AgentService {
     currentUser?: { role: string; clientId?: string | null };
   }) {
     const isClient = params.currentUser?.role === Role.CLIENT;
+    const isVisitor = params.currentUser?.role === Role.VIEWER;
     const where: any = isClient
       ? {
           OR: [
@@ -58,7 +63,7 @@ export class AgentService {
       ]);
 
       return {
-        data: modules.map((m) => this.sanitizeModule(m, isClient)),
+        data: modules.map((m) => this.sanitizeModule(m, isClient, isVisitor)),
         pagination: {
           total,
           page,
@@ -74,7 +79,7 @@ export class AgentService {
     });
 
     return {
-      data: modules.map((m) => this.sanitizeModule(m, isClient)),
+      data: modules.map((m) => this.sanitizeModule(m, isClient, isVisitor)),
     };
   }
 
@@ -88,11 +93,12 @@ export class AgentService {
     }
 
     const isClient = currentUser?.role === Role.CLIENT;
+    const isVisitor = currentUser?.role === Role.VIEWER;
     if (isClient && mod.clientId && mod.clientId !== currentUser?.clientId) {
       throw new Error('TENANT_FORBIDDEN');
     }
 
-    return this.sanitizeModule(mod, isClient);
+    return this.sanitizeModule(mod, isClient, isVisitor);
   }
 
   /**
@@ -221,7 +227,10 @@ export class AgentService {
     let effectiveClientId: string | undefined;
     let effectiveTargetUrl: string;
 
-    if (currentUser?.role === Role.CLIENT) {
+    if (currentUser?.role === Role.VIEWER) {
+      effectiveTargetUrl = (mod.targetUrl || '').trim();
+      effectiveClientId = mod.clientId || undefined;
+    } else if (currentUser?.role === Role.CLIENT) {
       if (!currentUser.clientId) {
         throw new Error('TENANT_FORBIDDEN');
       }
@@ -261,7 +270,9 @@ export class AgentService {
       throw new Error(`SSRF_VIOLATION: ${safeCheck.reason}`);
     }
 
-    const extractionMode = options.extractionMode || mod.extractionMode || 'CHEERIO';
+    const extractionMode = currentUser?.role === Role.VIEWER
+      ? mod.extractionMode || 'CHEERIO'
+      : options.extractionMode || mod.extractionMode || 'CHEERIO';
 
     const report = await ReportRepository.create({
       client: effectiveClientId ? { connect: { id: effectiveClientId } } : undefined,

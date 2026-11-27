@@ -4,12 +4,12 @@ import { authenticate, authorize, denyDemoAccount, Role } from '../middlewares/a
 
 const router = Router();
 
-// Todas as rotas de modelos de IA requerem autenticação (ADMIN e AUDITOR para operação)
+// Todas as rotas de modelos de IA requerem autenticação
 router.use(authenticate);
 
-// Leitura e testes de conectividade liberados para Administradores e Auditores
-router.get('/', authorize(Role.ADMIN, Role.AUDITOR), ModelController.list);
-router.get('/:id', authorize(Role.ADMIN, Role.AUDITOR), ModelController.getById);
+// Visitantes podem consultar a configuração pública dos modelos, sem acessar suas chaves.
+router.get('/', authorize(Role.ADMIN, Role.AUDITOR, Role.VIEWER), ModelController.list);
+router.get('/:id', authorize(Role.ADMIN, Role.AUDITOR, Role.VIEWER), ModelController.getById);
 router.post('/:id/test', authorize(Role.ADMIN, Role.AUDITOR), ModelController.test);
 
 // Criação, alteração, ativação e exclusão restritas estritamente a Administradores (T10 / SEC-P1)
