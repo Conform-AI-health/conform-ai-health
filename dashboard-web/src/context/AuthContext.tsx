@@ -15,6 +15,8 @@ export interface User {
   role: UserRole;
   clientId?: string | null;
   mustChangePassword?: boolean;
+  isDemo?: boolean;
+  demoExpiresAt?: string | null;
   client?: {
     id: string;
     name: string;

@@ -15,6 +15,8 @@ export interface TokenPayload {
   email: string;
   role: Role;
   clientId?: string | null;
+  isDemo?: boolean;
+  demoExpiresAt?: string | null;
 }
 
 declare global {
@@ -78,6 +80,22 @@ export function authorize(...allowedRoles: Role[]) {
 
     next();
   };
+}
+
+/**
+ * Bloqueia ações que criariam credenciais persistentes ou alterariam segredos
+ * quando executadas pela conta temporária de demonstração (jurados HackBrasil).
+ */
+export function denyDemoAccount(req: Request, res: Response, next: NextFunction): void {
+  if (req.user?.isDemo) {
+    res.status(403).json({
+      error:
+        'Ação indisponível na conta temporária de demonstração. Criação de usuários, acessos de clínicas e credenciais de modelos de IA ficam bloqueados.',
+      code: 'DEMO_ACCOUNT_RESTRICTED',
+    });
+    return;
+  }
+  next();
 }
 
 /**

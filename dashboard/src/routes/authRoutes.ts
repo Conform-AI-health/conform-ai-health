@@ -2,7 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createRateLimitStore } from '../shared/distributedResilience.js';
 import { AuthController } from '../controllers/authController.js';
-import { authenticate, authorize, Role } from '../middlewares/auth.js';
+import { authenticate, authorize, denyDemoAccount, Role } from '../middlewares/auth.js';
 
 // T29: Gerador de chave composto por IP + Conta (E-mail) para prevenir bloqueio em massa de redes corporativas
 // e mitigar ataques distribuídos de credential stuffing contra uma conta específica.
@@ -78,20 +78,35 @@ const refreshLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Sessão de demonstração (jurados HackBrasil): poucas contas por IP para evitar abuso do endpoint público
+const demoSessionLimiter = rateLimit({
+  store: createRateLimitStore('demoSession'),
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => req.ip || 'unknown',
+  message: {
+    error: 'Limite de contas de demonstração atingido para este endereço. Tente novamente mais tarde.',
+    code: 'DEMO_SESSION_RATE_LIMIT_EXCEEDED',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const router = Router();
 
 router.post('/register', registerLimiter, AuthController.register);
 router.post('/login', loginLimiter, AuthController.login);
+router.post('/demo-session', demoSessionLimiter, AuthController.createDemoSession);
 router.post('/refresh', refreshLimiter, AuthController.refreshToken);
 router.post('/forgot-password', forgotPasswordLimiter, AuthController.forgotPassword);
 router.post('/reset-password', resetPasswordLimiter, AuthController.resetPassword);
 router.get('/me', authenticate, AuthController.me);
-router.post('/change-password', authenticate, AuthController.changePassword);
-router.post('/first-access-password', authenticate, AuthController.firstAccessPassword);
+router.post('/change-password', authenticate, denyDemoAccount, AuthController.changePassword);
+router.post('/first-access-password', authenticate, denyDemoAccount, AuthController.firstAccessPassword);
 router.post('/logout', AuthController.logout);
 
 // Gestão de usuários administrativos / internos (SEC-01)
-router.post('/users', authenticate, authorize(Role.ADMIN), AuthController.createInternalUser);
+router.post('/users', authenticate, authorize(Role.ADMIN), denyDemoAccount, AuthController.createInternalUser);
 
 export default router;
 

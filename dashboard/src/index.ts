@@ -42,6 +42,19 @@ async function bootstrap() {
     );
   });
 
+  // Limpeza periódica das contas temporárias de demonstração (HackBrasil) já expiradas
+  if (env.NODE_ENV !== 'test') {
+    const { AuthService } = await import('./services/authService.js');
+    const demoJanitor = setInterval(() => {
+      AuthService.purgeExpiredDemoAccounts()
+        .then((count) => {
+          if (count > 0) log.info({ count }, 'Contas de demonstração expiradas removidas');
+        })
+        .catch((err) => log.error({ err }, 'Falha ao remover contas de demonstração expiradas'));
+    }, 60 * 1000);
+    demoJanitor.unref();
+  }
+
   // INF-03: Graceful Shutdown Coordenado do Servidor HTTP, Tracing e Conexões de Banco
   const shutdown = async (signal: string) => {
     log.info({ signal }, 'Sinal recebido. Encerrando servidor HTTP gracefully...');

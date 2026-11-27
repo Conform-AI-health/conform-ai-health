@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Shield, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle, Clock3, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
@@ -9,6 +9,8 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState('');
 
   // Forgot password state
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -19,6 +21,21 @@ export const LoginPage: React.FC = () => {
 
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  const handleDemoLogin = async () => {
+    setDemoError('');
+    setDemoLoading(true);
+    try {
+      const res = await api.post('/auth/demo-session');
+      const { token, user } = res.data;
+      login(token, user);
+      navigate(user.role === 'CLIENT' ? '/portal' : '/cockpit');
+    } catch (err: any) {
+      setDemoError(err.response?.data?.error || 'Não foi possível criar a conta temporária de demonstração.');
+    } finally {
+      setDemoLoading(false);
+    }
+  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,6 +185,34 @@ export const LoginPage: React.FC = () => {
               )}
             </button>
           </form>
+
+          <div className="mt-5 border-t border-slate-800 pt-5">
+            {demoError && (
+              <div role="alert" className="mb-3 p-3 bg-amber-950/40 border border-amber-800/60 rounded-xl flex items-start gap-2.5 text-amber-200 text-xs">
+                <AlertCircle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <span>{demoError}</span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={demoLoading}
+              className="w-full border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition disabled:opacity-50"
+            >
+              {demoLoading ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-200 border-t-transparent" />
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  <span>Acessar demonstração</span>
+                </>
+              )}
+            </button>
+            <p className="mt-2 text-center text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
+              <Clock3 className="h-3.5 w-3.5 text-amber-400" />
+              Conta ADMIN temporária para os jurados HackBrasil. Expira automaticamente em 1 hora.
+            </p>
+          </div>
         </div>
 
         {/* Modal Esqueci Minha Senha */}

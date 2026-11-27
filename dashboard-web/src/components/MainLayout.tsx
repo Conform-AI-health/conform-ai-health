@@ -16,6 +16,7 @@ import {
   Terminal,
   Globe,
   ClipboardCheck,
+  Clock3,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -180,6 +181,20 @@ export const MainLayout: React.FC = () => {
 
         {/* Page Content View */}
         <div className="p-8 flex-1">
+          {user?.isDemo && (
+            <div role="status" className="mb-6 flex items-start gap-3 rounded-xl border border-amber-700/50 bg-amber-950/30 px-4 py-3 text-amber-100">
+              <Clock3 className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" />
+              <div className="text-xs">
+                <p className="font-semibold">Conta temporária de demonstração — perfil ADMIN</p>
+                <p className="mt-1 text-amber-200/80">
+                  Esta sessão expira automaticamente
+                  {user.demoExpiresAt
+                    ? ` em ${new Date(user.demoExpiresAt).toLocaleString('pt-BR')}`
+                    : ' em até 1 hora'}.
+                </p>
+              </div>
+            </div>
+          )}
           <Outlet />
         </div>
       </main>

@@ -67,6 +67,10 @@ export class UserRepository {
     });
   }
 
+  public static async deleteMany(where: Prisma.UserWhereInput): Promise<Prisma.BatchPayload> {
+    return await prisma.user.deleteMany({ where });
+  }
+
   public static async delete(id: string): Promise<User> {
     return await prisma.user.delete({
       where: { id },

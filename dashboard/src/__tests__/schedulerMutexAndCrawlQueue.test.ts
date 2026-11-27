@@ -7,6 +7,7 @@ import * as redisModule from '../config/redis.js';
 describe('Resiliência Arquitetural — Scheduler Mutex e Fila de Crawl', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(prisma.client, 'findMany').mockResolvedValue([]);
   });
 
   describe('AuditSchedulerService Mutex Distribuído', () => {

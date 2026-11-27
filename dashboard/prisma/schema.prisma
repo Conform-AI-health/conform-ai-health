@@ -64,6 +64,8 @@ model User {
   refreshToken         String?
   resetPasswordToken   String?
   resetPasswordExpires DateTime?
+  isDemo               Boolean?  @default(false)
+  demoExpiresAt        DateTime?
   createdAt            DateTime? @default(now())
   updatedAt            DateTime? @updatedAt
 
