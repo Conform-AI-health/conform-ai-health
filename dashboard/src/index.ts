@@ -66,6 +66,10 @@ async function bootstrap() {
     forceExitTimeout.unref();
 
     try {
+      // Streams SSE mantêm conexões abertas; precisam ser encerrados antes do server.close
+      const { TelemetryStreamService } = await import('./services/telemetryStreamService.js');
+      TelemetryStreamService.shutdown();
+
       await new Promise<void>((resolve) => {
         server.close((err) => {
           if (err) log.warn({ err }, 'Aviso ao fechar servidor HTTP');

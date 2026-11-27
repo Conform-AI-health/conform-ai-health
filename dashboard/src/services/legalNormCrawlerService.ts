@@ -16,6 +16,7 @@ import { AIProviderFactory } from './ai/aiProviderFactory.js';
 import { FirecrawlClient } from './firecrawl/firecrawlClient.js';
 import { LinkTraceService } from '../shared/linkTrace.js';
 import { getRedisConnection } from '../config/redis.js';
+import { publishTelemetryEvent } from '../shared/telemetryEvents.js';
 import { classifyNormTopics, resolveRequestedTopics, TOPIC_LABELS, NormTopic } from '../shared/normTopics.js';
 import { isNavigationLabel } from '../shared/navigationLabels.js';
 import {
@@ -173,6 +174,7 @@ export class LegalNormCrawlerService {
     try {
       const redis = getRedisConnection();
       await redis.set(`crawl:job:${job.jobId}`, JSON.stringify(job), 'EX', 7 * 24 * 3600);
+      publishTelemetryEvent('CRAWL_PROGRESS');
     } catch {
       // Falha graciosa se Redis estiver inacessível
     }

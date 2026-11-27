@@ -24,6 +24,7 @@ import {
   ServerCrash,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { openTelemetryStream } from '../services/telemetryStream';
 import { Pagination } from '../components/Pagination';
 import { InfoTooltip } from '../components/Tooltip';
 import { METRIC_GLOSSARY } from '../utils/metricGlossary';
@@ -33,6 +34,7 @@ export const LogsTelemetryPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [livePolling, setLivePolling] = useState(true);
+  const [streamConnected, setStreamConnected] = useState(false);
   const [logFilter, setLogFilter] = useState('ALL');
   const [logSearch, setLogSearch] = useState('');
   const [selectedSourcesAudit, setSelectedSourcesAudit] = useState<{
@@ -56,11 +58,80 @@ export const LogsTelemetryPage: React.FC = () => {
     }
   };
 
+  // Live: stream SSE (push do servidor quando há eventos no Redis), com polling de 30s apenas como fallback.
+  // Pausado: polling a cada 30s. Em ambos os casos, nada roda com a aba oculta.
   useEffect(() => {
+    let stopped = false;
+    let controller: AbortController | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryDelay = 5000;
+
+    const stopPolling = () => {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+    };
+    const startPolling = () => {
+      if (!pollTimer) pollTimer = setInterval(() => fetchTelemetry(true), 30000);
+    };
+
+    const connect = () => {
+      if (stopped || document.hidden) return;
+      controller = new AbortController();
+      const current = controller;
+      openTelemetryStream((data) => {
+        setTelemetry(data);
+        setLoading(false);
+        setStreamConnected(true);
+        stopPolling();
+        retryDelay = 5000;
+      }, current.signal)
+        .catch(() => undefined)
+        .finally(() => {
+          if (stopped || current.signal.aborted) return;
+          setStreamConnected(false);
+          startPolling();
+          // Renova o token via interceptor do axios (401) antes de reconectar
+          fetchTelemetry(true);
+          retryTimer = setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 60000);
+        });
+    };
+
+    const pause = () => {
+      controller?.abort();
+      controller = null;
+      stopPolling();
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+      setStreamConnected(false);
+    };
+
+    const resume = () => {
+      if (stopped || document.hidden) return;
+      if (livePolling) {
+        connect();
+      } else {
+        fetchTelemetry(true);
+        startPolling();
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) pause();
+      else resume();
+    };
+
     fetchTelemetry();
-    const intervalTime = livePolling ? 3000 : 15000;
-    const interval = setInterval(() => fetchTelemetry(true), intervalTime);
-    return () => clearInterval(interval);
+    if (livePolling) connect();
+    else startPolling();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      stopped = true;
+      pause();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [livePolling]);
 
   const metrics = telemetry?.metrics || {
@@ -716,10 +787,14 @@ export const LogsTelemetryPage: React.FC = () => {
                   ? 'bg-emerald-950/60 border-emerald-800/80 text-emerald-300 shadow-sm'
                   : 'bg-slate-900 border-slate-700/80 text-slate-400 hover:text-white'
               }`}
-              title="Alternar atualização automática a cada 3 segundos"
+              title="Alternar atualização em tempo real (stream do servidor)"
             >
-              <span className={`w-2 h-2 rounded-full ${livePolling ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-              <span>{livePolling ? 'Live (3s)' : 'Pausado'}</span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  livePolling ? (streamConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400') : 'bg-slate-500'
+                }`}
+              />
+              <span>{livePolling ? (streamConnected ? 'Live' : 'Live (reconectando)') : 'Pausado (30s)'}</span>
             </button>
 
             <button
