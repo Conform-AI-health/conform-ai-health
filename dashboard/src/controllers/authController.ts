@@ -72,6 +72,34 @@ export class AuthController {
     return AuthService.generateTokens(user);
   }
 
+  public static async createDemoSession(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userAgentHeader = req.headers?.['user-agent'];
+      const userAgent = Array.isArray(userAgentHeader) ? userAgentHeader[0] : userAgentHeader;
+      const session = await AuthService.createDemoSession({
+        ip: req.ip || null,
+        userAgent: userAgent || null,
+      });
+
+      const maxAge = Math.max(1, Math.floor((new Date(session.expiresAt).getTime() - Date.now()) / 1000));
+      const isProd = env.NODE_ENV === 'production';
+      if (typeof res.setHeader === 'function') {
+        res.setHeader('Set-Cookie', [
+          `conformia_refresh_token=${session.refreshToken}; HttpOnly; Path=/api/v1/auth; SameSite=Strict; Max-Age=${maxAge}${isProd ? '; Secure' : ''}`,
+        ]);
+      }
+
+      res.status(201).json({
+        message: `Conta temporária de demonstração criada. Ela expira em ${session.ttlMinutes} minutos e será removida automaticamente.`,
+        token: session.token,
+        expiresAt: session.expiresAt,
+        user: session.user,
+      });
+    } catch (error: unknown) {
+      next(error);
+    }
+  }
+
   public static async register(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (req.body?.role && req.body.role !== 'CLIENT') {
@@ -225,7 +253,8 @@ export class AuthController {
         error.message === 'INVALID_OR_EXPIRED_REFRESH_TOKEN' ||
         error.message === 'INVALID_REFRESH_TOKEN_PAYLOAD' ||
         error.message === 'REFRESH_TOKEN_REVOKED' ||
-        error.message === 'REFRESH_TOKEN_REUSE_DETECTED'
+        error.message === 'REFRESH_TOKEN_REUSE_DETECTED' ||
+        error.message === 'DEMO_SESSION_EXPIRED'
       ) {
         res.status(401).json({
           error: 'Sessão expirada ou inválida. Por favor, faça login novamente.',
@@ -287,6 +316,13 @@ export class AuthController {
     } catch (error: any) {
       if (error.message === 'USER_NOT_FOUND') {
         res.status(404).json({ error: 'Usuário não encontrado.' });
+        return;
+      }
+      if (error.message === 'DEMO_SESSION_EXPIRED') {
+        res.status(401).json({
+          error: 'A conta temporária de demonstração expirou.',
+          code: 'DEMO_SESSION_EXPIRED',
+        });
         return;
       }
       next(error);

@@ -17,7 +17,9 @@ vi.mock('../config/prisma.js', () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
       create: vi.fn(),
+      deleteMany: vi.fn(),
     },
+    systemLog: { create: vi.fn() },
     client: {
       findUnique: vi.fn(),
     },
@@ -32,7 +34,9 @@ vi.mock('../lib/prisma.js', () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
       create: vi.fn(),
+      deleteMany: vi.fn(),
     },
+    systemLog: { create: vi.fn() },
     client: {
       findUnique: vi.fn(),
     },
@@ -161,6 +165,41 @@ describe('Resiliência Arquitetural: Circuit Breaker & Bulkhead', () => {
 describe('Autenticação Avançada: Refresh Token (1h) & Recuperação de Senha', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('cria uma sessão ADMIN de demonstração que expira em no máximo uma hora', async () => {
+    const demoUser = {
+      id: 'demo-user-001',
+      name: 'Jurado HackBrasil #AB12CD34',
+      email: 'jurado.hackbrasil.ab12cd34@demo.conform-ai.invalid',
+      role: 'ADMIN',
+      clientId: null,
+      isDemo: true,
+      demoExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    };
+
+    (prisma.user.deleteMany as any).mockResolvedValue({ count: 0 });
+    (prisma.user.create as any).mockResolvedValue(demoUser);
+    (prisma.user.update as any).mockResolvedValue(demoUser);
+    (prisma.systemLog.create as any).mockResolvedValue({ id: 'demo-log-001' });
+
+    const req: any = { headers: { 'user-agent': 'test-agent' }, ip: '127.0.0.1' };
+    const res: any = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+      setHeader: vi.fn(),
+    };
+
+    await AuthController.createDemoSession(req, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    const responseData = res.json.mock.calls[0][0];
+    expect(responseData.user).toEqual(expect.objectContaining({ role: 'ADMIN', isDemo: true }));
+    expect(responseData.message).toContain('temporária');
+    const decodedToken: any = jwt.decode(responseData.token);
+    expect(decodedToken.isDemo).toBe(true);
+    expect(decodedToken.role).toBe('ADMIN');
+    expect(decodedToken.exp - decodedToken.iat).toBeLessThanOrEqual(60 * 60);
   });
 
   describe('Login com Refresh Token e Expiração de 1h', () => {

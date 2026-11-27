@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { ModelController } from '../controllers/modelController.js';
-import { authenticate, authorize, Role } from '../middlewares/auth.js';
+import { authenticate, authorize, denyDemoAccount, Role } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -13,9 +13,9 @@ router.get('/:id', authorize(Role.ADMIN, Role.AUDITOR), ModelController.getById)
 router.post('/:id/test', authorize(Role.ADMIN, Role.AUDITOR), ModelController.test);
 
 // Criação, alteração, ativação e exclusão restritas estritamente a Administradores (T10 / SEC-P1)
-router.post('/', authorize(Role.ADMIN), ModelController.create);
-router.put('/:id', authorize(Role.ADMIN), ModelController.update);
+router.post('/', authorize(Role.ADMIN), denyDemoAccount, ModelController.create);
+router.put('/:id', authorize(Role.ADMIN), denyDemoAccount, ModelController.update);
 router.post('/:id/activate', authorize(Role.ADMIN), ModelController.activate);
-router.delete('/:id', authorize(Role.ADMIN), ModelController.delete);
+router.delete('/:id', authorize(Role.ADMIN), denyDemoAccount, ModelController.delete);
 
 export default router;

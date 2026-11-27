@@ -51,6 +51,7 @@ vi.mock('../services/reconciliationEngine.js', () => ({
 describe('📧 Notificações por E-mail & Registro de Falhas na Telemetria (AuditExecutionService & EmailService)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (prisma.agentModule.findFirst as any).mockResolvedValue(null);
     (prisma.$transaction as any).mockImplementation(async (callback: any) => {
       return callback(prisma);
     });

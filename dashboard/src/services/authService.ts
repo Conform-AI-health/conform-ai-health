@@ -13,25 +13,123 @@ export class AuthService {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
 
-  public static generateTokens(user: { id: string; email: string; role: Role; clientId?: string | null }) {
-    const payload = {
+  public static generateTokens(user: {
+    id: string;
+    email: string;
+    role: Role;
+    clientId?: string | null;
+    isDemo?: boolean | null;
+    demoExpiresAt?: Date | null;
+  }) {
+    const isDemo = Boolean(user.isDemo);
+    const payload: Record<string, string | null | boolean> = {
       userId: user.id,
       email: user.email,
       role: user.role,
       clientId: user.clientId || null,
     };
 
+    // Conta de demonstração: tokens nunca ultrapassam o instante de expiração da conta
+    let accessExpiresIn: any = '1h';
+    let refreshExpiresIn: any = env.JWT_REFRESH_EXPIRES_IN;
+    if (isDemo) {
+      const remainingSeconds = user.demoExpiresAt
+        ? Math.max(1, Math.floor((new Date(user.demoExpiresAt).getTime() - Date.now()) / 1000))
+        : 1;
+      accessExpiresIn = Math.min(60 * 60, remainingSeconds);
+      refreshExpiresIn = remainingSeconds;
+      payload.isDemo = true;
+      payload.demoExpiresAt = user.demoExpiresAt ? new Date(user.demoExpiresAt).toISOString() : null;
+    }
+
     const token = jwt.sign(payload, env.JWT_SECRET, {
-      expiresIn: '1h',
+      expiresIn: accessExpiresIn,
     });
 
     const refreshToken = jwt.sign(
       { userId: user.id, type: 'refresh' },
       env.JWT_REFRESH_SECRET,
-      { expiresIn: env.JWT_REFRESH_EXPIRES_IN as any }
+      { expiresIn: refreshExpiresIn }
     );
 
     return { token, refreshToken };
+  }
+
+  public static isDemoExpired(user: { isDemo?: boolean | null; demoExpiresAt?: Date | null }): boolean {
+    if (!user?.isDemo) return false;
+    return !user.demoExpiresAt || new Date(user.demoExpiresAt).getTime() <= Date.now();
+  }
+
+  /**
+   * Remove contas de demonstração expiradas.
+   */
+  public static async purgeExpiredDemoAccounts(): Promise<number> {
+    const res = await UserRepository.deleteMany({
+      isDemo: true,
+      OR: [{ demoExpiresAt: { lte: new Date() } }, { demoExpiresAt: null }],
+    });
+    return res.count;
+  }
+
+  /**
+   * Cria uma conta temporária ADMIN para demonstração aos jurados do HackBrasil.
+   * - Expira em 60 minutos; tokens limitados a esse prazo
+   * - Senha aleatória descartada (não é possível fazer login por e-mail/senha)
+   * - Removida automaticamente após a expiração
+   */
+  public static async createDemoSession(meta: { ip?: string | null; userAgent?: string | null } = {}) {
+    await this.purgeExpiredDemoAccounts();
+
+    const suffix = crypto.randomBytes(4).toString('hex');
+    const ttlMinutes = 60;
+    const demoExpiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+    const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+
+    const user = await UserRepository.create({
+      email: `jurado.hackbrasil.${suffix}@demo.conform-ai.invalid`,
+      passwordHash,
+      name: `Jurado HackBrasil #${suffix.toUpperCase()}`,
+      role: Role.ADMIN,
+      mustChangePassword: false,
+      isDemo: true,
+      demoExpiresAt,
+    });
+
+    const { token, refreshToken } = this.generateTokens({ ...user, isDemo: true, demoExpiresAt });
+    await UserRepository.update(user.id, { refreshToken: this.hashToken(refreshToken) });
+
+    await SystemLogRepository.create({
+      level: 'WARN',
+      module: 'AUTH',
+      message: `[DEMO_SESSION_CREATED] Conta temporária de demonstração (HackBrasil) criada: ${user.email} | Perfil ADMIN | Expira em ${demoExpiresAt.toISOString()}`,
+      details: JSON.stringify({
+        userId: user.id,
+        email: user.email,
+        role: Role.ADMIN,
+        demoExpiresAt: demoExpiresAt.toISOString(),
+        ttlMinutes,
+        ip: meta.ip || null,
+        userAgent: meta.userAgent ? String(meta.userAgent).slice(0, 200) : null,
+      }),
+    });
+
+    return {
+      token,
+      refreshToken,
+      expiresAt: demoExpiresAt.toISOString(),
+      ttlMinutes,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        clientId: null,
+        mustChangePassword: false,
+        isDemo: true,
+        demoExpiresAt: demoExpiresAt.toISOString(),
+        client: null,
+      },
+    };
   }
 
   public static async register(data: { name: string; email: string; password: string }) {
@@ -98,7 +196,8 @@ export class AuthService {
 
   public static async login(credentials: { email: string; password: string }) {
     const user = await UserRepository.findByEmail(credentials.email);
-    if (!user || !user.passwordHash) {
+    if (!user || !user.passwordHash || user.isDemo) {
+      // Contas de demonstração só podem ser acessadas pelo botão dedicado (sem senha conhecida)
       throw new Error('INVALID_CREDENTIALS');
     }
 
@@ -156,6 +255,10 @@ export class AuthService {
     const user = await UserRepository.findById(decoded.userId);
     if (!user || !user.refreshToken) {
       throw new Error('REFRESH_TOKEN_REVOKED');
+    }
+
+    if (this.isDemoExpired(user)) {
+      throw new Error('DEMO_SESSION_EXPIRED');
     }
 
     const tokenHash = this.hashToken(rawToken);
@@ -264,6 +367,10 @@ export class AuthService {
       throw new Error('USER_NOT_FOUND');
     }
 
+    if (this.isDemoExpired(user)) {
+      throw new Error('DEMO_SESSION_EXPIRED');
+    }
+
     let clientData: any = null;
     if (user.clientId) {
       const client = await ClientRepository.findById(user.clientId);
@@ -286,6 +393,8 @@ export class AuthService {
       role: user.role,
       clientId: user.clientId,
       mustChangePassword: user.mustChangePassword ?? false,
+      isDemo: Boolean(user.isDemo),
+      demoExpiresAt: user.demoExpiresAt ? new Date(user.demoExpiresAt).toISOString() : null,
       client: clientData,
     };
   }
