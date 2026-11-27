@@ -26,7 +26,7 @@ router.get('/:id', AgentController.getModuleById);
 router.post('/', authorize(Role.ADMIN, Role.AUDITOR), AgentController.create);
 router.put('/:id', authorize(Role.ADMIN, Role.AUDITOR), AgentController.update);
 router.delete('/:id', authorize(Role.ADMIN), AgentController.delete);
-router.post('/:id/run', runAuditLimiter, AgentController.runAudit);
+router.post('/:id/run', authorize(Role.ADMIN, Role.AUDITOR, Role.VIEWER), runAuditLimiter, AgentController.runAudit);
 
 export default router;
 

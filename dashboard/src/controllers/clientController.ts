@@ -44,7 +44,7 @@ const updateClientSchema = clientFieldsSchema.partial();
 
 export class ClientController {
   /**
-   * Listagem de clínicas com paginação e busca (ADMIN e AUDITOR)
+   * Listagem de clínicas com paginação e busca (ADMIN, AUDITOR e VISITANTE)
    */
   public static async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -54,9 +54,13 @@ export class ClientController {
       const status = req.query.status as ClientStatus;
 
       const result = await ClientService.listClients({ page, limit, search, status });
+      const clients =
+        req.user?.role === Role.VIEWER
+          ? result.clients.map((client) => ({ ...client, users: undefined }))
+          : result.clients;
 
       res.status(200).json({
-        data: result.clients,
+        data: clients,
         pagination: {
           total: result.total,
           page: result.page,

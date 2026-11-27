@@ -34,13 +34,19 @@ export const App: React.FC = () => {
             {/* Rotas Autenticadas compartilhando MainLayout */}
             <Route element={<ProtectedRoute />}>
               <Route element={<MainLayout />}>
-                {/* Cockpit do Auditor (Apenas ADMIN e AUDITOR) */}
-                <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'AUDITOR']} />}>
+                {/* Área de auditoria: visitante possui acesso somente de leitura */}
+                <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'AUDITOR', 'VIEWER']} />}>
                   <Route path="/cockpit" element={<DashboardPage />} />
                   <Route path="/scraping" element={<ScrapingPage />} />
-                  <Route path="/audit-review" element={<AuditReviewPage />} />
                   <Route path="/clients" element={<ClientsPage />} />
                   <Route path="/agents" element={<AgentsPage />} />
+                </Route>
+
+                <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'AUDITOR']} />}>
+                  <Route path="/audit-review" element={<AuditReviewPage />} />
+                </Route>
+
+                <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'AUDITOR', 'VIEWER']} />}>
                   <Route path="/logs" element={<LogsTelemetryPage />} />
                 </Route>
 

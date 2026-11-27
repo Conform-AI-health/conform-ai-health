@@ -210,7 +210,7 @@ export const LoginPage: React.FC = () => {
             </button>
             <p className="mt-2 text-center text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
               <Clock3 className="h-3.5 w-3.5 text-amber-400" />
-              Conta ADMIN temporária para os jurados HackBrasil. Expira automaticamente em 1 hora.
+              Conta VISITANTE temporária para os jurados HackBrasil. Expira automaticamente em 1 hora.
             </p>
           </div>
         </div>

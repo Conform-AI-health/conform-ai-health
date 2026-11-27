@@ -28,6 +28,7 @@ import {
 import { api } from '../services/api';
 import { Pagination } from '../components/Pagination';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import { InfoTooltip } from '../components/Tooltip';
 import { METRIC_GLOSSARY } from '../utils/metricGlossary';
 
@@ -90,6 +91,8 @@ export const AVAILABLE_SKILLS = SKILL_PERSONA_TEMPLATES.map((t) => ({
 
 export const AgentsPage: React.FC = () => {
   const toast = useToast();
+  const { user } = useAuth();
+  const isVisitor = user?.role === 'VIEWER';
   // Aba Ativa: 'agents' | 'models' | 'run'
   const [activeTab, setActiveTab] = useState<'agents' | 'models' | 'run'>('agents');
 
@@ -193,11 +196,10 @@ export const AgentsPage: React.FC = () => {
   const fetchData = async (page = currentPage, limit = pageSize) => {
     try {
       setLoading(true);
-      const [modulesResult, clientsResult, normsResult, modelsResult] = await Promise.allSettled([
+      const [modulesResult, clientsResult, normsResult] = await Promise.allSettled([
         api.get(`/agents?page=${page}&limit=${limit}`),
         api.get('/clients?limit=100'),
         api.get('/norms/catalog'),
-        api.get('/models?limit=50'),
       ]);
 
       if (modulesResult.status === 'fulfilled') {
@@ -238,13 +240,14 @@ export const AgentsPage: React.FC = () => {
         setCatalogNorms(normsResult.value.data?.norms || []);
       }
 
+      const [modelsResult] = await Promise.allSettled([api.get('/models?limit=50')]);
       if (modelsResult.status === 'fulfilled') {
         const modelsRes = modelsResult.value;
         const modelsList = Array.isArray(modelsRes.data?.data)
-          ? modelsRes.data.data
-          : Array.isArray(modelsRes.data)
-          ? modelsRes.data
-          : [];
+        ? modelsRes.data.data
+        : Array.isArray(modelsRes.data)
+        ? modelsRes.data
+        : [];
         setAiModels(modelsList);
       } else {
         console.warn('⚠️ [AgentsPage] Não foi possível carregar modelos do banco:', modelsResult.reason);
@@ -258,7 +261,7 @@ export const AgentsPage: React.FC = () => {
 
   useEffect(() => {
     fetchData(currentPage, pageSize);
-  }, [currentPage, pageSize]);
+  }, [currentPage, pageSize, isVisitor]);
 
   // Sincroniza o Cockpit com o Módulo Selecionado apenas na carga inicial se ainda não houver módulo ativo
   useEffect(() => {
@@ -441,30 +444,35 @@ export const AgentsPage: React.FC = () => {
           ? cockpitData.clientId.trim()
           : null);
 
-      // Salva qualquer alteração recente no módulo de forma transparente
-      await api.put(`/agents/${selectedModuleId}`, {
-        name: cockpitData.name?.trim() || currentMod?.name,
-        targetUrl: effectiveUrl,
-        description: cockpitData.description?.trim() || currentMod?.description,
-        systemPrompt: cockpitData.description?.trim() || currentMod?.description,
-        clientId: resolvedClientId,
-        tags: cockpitData.tags && cockpitData.tags.length > 0 ? cockpitData.tags : currentMod?.tags,
-        cronSchedule: cockpitData.cronSchedule || currentMod?.cronSchedule || '0 */6 * * *',
-        hasAuth: cockpitData.hasAuth,
-        authUsername: cockpitData.authUsername?.trim() || null,
-        authPassword: cockpitData.authPassword?.trim() || null,
-      });
+      if (!isVisitor) {
+        await api.put(`/agents/${selectedModuleId}`, {
+          name: cockpitData.name?.trim() || currentMod?.name,
+          targetUrl: effectiveUrl,
+          description: cockpitData.description?.trim() || currentMod?.description,
+          systemPrompt: cockpitData.description?.trim() || currentMod?.description,
+          clientId: resolvedClientId,
+          tags: cockpitData.tags && cockpitData.tags.length > 0 ? cockpitData.tags : currentMod?.tags,
+          cronSchedule: cockpitData.cronSchedule || currentMod?.cronSchedule || '0 */6 * * *',
+          hasAuth: cockpitData.hasAuth,
+          authUsername: cockpitData.authUsername?.trim() || null,
+          authPassword: cockpitData.authPassword?.trim() || null,
+        });
+      }
 
-      // Dispara a auditoria usando o corpo unificado de URL Alvo Oficial e Persona/Skill (sem fallback cego em clients[0])
-      await api.post(`/agents/${selectedModuleId}/run`, {
-        clientId: resolvedClientId || undefined,
-        targetUrl: effectiveUrl,
-        skill: cockpitData.description?.trim() || currentMod?.description,
-        extractionMode: 'FIRECRAWL',
-        hasAuth: cockpitData.hasAuth,
-        authUsername: cockpitData.authUsername || undefined,
-        authPassword: cockpitData.authPassword || undefined,
-      });
+      await api.post(
+        `/agents/${selectedModuleId}/run`,
+        isVisitor
+          ? {}
+          : {
+              clientId: resolvedClientId || undefined,
+              targetUrl: effectiveUrl,
+              skill: cockpitData.description?.trim() || currentMod?.description,
+              extractionMode: 'FIRECRAWL',
+              hasAuth: cockpitData.hasAuth,
+              authUsername: cockpitData.authUsername || undefined,
+              authPassword: cockpitData.authPassword || undefined,
+            }
+      );
 
       toast.success('Auditoria deontológica disparada com sucesso! Acompanhe o processamento no Cockpit ou Laudos.');
       await fetchData(currentPage, pageSize);
@@ -707,19 +715,21 @@ export const AgentsPage: React.FC = () => {
             </span>
           </div>
 
-          <button
-            onClick={() => handleOpenTestModal()}
-            disabled={testingModel}
-            className="bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/40 text-purple-200 font-semibold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-purple-950/40 flex items-center gap-2 transition disabled:opacity-50"
-            title="Testar conectividade e tempo de resposta dos modelos de IA"
-          >
-            {testingModel ? (
-              <RefreshCw className="h-4 w-4 animate-spin text-purple-300" />
-            ) : (
-              <Sparkles className="h-4 w-4 text-purple-400" />
-            )}
-            <span>{testingModel ? 'Testando...' : 'Testar Modelo de IA'}</span>
-          </button>
+          {!isVisitor && (
+            <button
+              onClick={() => handleOpenTestModal()}
+              disabled={testingModel}
+              className="bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/40 text-purple-200 font-semibold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-purple-950/40 flex items-center gap-2 transition disabled:opacity-50"
+              title="Testar conectividade e tempo de resposta dos modelos de IA"
+            >
+              {testingModel ? (
+                <RefreshCw className="h-4 w-4 animate-spin text-purple-300" />
+              ) : (
+                <Sparkles className="h-4 w-4 text-purple-400" />
+              )}
+              <span>{testingModel ? 'Testando...' : 'Testar Modelo de IA'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -749,7 +759,7 @@ export const AgentsPage: React.FC = () => {
           }`}
         >
           <Play className="h-4 w-4 fill-current" />
-          <span>Cockpit & Disparo Imediato</span>
+          <span>{isVisitor ? 'Executar Auditoria' : 'Cockpit & Disparo Imediato'}</span>
         </button>
 
         <button
@@ -761,7 +771,7 @@ export const AgentsPage: React.FC = () => {
           }`}
         >
           <Cpu className="h-4 w-4" />
-          <span>Modelos de IA & Conexões (CRUD)</span>
+          <span>{isVisitor ? 'Modelos de IA' : 'Modelos de IA & Conexões (CRUD)'}</span>
           <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-purple-950 border border-purple-800/40 text-purple-300 font-mono">
             {aiModels.length}
           </span>
@@ -777,13 +787,15 @@ export const AgentsPage: React.FC = () => {
             <p className="text-xs text-slate-400">
               Agentes especialistas configurados com regras de extração e artigos normativos vinculados.
             </p>
-            <button
-              onClick={() => setShowCreateAgentModal(true)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-2 transition"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Cadastrar Novo Agente</span>
-            </button>
+            {!isVisitor && (
+              <button
+                onClick={() => setShowCreateAgentModal(true)}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-2 transition"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Cadastrar Novo Agente</span>
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -799,20 +811,24 @@ export const AgentsPage: React.FC = () => {
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-slate-500 font-mono">v{mod.version}</span>
-                      <button
-                        onClick={() => handleSelectModuleForCockpit(mod)}
-                        className="text-slate-400 hover:text-cyan-400 p-1 rounded transition"
-                        title="Configurar e editar módulo no cockpit"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteModule(mod.id, mod.name)}
-                        className="text-slate-600 hover:text-red-400 p-1 rounded transition"
-                        title="Remover agente"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {!isVisitor && (
+                        <>
+                          <button
+                            onClick={() => handleSelectModuleForCockpit(mod)}
+                            className="text-slate-400 hover:text-cyan-400 p-1 rounded transition"
+                            title="Configurar e editar módulo no cockpit"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteModule(mod.id, mod.name)}
+                            className="text-slate-600 hover:text-red-400 p-1 rounded transition"
+                            title="Remover agente"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -866,13 +882,24 @@ export const AgentsPage: React.FC = () => {
                   <span className="text-[11px] text-slate-500">
                     Última atualização: {new Date(mod.updatedAt).toLocaleDateString('pt-BR')}
                   </span>
-                  <button
-                    onClick={() => handleSelectModuleForCockpit(mod)}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm"
-                  >
-                    <Play className="h-3.5 w-3.5 fill-white" />
-                    <span>Configurar & Auditar</span>
-                  </button>
+                  {!isVisitor && (
+                    <button
+                      onClick={() => handleSelectModuleForCockpit(mod)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm"
+                    >
+                      <Play className="h-3.5 w-3.5 fill-white" />
+                      <span>Configurar & Auditar</span>
+                    </button>
+                  )}
+                  {isVisitor && (
+                    <button
+                      onClick={() => handleSelectModuleForCockpit(mod)}
+                      className="bg-cyan-700 hover:bg-cyan-600 text-white font-semibold text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm"
+                    >
+                      <Play className="h-3.5 w-3.5 fill-white" />
+                      <span>Executar Auditoria</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -900,22 +927,30 @@ export const AgentsPage: React.FC = () => {
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <Cpu className="h-5 w-5 text-purple-400" />
-                <span>Modelos de Inteligência Artificial Persistidos no Banco</span>
+                <span>
+                  {isVisitor
+                    ? 'Modelos de Inteligência Artificial Disponíveis'
+                    : 'Modelos de Inteligência Artificial Persistidos no Banco'}
+                </span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Alterne em tempo real o motor utilizado para reconciliação deontológica sem reiniciar a aplicação.
+                {isVisitor
+                  ? 'Consulte os modelos disponíveis. As auditorias usam o modelo atualmente ativo.'
+                  : 'Alterne em tempo real o motor utilizado para reconciliação deontológica sem reiniciar a aplicação.'}
               </p>
             </div>
 
-            <div className="flex items-center gap-2.5">
-              <button
-                onClick={() => setShowCreateModelModal(true)}
-                className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-purple-950/40 flex items-center gap-2 transition"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Cadastrar Novo Modelo</span>
-              </button>
-            </div>
+            {!isVisitor && (
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={() => setShowCreateModelModal(true)}
+                  className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-purple-950/40 flex items-center gap-2 transition"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Cadastrar Novo Modelo</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Grid de Modelos Cadastrados no Banco */}
@@ -924,14 +959,18 @@ export const AgentsPage: React.FC = () => {
               <Cpu className="h-10 w-10 text-purple-400 mx-auto mb-3 opacity-60" />
               <h3 className="text-base font-bold text-white mb-1">Nenhum Modelo de IA Encontrado no Banco</h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto mb-4">
-                Cadastre um novo modelo de IA para persistir no MongoDB e alternar o motor em tempo de execução.
+                {isVisitor
+                  ? 'Nenhum modelo de IA está cadastrado para consulta.'
+                  : 'Cadastre um novo modelo de IA para persistir no MongoDB e alternar o motor em tempo de execução.'}
               </p>
-              <button
-                onClick={() => setShowCreateModelModal(true)}
-                className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs py-2 px-4 rounded-xl transition shadow-lg shadow-purple-950/40"
-              >
-                Cadastrar Primeiro Modelo
-              </button>
+              {!isVisitor && (
+                <button
+                  onClick={() => setShowCreateModelModal(true)}
+                  className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs py-2 px-4 rounded-xl transition shadow-lg shadow-purple-950/40"
+                >
+                  Cadastrar Primeiro Modelo
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -966,7 +1005,7 @@ export const AgentsPage: React.FC = () => {
                             <CheckCircle2 className="h-3 w-3" />
                             <span>Ativo em Produção</span>
                           </span>
-                        ) : (
+                        ) : !isVisitor ? (
                           <button
                             onClick={() => handleDeleteModel(model.id, model.name)}
                             className="text-slate-600 hover:text-red-400 p-1 rounded transition"
@@ -974,7 +1013,7 @@ export const AgentsPage: React.FC = () => {
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
-                        )}
+                        ) : null}
                       </div>
 
                       <h3 className="text-base font-bold text-white mb-1">{model.name}</h3>
@@ -1003,20 +1042,24 @@ export const AgentsPage: React.FC = () => {
                     </div>
 
                     <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => handleOpenTestModal(model.id)}
-                        className="text-xs text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 transition px-2.5 py-1.5 rounded-lg hover:bg-purple-950/40 border border-purple-900/30"
-                        title="Testar resposta deste modelo"
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        <span>Testar</span>
-                      </button>
+                      {!isVisitor && (
+                        <button
+                          onClick={() => handleOpenTestModal(model.id)}
+                          className="text-xs text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 transition px-2.5 py-1.5 rounded-lg hover:bg-purple-950/40 border border-purple-900/30"
+                          title="Testar resposta deste modelo"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          <span>Testar</span>
+                        </button>
+                      )}
 
                       {isCurrentActive ? (
                         <span className="text-xs text-emerald-400 font-semibold italic flex items-center gap-1">
                           <CheckCircle2 className="h-3.5 w-3.5" />
                           <span>Ativo</span>
                         </span>
+                      ) : isVisitor ? (
+                        <span className="text-xs text-slate-500 italic">Disponível</span>
                       ) : (
                         <button
                           onClick={() => handleActivateModel(model.id)}
@@ -1068,7 +1111,7 @@ export const AgentsPage: React.FC = () => {
           <form onSubmit={handleRunAuditSubmit}>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Coluna Principal: Parâmetros Canônicos & Corpo Único de Skill/Persona */}
-              <div className="lg:col-span-2 space-y-6">
+              <fieldset disabled={isVisitor} className="lg:col-span-2 space-y-6">
                 {/* Bloco 1: Seleção do Módulo & Alvo Oficial Canônico (Sem duplicidade) */}
                 <div className="bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
@@ -1502,7 +1545,7 @@ export const AgentsPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </div>
+              </fieldset>
 
               {/* Coluna Lateral: Cockpit de Ação & Prontidão */}
               <div className="space-y-5">
@@ -1577,25 +1620,26 @@ export const AgentsPage: React.FC = () => {
                         )}
                       </button>
 
-                      {/* Botão Secundário: Salvar Alterações sem Rodar */}
-                      <button
-                        type="button"
-                        onClick={handleSaveModuleConfig}
-                        disabled={savingModule || running}
-                        className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-                      >
-                        {savingModule ? (
-                          <>
-                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                            <span>Salvando Alterações...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400" />
-                            <span>Salvar Configuração do Módulo</span>
-                          </>
-                        )}
-                      </button>
+                      {!isVisitor && (
+                        <button
+                          type="button"
+                          onClick={handleSaveModuleConfig}
+                          disabled={savingModule || running}
+                          className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+                        >
+                          {savingModule ? (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              <span>Salvando Alterações...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400" />
+                              <span>Salvar Configuração do Módulo</span>
+                            </>
+                          )}
+                        </button>
+                      )}
 
                       <button
                         type="button"

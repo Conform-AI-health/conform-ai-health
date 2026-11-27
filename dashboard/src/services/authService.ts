@@ -72,7 +72,7 @@ export class AuthService {
   }
 
   /**
-   * Cria uma conta temporária ADMIN para demonstração aos jurados do HackBrasil.
+   * Cria uma conta temporária VISITANTE para demonstração aos jurados do HackBrasil.
    * - Expira em 60 minutos; tokens limitados a esse prazo
    * - Senha aleatória descartada (não é possível fazer login por e-mail/senha)
    * - Removida automaticamente após a expiração
@@ -89,7 +89,7 @@ export class AuthService {
       email: `jurado.hackbrasil.${suffix}@demo.conform-ai.invalid`,
       passwordHash,
       name: `Jurado HackBrasil #${suffix.toUpperCase()}`,
-      role: Role.ADMIN,
+      role: Role.VIEWER,
       mustChangePassword: false,
       isDemo: true,
       demoExpiresAt,
@@ -101,11 +101,11 @@ export class AuthService {
     await SystemLogRepository.create({
       level: 'WARN',
       module: 'AUTH',
-      message: `[DEMO_SESSION_CREATED] Conta temporária de demonstração (HackBrasil) criada: ${user.email} | Perfil ADMIN | Expira em ${demoExpiresAt.toISOString()}`,
+      message: `[DEMO_SESSION_CREATED] Conta temporária de demonstração (HackBrasil) criada: ${user.email} | Perfil VISITANTE | Expira em ${demoExpiresAt.toISOString()}`,
       details: JSON.stringify({
         userId: user.id,
         email: user.email,
-        role: Role.ADMIN,
+        role: Role.VIEWER,
         demoExpiresAt: demoExpiresAt.toISOString(),
         ttlMinutes,
         ip: meta.ip || null,
