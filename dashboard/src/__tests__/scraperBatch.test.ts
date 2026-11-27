@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import axios from 'axios';
+import dns from 'node:dns';
 import { ScraperService } from '../services/scraperService.js';
 
 describe('🕷️ ScraperService - Varredura em Lote e Diretórios GitHub', () => {
@@ -105,10 +106,14 @@ describe('🕷️ ScraperService - Varredura em Lote e Diretórios GitHub', () =
       </html>
     `;
 
-    const getSpy = vi.spyOn(axios, 'get').mockResolvedValueOnce({
-      data: fakeDouHtml,
-      status: 200,
-    } as any);
+    // Sem rede real: DNS público fixo, e o fetch do artigo completo de cada ato falha na hora.
+    const dnsSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      .mockResolvedValue([{ address: '170.246.252.10', family: 4 }] as any);
+    const getSpy = vi.spyOn(axios, 'get').mockImplementation(async (url: string) => {
+      if (url.includes('leiturajornal')) return { data: fakeDouHtml, status: 200 } as any;
+      throw Object.assign(new Error('rede desabilitada no teste'), { code: 'ECONNREFUSED' });
+    });
 
     const targetUrl = 'https://www.in.gov.br/leiturajornal?secao=dou1&data=29-10-2026&org=Minist%C3%A9rio%20da%20Sa%C3%BAde&ato=Resolu%C3%A7%C3%A3o#daypicker';
     const results = await ScraperService.scrapeDouLeituraJornal(targetUrl);
@@ -130,7 +135,8 @@ describe('🕷️ ScraperService - Varredura em Lote e Diretórios GitHub', () =
     expect(results[1].detectedTags).toContain('ANVISA');
 
     getSpy.mockRestore();
-  }, 30000);
+    dnsSpy.mockRestore();
+  });
 
   it('deve reconhecer URLs de arquivos PDF regulatórios oficiais', () => {
     const senadoPdfUrl = 'https://www2.senado.leg.br/bdsf/bitstream/handle/id/658231/Lei_geral_protecao_dados_pessoais_1ed.pdf';
