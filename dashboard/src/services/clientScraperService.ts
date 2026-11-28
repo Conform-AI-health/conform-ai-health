@@ -7,7 +7,7 @@ import { CircuitBreaker } from '../shared/circuitBreaker.js';
 import { Bulkhead } from '../shared/bulkhead.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
-import { decryptSecret } from '../shared/encryption.js';
+import { decryptSecret, isMaskedSecret } from '../shared/encryption.js';
 
 export interface ClientScrapeOptions {
   url: string;
@@ -86,19 +86,29 @@ export class ClientScraperService {
       throw new Error(errorMsg);
     }
 
-    // Carrega credenciais de autenticação se não vierem explicitamente mas houver moduleId
-    let authConfig = auth;
-    if (!authConfig && moduleId && process.env.NODE_ENV !== 'test') {
+    // Carrega e normaliza credenciais de autenticação (garantindo hasAuth: true e filtrando máscaras '••••••••')
+    let authConfig = auth
+      ? {
+          hasAuth: Boolean(auth.hasAuth || auth.username || auth.password),
+          username: auth.username || undefined,
+          password: auth.password && !isMaskedSecret(auth.password) ? auth.password : undefined,
+        }
+      : undefined;
+
+    if ((!authConfig || (authConfig.hasAuth && !authConfig.password)) && moduleId && process.env.NODE_ENV !== 'test') {
       try {
         const mod = await prisma.agentModule.findFirst({
           where: { OR: [{ id: moduleId }, { code: moduleId }] },
           select: { hasAuth: true, authUsername: true, authPassword: true },
         }).catch(() => null);
         if (mod && mod.hasAuth) {
+          const decryptedPwd = mod.authPassword ? decryptSecret(mod.authPassword) || undefined : undefined;
           authConfig = {
             hasAuth: true,
-            username: mod.authUsername || undefined,
-            password: mod.authPassword ? (decryptSecret(mod.authPassword) || undefined) : undefined,
+            username: authConfig?.username || mod.authUsername || undefined,
+            password:
+              authConfig?.password ||
+              (decryptedPwd && !isMaskedSecret(decryptedPwd) ? decryptedPwd : undefined),
           };
         }
       } catch (err: any) {
@@ -112,9 +122,15 @@ export class ClientScraperService {
     let lastError: string | null = null;
     let authSuccess = false;
     let loginDetected = false;
+    const hasInteractiveAuth = Boolean(authConfig?.hasAuth);
 
-    // 2. Scraping via Firecrawl API com proteção de Circuit Breaker e Bulkhead
-    if (firecrawlApiKey && firecrawlApiKey !== 'mock-key' && !firecrawlApiKey.startsWith('mock')) {
+    // 2. Scraping via Firecrawl API apenas para páginas públicas (Firecrawl API não submete formulários web/CSRF de login)
+    if (
+      !hasInteractiveAuth &&
+      firecrawlApiKey &&
+      firecrawlApiKey !== 'mock-key' &&
+      !firecrawlApiKey.startsWith('mock')
+    ) {
       try {
         console.log(`🔥 [ClientScraperService] Raspando ativo do cliente via Firecrawl API: ${url} (Autenticado: ${!!authConfig?.hasAuth})`);
         

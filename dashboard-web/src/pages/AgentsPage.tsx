@@ -376,6 +376,8 @@ export const AgentsPage: React.FC = () => {
     }
     try {
       setSavingModule(true);
+      const rawPwd = cockpitData.authPassword?.trim() || '';
+      const isMaskedPwd = rawPwd.includes('••••') || rawPwd.includes('****') || /^[•*]+$/.test(rawPwd);
       const res = await api.put(`/agents/${cockpitData.id}`, {
         name: cleanName,
         targetUrl: cleanUrl,
@@ -386,7 +388,7 @@ export const AgentsPage: React.FC = () => {
         cronSchedule: cockpitData.cronSchedule || '0 */6 * * *',
         hasAuth: cockpitData.hasAuth,
         authUsername: cockpitData.authUsername?.trim() || null,
-        authPassword: cockpitData.authPassword?.trim() || null,
+        ...(rawPwd && !isMaskedPwd ? { authPassword: rawPwd } : {}),
       });
 
       const updatedAgent = res.data?.agent;
@@ -444,6 +446,10 @@ export const AgentsPage: React.FC = () => {
           ? cockpitData.clientId.trim()
           : null);
 
+      const rawRunPwd = cockpitData.authPassword?.trim() || '';
+      const isMaskedRunPwd =
+        rawRunPwd.includes('••••') || rawRunPwd.includes('****') || /^[•*]+$/.test(rawRunPwd);
+
       if (!isVisitor) {
         await api.put(`/agents/${selectedModuleId}`, {
           name: cockpitData.name?.trim() || currentMod?.name,
@@ -455,7 +461,7 @@ export const AgentsPage: React.FC = () => {
           cronSchedule: cockpitData.cronSchedule || currentMod?.cronSchedule || '0 */6 * * *',
           hasAuth: cockpitData.hasAuth,
           authUsername: cockpitData.authUsername?.trim() || null,
-          authPassword: cockpitData.authPassword?.trim() || null,
+          ...(rawRunPwd && !isMaskedRunPwd ? { authPassword: rawRunPwd } : {}),
         });
       }
 
@@ -469,8 +475,8 @@ export const AgentsPage: React.FC = () => {
               skill: cockpitData.description?.trim() || currentMod?.description,
               extractionMode: 'FIRECRAWL',
               hasAuth: cockpitData.hasAuth,
-              authUsername: cockpitData.authUsername || undefined,
-              authPassword: cockpitData.authPassword || undefined,
+              authUsername: cockpitData.authUsername?.trim() || undefined,
+              authPassword: rawRunPwd && !isMaskedRunPwd ? rawRunPwd : undefined,
             }
       );
 

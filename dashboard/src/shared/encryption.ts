@@ -91,6 +91,17 @@ export function maskPassword(rawPassword: string | null | undefined): string | n
   return '••••••••';
 }
 
+/**
+ * Verifica se um valor de senha ou chave corresponde apenas à máscara visual ('••••••••' ou '****'),
+ * evitando que atualizações de formulário sobrescrevam o segredo real cifrado no banco.
+ */
+export function isMaskedSecret(value: string | null | undefined): boolean {
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return trimmed.includes('••••') || trimmed.includes('****') || /^[•*]+$/.test(trimmed);
+}
+
 // Aliases genéricos para blindagem de segredos e senhas de agentes (T48)
 export const encryptSecret = encryptModelApiKey;
 export const decryptSecret = decryptModelApiKey;

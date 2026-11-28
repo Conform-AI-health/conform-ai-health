@@ -3,7 +3,7 @@ import { ClientRepository } from '../repositories/clientRepository.js';
 import { ReportRepository } from '../repositories/reportRepository.js';
 import { AuditSchedulerService } from './auditSchedulerService.js';
 import { auditQueue } from '../config/redis.js';
-import { encryptSecret, maskSecret, decryptSecret } from '../shared/encryption.js';
+import { encryptSecret, maskSecret, decryptSecret, isMaskedSecret } from '../shared/encryption.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { injectTraceCarrier } from '../shared/tracing.js';
 import { resolveClientByIdOrUrl } from '../shared/clientIdentityResolver.js';
@@ -169,7 +169,7 @@ export class AgentService {
     }
 
     if (data.authPassword !== undefined) {
-      if (!data.authPassword || data.authPassword.trim().length === 0 || data.authPassword.includes('****')) {
+      if (!data.authPassword || data.authPassword.trim().length === 0 || isMaskedSecret(data.authPassword)) {
         delete updateData.authPassword;
       } else {
         updateData.authPassword = encryptSecret(data.authPassword.trim());
@@ -227,7 +227,18 @@ export class AgentService {
   /**
    * Disparo imediato de auditoria para o módulo (Cockpit)
    */
-  public static async runAudit(agentModuleId: string, options: { clientId?: string | null; targetUrl?: string | null; extractionMode?: any; authUsername?: string | null; authPassword?: string | null }, currentUser?: { role: string; clientId?: string | null }) {
+  public static async runAudit(
+    agentModuleId: string,
+    options: {
+      clientId?: string | null;
+      targetUrl?: string | null;
+      extractionMode?: any;
+      hasAuth?: boolean;
+      authUsername?: string | null;
+      authPassword?: string | null;
+    },
+    currentUser?: { role: string; clientId?: string | null }
+  ) {
     const mod = await AgentRepository.findById(agentModuleId);
     if (!mod) {
       throw new Error('AGENT_NOT_FOUND');
@@ -292,10 +303,31 @@ export class AgentService {
     });
 
     let authPayload: any = undefined;
-    if (mod.hasAuth && mod.authUsername && mod.authPassword) {
+    const isViewer = currentUser?.role === Role.VIEWER;
+    const effectiveHasAuth = isViewer ? Boolean(mod.hasAuth) : Boolean(options.hasAuth ?? mod.hasAuth);
+    if (effectiveHasAuth) {
+      const effectiveUsername =
+        (!isViewer && options.authUsername && options.authUsername.trim()) ||
+        mod.authUsername ||
+        undefined;
+      const providedPlainPassword =
+        !isViewer &&
+        options.authPassword &&
+        options.authPassword.trim().length > 0 &&
+        !isMaskedSecret(options.authPassword)
+          ? options.authPassword.trim()
+          : undefined;
+      const storedDecrypted = mod.authPassword
+        ? decryptSecret(mod.authPassword) || mod.authPassword
+        : undefined;
+      const effectivePassword =
+        providedPlainPassword ||
+        (storedDecrypted && !isMaskedSecret(storedDecrypted) ? storedDecrypted : undefined);
+
       authPayload = {
-        username: mod.authUsername,
-        password: decryptSecret(mod.authPassword) || mod.authPassword,
+        hasAuth: true,
+        username: effectiveUsername,
+        password: effectivePassword,
       };
     }
 
