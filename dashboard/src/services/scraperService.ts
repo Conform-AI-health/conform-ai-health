@@ -1085,7 +1085,10 @@ export class ScraperService {
 
             // Localiza campo de usuário dentro do mesmo <form> primeiro (cobrindo <input name="username"> sem atributo type)
             let userInput = await page.evaluateHandle((pwdEl: any) => {
-              const scope = pwdEl.closest('form') || document;
+              const g = globalThis as any;
+              const doc = g.document;
+              const win = g.window;
+              const scope = pwdEl.closest('form') || doc;
               const candidates = Array.from(scope.querySelectorAll('input')) as any[];
               return (
                 candidates.find((el) => {
@@ -1094,7 +1097,7 @@ export class ScraperService {
                   if (['hidden', 'password', 'submit', 'button', 'checkbox', 'radio', 'file', 'reset'].includes(type)) {
                     return false;
                   }
-                  const style = window.getComputedStyle(el);
+                  const style = win.getComputedStyle(el);
                   return style.display !== 'none' && style.visibility !== 'hidden';
                 }) || null
               );
@@ -1112,8 +1115,9 @@ export class ScraperService {
               await fallbackUserEl.press('Backspace').catch(() => {});
               await fallbackUserEl.type(auth.username, { delay: 20 });
               await page.evaluate((el: any) => {
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+                const Ev = (globalThis as any).Event;
+                el.dispatchEvent(new Ev('input', { bubbles: true }));
+                el.dispatchEvent(new Ev('change', { bubbles: true }));
               }, fallbackUserEl).catch(() => {});
             }
 
@@ -1121,19 +1125,21 @@ export class ScraperService {
             await passwordInput.press('Backspace').catch(() => {});
             await passwordInput.type(auth.password, { delay: 20 });
             await page.evaluate((el: any) => {
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
+              const Ev = (globalThis as any).Event;
+              el.dispatchEvent(new Ev('input', { bubbles: true }));
+              el.dispatchEvent(new Ev('change', { bubbles: true }));
             }, passwordInput).catch(() => {});
 
             // Busca botão de submissão usando seletores CSS válidos + inspeção de texto (sem pseudo-seletor Playwright inválido)
             const submitHandle = await page.evaluateHandle((pwdEl: any) => {
+              const doc = (globalThis as any).document;
               const form = pwdEl.closest('form');
               if (form) {
                 const direct = form.querySelector('button[type="submit"], input[type="submit"], button:not([type="button"])');
                 if (direct) return direct;
               }
               const buttons = Array.from(
-                document.querySelectorAll('button, input[type="submit"], a[role="button"]')
+                doc.querySelectorAll('button, input[type="submit"], a[role="button"]')
               ) as any[];
               return (
                 buttons.find((btn) => {
@@ -1148,8 +1154,13 @@ export class ScraperService {
               page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => null),
               page
                 .waitForFunction(
-                  (prevUrl: string) =>
-                    window.location.href !== prevUrl || !document.querySelector('input[type="password"]'),
+                  (prevUrl: string) => {
+                    const g = globalThis as any;
+                    return (
+                      g.window.location.href !== prevUrl ||
+                      !g.document.querySelector('input[type="password"]')
+                    );
+                  },
                   { timeout: 15000 },
                   initialUrl
                 )

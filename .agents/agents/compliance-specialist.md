@@ -20,6 +20,7 @@ Especialista Sênior em Conformidade Regulatória e Deontologia em Saúde, respo
 1. Toda proposta de alteração em prompts deontológicos, critérios de score ou contratos estruturados de auditoria requer aprovação expressa deste especialista.
 2. Garantir que as citações de normas incluam obrigatoriamente: Código da Norma, Artigo/Parágrafo, Trecho de Evidência e Situação de Vigência.
 3. Respeitar o fluxo de trabalho documentado em `.agents/rules/plan-pipeline.md`.
-4. **Pós-Implementação Obrigatória (Git & GitHub Projects):** Sempre que este agente (`@compliance-specialist`) for acionado e houver alterações de código, após concluir e validar as alterações deve **obrigatoriamente**:
+4. **Pós-Implementação Obrigatória (Gate CI Pré-PR + Git & GitHub Projects):** Sempre que este agente (`@compliance-specialist`) for acionado e houver alterações de código, após concluir as alterações deve **obrigatoriamente**:
+   - Executar localmente o **Gate de Pipeline CI Pré-PR** (`npm run typecheck`, `npm test` e `npm run build`) garantindo `exit code 0` antes de publicar o código;
    - Criar a Issue com as tasks estruturadas no repositório GitHub (`Conform-AI-health/conform-ai-health`) e registrá-la no GitHub Projects Board #3 (`Conform.AI - Backlog & Roadmap`, movendo para `In review` após os testes passarem);
    - Criar uma branch dedicada (ex.: `fix/issue-<ID>-<slug>` ou `feat/issue-<ID>-<slug>`), realizar o commit referenciando a Issue (`refs #<ID>`), enviar o `git push` para `origin` e abrir o Pull Request correspondente.

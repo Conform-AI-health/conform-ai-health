@@ -19,6 +19,10 @@ Engenheiro de QA Sênior especialista em estratégias de testes automatizados, B
 - **Tipagem & Mocks:** Vitest Hoisted Mocks, TypeScript, Zod.
 
 ## 📋 Diretrizes de Execução
-1. Nenhum commit ou PR é liberado com testes falhando ou ignorados.
-2. Cada nova regra ou endpoint deve ser acompanhado de seus respectivos cenários BDD/Gherkin.
-3. Seguir rigorosamente o fluxo do `.agents/rules/plan-pipeline.md`.
+1. Nenhum commit, push ou PR é liberado com erros de tipagem, build ou testes falhando/ignorados.
+2. **Gate Obrigatório de Pipeline CI Pré-PR:** Antes de aprovar ou publicar qualquer Pull Request, executar obrigatoriamente na raiz do repositório a mesma sequência do `.github/workflows/ci-deploy.yml` com código de saída `0`:
+   - `npm run typecheck` (`tsc --noEmit` em `dashboard` e `dashboard-web`, validando ausência de globais DOM indevidas no backend Node)
+   - `npm test` (suíte unitária e de integração em `dashboard` e `dashboard-web`)
+   - `npm run build` (build completo de produção de ambos os workspaces)
+3. Cada nova regra ou endpoint deve ser acompanhado de seus respectivos cenários BDD/Gherkin.
+4. Seguir rigorosamente o fluxo do `.agents/rules/plan-pipeline.md`.
