@@ -2,7 +2,7 @@ import dns from 'dns';
 import http from 'http';
 import net from 'net';
 import { Duplex } from 'stream';
-import { validateSafeUrl, isPrivateIp } from './security.js';
+import { validateSafeUrl, isPrivateIp, isTrustedSplitHorizonResolution } from './security.js';
 
 type ResolvedTarget = {
   address: string;
@@ -25,7 +25,13 @@ async function resolvePublicTarget(url: URL): Promise<ResolvedTarget> {
     ? [{ address: hostname, family: ipFamily }]
     : await dns.promises.lookup(hostname, { all: true, verbatim: true });
 
-  if (addresses.length === 0 || addresses.some(({ address }) => isPrivateIp(address))) {
+  if (
+    addresses.length === 0 ||
+    addresses.some(
+      ({ address }) =>
+        isPrivateIp(address) && (Boolean(ipFamily) || !isTrustedSplitHorizonResolution(hostname, address))
+    )
+  ) {
     throw new Error(`Destino privado ou não resolvido bloqueado: ${hostname}`);
   }
 
@@ -38,7 +44,7 @@ function rejectRequest(response: http.ServerResponse, status: number, message: s
 }
 
 async function proxyHttpRequest(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
-  if (!['GET', 'HEAD'].includes(request.method || '')) {
+  if (!['GET', 'HEAD', 'POST', 'OPTIONS'].includes(request.method || '')) {
     rejectRequest(response, 405, 'Method not allowed');
     return;
   }

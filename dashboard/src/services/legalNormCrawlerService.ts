@@ -11,8 +11,10 @@ import {
 import { startSafeScrapingProxy } from '../shared/safeScrapingProxy.js';
 import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 import { ScraperService } from './scraperService.js';
+import { NormsResolver } from './normsResolver.js';
 import { cosineSimilarity, SemanticEmbeddingService } from './semanticEmbeddingService.js';
 import { AIProviderFactory } from './ai/aiProviderFactory.js';
+import { AIInvocationCacheService } from './ai/aiInvocationCache.js';
 import { FirecrawlClient } from './firecrawl/firecrawlClient.js';
 import { LinkTraceService } from '../shared/linkTrace.js';
 import { getRedisConnection } from '../config/redis.js';
@@ -1677,6 +1679,8 @@ export class LegalNormCrawlerService {
           })
         : existing;
       await this.upsertScrapedPage(doc, canonicalUrl, scrapedPageTags);
+      NormsResolver.invalidateCache();
+      await AIInvocationCacheService.invalidateAll('legal_norm_indexed');
 
       // Commit individual registrado na telemetria por arquivo processado (idempotente)
       await prisma.systemLog.create({
@@ -1855,6 +1859,8 @@ export class LegalNormCrawlerService {
       }
 
       await this.upsertScrapedPage(doc, canonicalUrl, scrapedPageTags);
+      NormsResolver.invalidateCache();
+      await AIInvocationCacheService.invalidateAll('legal_norm_indexed');
 
       if (embeddingPending) {
         await prisma.systemLog.create({

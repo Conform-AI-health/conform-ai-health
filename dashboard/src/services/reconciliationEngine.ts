@@ -9,6 +9,7 @@ import { Bulkhead } from '../shared/bulkhead.js';
 import { AIGuardrails } from '../shared/aiGuardrails.js';
 import { AIStructuredContractAdapter, StructuredAuditContract } from '../shared/aiStructuredContract.js';
 import { AIProviderFactory } from './ai/aiProviderFactory.js';
+import { AIInvocationCacheService } from './ai/aiInvocationCache.js';
 import { HeuristicProvider } from './ai/heuristicProvider.js';
 import { createLogger } from '../shared/logger.js';
 import { withSpan } from '../shared/tracing.js';
@@ -62,6 +63,15 @@ export class ReconciliationEngine {
 
   public static invalidateModelCache(): void {
     AIProviderFactory.invalidateModelCache();
+    void AIInvocationCacheService.invalidateAll('model_cache_invalidated');
+  }
+
+  public static async invalidateInvocationCacheByAgent(agentIdOrCode: string, reason = 'agent_updated'): Promise<number> {
+    return await AIInvocationCacheService.invalidateByAgent(agentIdOrCode, reason);
+  }
+
+  public static async invalidateAllInvocationCache(reason = 'global_invalidation'): Promise<number> {
+    return await AIInvocationCacheService.invalidateAll(reason);
   }
 
   public static async getActiveModelConfig() {
@@ -91,12 +101,15 @@ export class ReconciliationEngine {
   public static async resolveAgentContext(
     agentModuleId?: string,
     queryText?: string,
-    extraTags?: string[]
+    extraTags?: string[],
+    preloadedAgent?: any
   ): Promise<AgentContext> {
-    if (agentModuleId) {
-      const agent = await prisma.agentModule.findFirst({
-        where: { OR: [{ id: agentModuleId }, { code: agentModuleId }] },
-      });
+    if (agentModuleId || preloadedAgent) {
+      const agent =
+        preloadedAgent ||
+        (await prisma.agentModule.findFirst({
+          where: { OR: [{ id: agentModuleId }, { code: agentModuleId }] },
+        }));
       if (!agent) {
         throw new Error(`Módulo de auditoria "${agentModuleId}" não encontrado.`);
       }
@@ -203,11 +216,18 @@ Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da audit
     return context.systemPrompt;
   }
 
-  public static async reconcile(
+  public static async reconcileWithCacheMeta(
     scrape: ScrapeResult,
     agentModuleId?: string,
     resolvedContext?: AgentContext
-  ): Promise<ReconciliationOutput> {
+  ): Promise<{
+    output: ReconciliationOutput;
+    cacheHit: boolean;
+    cacheKey?: string;
+    evictedPreviousKey?: string;
+    evictionReason?: string;
+    tokensSavedByCache: number;
+  }> {
     const agentContext = resolvedContext || await withSpan(
       'audit.rag_retrieval',
       {
@@ -227,24 +247,53 @@ Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da audit
       const retrievalDetails = retrievalStatus === 'UNINDEXED'
         ? `A recuperação encontrou ${diagnostics?.indexedChunksCount || 0}/${diagnostics?.activeChunksCount || agentContext.retrievalCandidatesCount || 0} chunks indexados. Modelo esperado: "${diagnostics?.expectedEmbeddingModel || SemanticEmbeddingService.embeddingModelId}". Sem embedding: ${diagnostics?.missingEmbeddingCount || 0}; dimensão inválida: ${diagnostics?.invalidDimensionCount || 0}; modelo diferente: ${diagnostics?.modelMismatchCount || 0}; metadado ausente: ${diagnostics?.missingModelMetadataCount || 0}; norma-pai ausente: ${diagnostics?.missingNormParentCount || 0}. A IA não foi chamada (0 tokens). Gere os embeddings na mesma base usada pela aplicação e verifique a saída de \`npm run rag:reindex\`.`
         : `Nenhum chunk normativo utilizável foi recuperado para as tags [${(agentContext.tags || []).join(', ')}]. Status da recuperação: ${retrievalStatus}.`;
-      return reconciliationOutputSchema.parse({
-        verdict: 'INCONCLUSIVO',
-        score: 60,
-        summary: `Auditoria inconclusiva: ${retrievalDetails} Revisão humana obrigatória.`,
-        violations: [],
-        promptTokens: 0,
-        completionTokens: 0,
-        totalTokens: 0,
-        sourcesUsed: [],
-        aiModelUsed: `retrieval:${retrievalStatus}`,
-        groundingScore: null,
-        hallucinationRisk: 'NOT_EVALUATED',
-        guardrailsApplied: true,
-        hallucinationsInterceptedCount: 0,
-      });
+      return {
+        output: reconciliationOutputSchema.parse({
+          verdict: 'INCONCLUSIVO',
+          score: 60,
+          summary: `Auditoria inconclusiva: ${retrievalDetails} Revisão humana obrigatória.`,
+          violations: [],
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          sourcesUsed: [],
+          aiModelUsed: `retrieval:${retrievalStatus}`,
+          groundingScore: null,
+          hallucinationRisk: 'NOT_EVALUATED',
+          guardrailsApplied: true,
+          hallucinationsInterceptedCount: 0,
+        }),
+        cacheHit: false,
+        tokensSavedByCache: 0,
+      };
     }
 
     const activeModel = await this.getActiveModelConfig();
+    const cacheLookup = await AIInvocationCacheService.lookupAndEvictStale({
+      scrape,
+      agentContext,
+      agentModuleId,
+      modelConfig: activeModel,
+    });
+
+    if (cacheLookup.hit && cacheLookup.record) {
+      reconLog.info(
+        { url: scrape.url, cacheKey: cacheLookup.cacheKey.slice(0, 12), model: activeModel.name },
+        'Cache HIT na reconciliação deontológica da IA'
+      );
+      return {
+        output: {
+          ...cacheLookup.record.output,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+        },
+        cacheHit: true,
+        cacheKey: cacheLookup.cacheKey,
+        tokensSavedByCache: cacheLookup.record.originalTotalTokens || 0,
+      };
+    }
+
     reconLog.info(
       { url: scrape.url, model: activeModel.name, provider: activeModel.provider },
       'Iniciando inferência de reconciliação deontológica'
@@ -277,7 +326,31 @@ Use exclusivamente a seção "NORMAS RECUPERADAS" fornecida no contexto da audit
           agentContext.activeNorms
         )
     );
-    return sanitizedOutput;
+
+    await AIInvocationCacheService.store({
+      lookup: cacheLookup,
+      agentKey: cacheLookup.agentKey,
+      targetSlotKey: cacheLookup.targetSlotKey,
+      output: sanitizedOutput,
+    });
+
+    return {
+      output: sanitizedOutput,
+      cacheHit: false,
+      cacheKey: cacheLookup.cacheKey,
+      evictedPreviousKey: cacheLookup.evictedPreviousKey,
+      evictionReason: cacheLookup.evictionReason,
+      tokensSavedByCache: 0,
+    };
+  }
+
+  public static async reconcile(
+    scrape: ScrapeResult,
+    agentModuleId?: string,
+    resolvedContext?: AgentContext
+  ): Promise<ReconciliationOutput> {
+    const res = await this.reconcileWithCacheMeta(scrape, agentModuleId, resolvedContext);
+    return res.output;
   }
 
   public static async reconcileStructured(

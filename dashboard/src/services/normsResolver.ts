@@ -92,7 +92,15 @@ export interface ResolvedNorm {
 interface RankedNormCandidate {
   norm: ResolvedNorm;
   embedding: number[];
+  normalizedSearchText?: string;
+  lowerTags?: string[];
 }
+
+const LEXICAL_STOP_WORDS = new Set([
+  'para', 'com', 'uma', 'uns', 'umas', 'dos', 'das', 'que', 'por', 'como', 'sobre',
+  'entre', 'sem', 'sua', 'seu', 'nas', 'nos', 'mais', 'pelo', 'pela', 'esta', 'este',
+  'the', 'and', 'for', 'with', 'from', 'this', 'that',
+]);
 
 function parseChunkMetadata(value: string | null): Record<string, unknown> {
   if (!value) {
@@ -115,20 +123,23 @@ function normalizeText(value: string): string {
     .toLowerCase();
 }
 
-function lexicalScore(query: string, content: string): number {
-  const stopWords = new Set([
-    'para', 'com', 'uma', 'uns', 'umas', 'dos', 'das', 'que', 'por', 'como', 'sobre',
-    'entre', 'sem', 'sua', 'seu', 'nas', 'nos', 'mais', 'pelo', 'pela', 'esta', 'este',
-    'the', 'and', 'for', 'with', 'from', 'this', 'that',
-  ]);
-  const terms = Array.from(new Set(normalizeText(query).match(/[a-z0-9]{4,}/g) || []))
-    .filter((term) => !stopWords.has(term))
+function extractQueryTerms(query: string): string[] {
+  return Array.from(new Set(normalizeText(query).match(/[a-z0-9]{4,}/g) || []))
+    .filter((term) => !LEXICAL_STOP_WORDS.has(term))
     .slice(0, 100);
-  if (terms.length === 0) {
+}
+
+function lexicalScoreFromTerms(queryTerms: string[], normalizedContent: string): number {
+  if (queryTerms.length === 0 || !normalizedContent) {
     return 0;
   }
-  const normalizedContent = normalizeText(content);
-  return terms.filter((term) => normalizedContent.includes(term)).length / terms.length;
+  let matched = 0;
+  for (let i = 0; i < queryTerms.length; i++) {
+    if (normalizedContent.includes(queryTerms[i])) {
+      matched++;
+    }
+  }
+  return matched / queryTerms.length;
 }
 
 function rankCandidates(
@@ -139,12 +150,20 @@ function rankCandidates(
   targetTags: string[] = []
 ): ResolvedNorm[] {
   const normalizedTargetTags = new Set(targetTags.map((t) => t.toLowerCase().trim()));
+  const queryTerms = extractQueryTerms(queryText);
   const hasSemantic = queryEmbedding.length > 0;
   return candidates
-    .map(({ norm, embedding }) => {
+    .map(({ norm, embedding, normalizedSearchText, lowerTags }) => {
       const semanticScore = hasSemantic ? Math.max(0, cosineSimilarity(queryEmbedding, embedding)) : 0;
-      const lexical = lexicalScore(queryText, `${norm.title}\n${norm.content}`);
-      const tagMatches = norm.tags.filter((t) => normalizedTargetTags.has(t.toLowerCase().trim())).length;
+      const contentNorm = normalizedSearchText ?? normalizeText(`${norm.title}\n${norm.content}`);
+      const lexical = lexicalScoreFromTerms(queryTerms, contentNorm);
+      const normTagsLower = lowerTags ?? norm.tags.map((t) => t.toLowerCase().trim());
+      let tagMatches = 0;
+      for (let i = 0; i < normTagsLower.length; i++) {
+        if (normalizedTargetTags.has(normTagsLower[i])) {
+          tagMatches++;
+        }
+      }
       const tagBonus = tagMatches > 0 ? Math.min(0.20, tagMatches * 0.05) : 0;
       const combinedScore = hasSemantic
         ? semanticScore * 0.70 + lexical * 0.20 + tagBonus
@@ -255,11 +274,291 @@ export async function searchChunksWithAtlasVector(
   }
 }
 
+interface CachedNormMeta {
+  id: string;
+  normId: string;
+  orgao: string;
+  status: string;
+  ementaHigienizada: string | null;
+  tags: string[];
+  lowerAndUpperTags: Set<string>;
+  totalChunks: number;
+}
+
+interface IndexedNormCorpusCache {
+  signature: string;
+  expectedEmbeddingModel: string;
+  normsById: Map<string, CachedNormMeta>;
+  normsList: CachedNormMeta[];
+  indexedCandidatesByNormId: Map<string, RankedNormCandidate[]>;
+  invalidStatsByNormId: Map<
+    string,
+    {
+      invalidDimension: number;
+      modelMismatch: number;
+      missingModelMetadata: number;
+    }
+  >;
+  totalChunksCount: number;
+  indexedChunksCount: number;
+}
+
+let cachedNormCorpus: IndexedNormCorpusCache | null = null;
+let corpusLoadPromise: Promise<IndexedNormCorpusCache | null> | null = null;
+
+async function fetchIndexedChunksFast(): Promise<CandidateChunkRow[]> {
+  const rows: CandidateChunkRow[] = [];
+  const pageSize = 250;
+  let lastId: string | null = null;
+  const maxChunks = env.RAG_MAX_CANDIDATE_CHUNKS || DEFAULT_MAX_RAG_CANDIDATE_CHUNKS;
+
+  while (rows.length < maxChunks) {
+    const filter: Record<string, any> = {
+      'embedding.0': { $exists: true },
+      ...(lastId ? { _id: { $gt: { $oid: lastId } } } : {}),
+    };
+
+    const batchRes = (await prisma.$runCommandRaw({
+      find: 'norms_chunk',
+      filter,
+      sort: { _id: 1 },
+      limit: pageSize,
+      batchSize: pageSize,
+      singleBatch: true,
+      projection: {
+        _id: 1,
+        normId: 1,
+        normCode: 1,
+        chunkIndex: 1,
+        conteudoChunk: 1,
+        contextoSemantico: 1,
+        embedding: 1,
+        tags: 1,
+      },
+    })) as any;
+
+    const docs: any[] = batchRes?.cursor?.firstBatch || [];
+    if (!Array.isArray(docs) || docs.length === 0) {
+      break;
+    }
+
+    for (const doc of docs) {
+      const id = ejsonId(doc._id);
+      lastId = id;
+      rows.push({
+        id,
+        normId: ejsonId(doc.normId),
+        normCode: String(doc.normCode ?? ''),
+        chunkIndex: ejsonNumber(doc.chunkIndex),
+        conteudoChunk: String(doc.conteudoChunk ?? ''),
+        contextoSemantico: typeof doc.contextoSemantico === 'string' ? doc.contextoSemantico : null,
+        embedding: Array.isArray(doc.embedding) ? doc.embedding.map(ejsonNumber) : [],
+        tags: Array.isArray(doc.tags) ? doc.tags.map(String) : [],
+      });
+    }
+  }
+
+  return rows;
+}
+
+async function getOrRefreshIndexedCorpus(): Promise<IndexedNormCorpusCache | null> {
+  if (
+    env.NODE_ENV === 'test' ||
+    typeof (prisma as any).$runCommandRaw !== 'function' ||
+    typeof (prisma.norm as any)?.count !== 'function' ||
+    typeof (prisma.norm as any)?.findFirst !== 'function' ||
+    typeof (prisma.normChunk as any)?.count !== 'function'
+  ) {
+    return null;
+  }
+
+  const expectedModel = SemanticEmbeddingService.embeddingModelId;
+  const [vigenteCount, latestNorm, totalChunksCount, indexedCountRes] = await Promise.all([
+    prisma.norm.count({ where: { status: 'VIGENTE' } }),
+    prisma.norm.findFirst({
+      where: { status: 'VIGENTE' },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, updatedAt: true },
+    }),
+    prisma.normChunk.count(),
+    prisma
+      .$runCommandRaw({
+        count: 'norms_chunk',
+        query: { 'embedding.0': { $exists: true } },
+      })
+      .catch(() => null),
+  ]);
+
+  const rawIndexedCount =
+    indexedCountRes && typeof indexedCountRes === 'object' && 'n' in (indexedCountRes as any)
+      ? ejsonNumber((indexedCountRes as any).n)
+      : -1;
+  const signature = `${expectedModel}|${vigenteCount}|${latestNorm?.id || 'none'}|${latestNorm?.updatedAt?.toISOString() || '0'}|${totalChunksCount}|${rawIndexedCount}`;
+
+  if (cachedNormCorpus && cachedNormCorpus.signature === signature) {
+    return cachedNormCorpus;
+  }
+
+  if (corpusLoadPromise) {
+    return corpusLoadPromise;
+  }
+
+  corpusLoadPromise = (async () => {
+    try {
+      const [allVigenteNorms, indexedChunks] = await Promise.all([
+        prisma.norm.findMany({
+          where: { status: 'VIGENTE' },
+          select: {
+            id: true,
+            normId: true,
+            orgao: true,
+            status: true,
+            ementaHigienizada: true,
+            tags: true,
+            totalChunks: true,
+          },
+        }),
+        fetchIndexedChunksFast(),
+      ]);
+
+      const normsById = new Map<string, CachedNormMeta>();
+      const normsList: CachedNormMeta[] = [];
+      for (const n of allVigenteNorms) {
+        const tagSet = new Set<string>();
+        for (const t of n.tags || []) {
+          const clean = t.trim();
+          if (clean) {
+            tagSet.add(clean);
+            tagSet.add(clean.toLowerCase());
+            tagSet.add(clean.toUpperCase());
+          }
+        }
+        const meta: CachedNormMeta = {
+          id: n.id,
+          normId: n.normId,
+          orgao: n.orgao || 'REGULATORIO',
+          status: n.status,
+          ementaHigienizada: n.ementaHigienizada,
+          tags: n.tags || [],
+          lowerAndUpperTags: tagSet,
+          totalChunks: Math.max(0, n.totalChunks || 0),
+        };
+        normsById.set(n.id, meta);
+        normsList.push(meta);
+      }
+
+      const indexedCandidatesByNormId = new Map<string, RankedNormCandidate[]>();
+      const invalidStatsByNormId = new Map<
+        string,
+        { invalidDimension: number; modelMismatch: number; missingModelMetadata: number }
+      >();
+
+      let validIndexedTotal = 0;
+      for (const chunk of indexedChunks) {
+        if (
+          !chunk.conteudoChunk.trim() ||
+          (chunk.tags || []).some((tag) => tag.toUpperCase().includes('REVOGAD'))
+        ) {
+          continue;
+        }
+        const parent = normsById.get(chunk.normId);
+        if (!parent) continue;
+
+        const metadata = parseChunkMetadata(chunk.contextoSemantico);
+        const embedding = chunk.embedding;
+        if (embedding.length === 0 || metadata.embedding_model === 'PENDING_REINDEX') {
+          continue;
+        }
+
+        const getOrCreateInvalid = () => {
+          let st = invalidStatsByNormId.get(parent.id);
+          if (!st) {
+            st = { invalidDimension: 0, modelMismatch: 0, missingModelMetadata: 0 };
+            invalidStatsByNormId.set(parent.id, st);
+          }
+          return st;
+        };
+
+        if (embedding.length !== SemanticEmbeddingService.vectorDimensions) {
+          getOrCreateInvalid().invalidDimension += 1;
+          continue;
+        }
+        if (typeof metadata.embedding_model !== 'string' || !metadata.embedding_model) {
+          getOrCreateInvalid().missingModelMetadata += 1;
+          continue;
+        }
+        if (metadata.embedding_model !== expectedModel) {
+          getOrCreateInvalid().modelMismatch += 1;
+          continue;
+        }
+
+        const heading =
+          typeof metadata.heading_context === 'string'
+            ? metadata.heading_context
+            : parent.ementaHigienizada || parent.normId;
+        const article =
+          typeof metadata.article === 'string' ? metadata.article : `Chunk ${chunk.chunkIndex}`;
+        const title =
+          typeof metadata.norm_title === 'string'
+            ? metadata.norm_title
+            : parent.ementaHigienizada || parent.normId;
+        const fullTitle = `${title} — ${heading}`;
+        const resolvedTags = chunk.tags.length > 0 ? chunk.tags : parent.tags;
+
+        const candidate: RankedNormCandidate = {
+          embedding,
+          normalizedSearchText: normalizeText(`${fullTitle}\n${chunk.conteudoChunk}`),
+          lowerTags: resolvedTags.map((t) => t.toLowerCase().trim()),
+          norm: {
+            id: chunk.id,
+            normCode: parent.normId,
+            source: parent.orgao,
+            title: fullTitle,
+            article,
+            content: chunk.conteudoChunk,
+            tags: resolvedTags,
+            canonical: parseCanonicalIdentifier(parent.normId, parent.tags),
+          },
+        };
+
+        let list = indexedCandidatesByNormId.get(parent.id);
+        if (!list) {
+          list = [];
+          indexedCandidatesByNormId.set(parent.id, list);
+        }
+        list.push(candidate);
+        validIndexedTotal++;
+      }
+
+      cachedNormCorpus = {
+        signature,
+        expectedEmbeddingModel: expectedModel,
+        normsById,
+        normsList,
+        indexedCandidatesByNormId,
+        invalidStatsByNormId,
+        totalChunksCount,
+        indexedChunksCount: validIndexedTotal,
+      };
+      return cachedNormCorpus;
+    } finally {
+      corpusLoadPromise = null;
+    }
+  })();
+
+  return corpusLoadPromise;
+}
+
 export function resetVectorSearchAvailability(): void {
   vectorSearchUnavailableUntil = 0;
 }
 
 export class NormsResolver {
+  public static invalidateCache(): void {
+    cachedNormCorpus = null;
+    corpusLoadPromise = null;
+  }
+
   /**
    * Recupera somente chunks vigentes da taxonomia solicitada e os ranqueia pelo conteúdo auditado.
    */
@@ -278,6 +577,101 @@ export class NormsResolver {
 
     const safeTopK = Math.min(16, Math.max(1, Math.floor(topK)));
     const searchTags = Array.from(new Set(cleanTags.flatMap((tag) => [tag.toUpperCase(), tag])));
+
+    // Caminho acelerado com cache em memória validado por assinatura de versão no MongoDB
+    if (env.RAG_VECTOR_SEARCH_ENABLED !== 'true') {
+      try {
+        const corpus = await getOrRefreshIndexedCorpus();
+        if (corpus && corpus.normsList.length > 0) {
+          const matchedNorms = corpus.normsList.filter((n) =>
+            searchTags.some((st) => n.lowerAndUpperTags.has(st))
+          );
+          if (matchedNorms.length > 0) {
+            const fastCandidates: RankedNormCandidate[] = [];
+            let estimatedScopeChunks = 0;
+            let invalidDim = 0;
+            let modelMismatch = 0;
+            let missingMeta = 0;
+
+            for (const n of matchedNorms) {
+              const normCandidates = corpus.indexedCandidatesByNormId.get(n.id);
+              const inv = corpus.invalidStatsByNormId.get(n.id);
+              if (inv) {
+                invalidDim += inv.invalidDimension;
+                modelMismatch += inv.modelMismatch;
+                missingMeta += inv.missingModelMetadata;
+              }
+              const normValidCount = normCandidates?.length || 0;
+              estimatedScopeChunks += Math.max(
+                n.totalChunks,
+                normValidCount + (inv ? inv.invalidDimension + inv.modelMismatch + inv.missingModelMetadata : 0)
+              );
+              if (normCandidates && normCandidates.length > 0) {
+                fastCandidates.push(...normCandidates);
+              }
+            }
+
+            if (estimatedScopeChunks > 0) {
+              const diagnostics: NormRetrievalDiagnostics = {
+                expectedEmbeddingModel: corpus.expectedEmbeddingModel,
+                activeChunksCount: estimatedScopeChunks,
+                indexedChunksCount: fastCandidates.length,
+                missingEmbeddingCount: Math.max(
+                  0,
+                  estimatedScopeChunks - fastCandidates.length - invalidDim - modelMismatch - missingMeta
+                ),
+                invalidDimensionCount: invalidDim,
+                modelMismatchCount: modelMismatch,
+                missingModelMetadataCount: missingMeta,
+                missingNormParentCount: 0,
+              };
+
+              if (diagnostics.indexedChunksCount === 0 || diagnostics.modelMismatchCount > 0) {
+                return {
+                  norms: [],
+                  status: 'UNINDEXED',
+                  candidatesCount: estimatedScopeChunks,
+                  diagnostics,
+                };
+              }
+
+              try {
+                const queryEmbedding = await SemanticEmbeddingService.embedQuery(queryText.slice(0, 8000));
+                const rankedNorms = rankCandidates(fastCandidates, queryText, queryEmbedding, safeTopK, cleanTags);
+                return {
+                  norms: rankedNorms,
+                  status: rankedNorms.length > 0 ? 'READY' : 'NO_MATCH',
+                  candidatesCount: fastCandidates.length,
+                  source: 'MongoDB (norms/norms_chunk)',
+                  diagnostics,
+                };
+              } catch (embErr) {
+                console.warn(
+                  `⚠️ [NormsResolver] Recuperação semântica via embedding indisponível (${
+                    embErr instanceof Error ? embErr.message : String(embErr)
+                  }). Ativando fallback léxico sobre ${fastCandidates.length} chunks.`
+                );
+                const rankedNorms = rankCandidates(fastCandidates, queryText, [], safeTopK, cleanTags);
+                return {
+                  norms: rankedNorms,
+                  status: rankedNorms.length > 0 ? 'READY' : 'EMBEDDING_UNAVAILABLE',
+                  candidatesCount: fastCandidates.length,
+                  source: 'MongoDB (norms/norms_chunk) [Fallback Léxico/Tags]',
+                  diagnostics,
+                };
+              }
+            }
+          }
+        }
+      } catch (cacheErr) {
+        console.warn(
+          `⚠️ [NormsResolver] Aviso ao consultar cache de corpus indexado (${
+            cacheErr instanceof Error ? cacheErr.message : String(cacheErr)
+          }). Prosseguindo com consulta direta.`
+        );
+      }
+    }
+
     const dbNorms = await prisma.norm.findMany({
       where: {
         status: 'VIGENTE',

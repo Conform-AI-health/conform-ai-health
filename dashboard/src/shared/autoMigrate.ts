@@ -166,10 +166,47 @@ async function seedNormsCatalog(): Promise<void> {
 }
 
 /**
+ * Garante índices secundários críticos no MongoDB Atlas para evitar COLLSCAN em norms e norms_chunk
+ */
+export async function ensurePerformanceIndexes(): Promise<void> {
+  if (typeof (prisma as any).$runCommandRaw !== 'function') {
+    return;
+  }
+
+  try {
+    await prisma.$runCommandRaw({
+      createIndexes: 'norms',
+      indexes: [
+        { key: { status: 1, tags: 1 }, name: 'idx_norms_status_tags' },
+        { key: { updatedAt: -1 }, name: 'idx_norms_updated_at_desc' },
+        { key: { normId: 1 }, name: 'idx_norms_norm_id' },
+      ],
+    });
+
+    await prisma.$runCommandRaw({
+      createIndexes: 'norms_chunk',
+      indexes: [
+        { key: { normId: 1, chunkIndex: 1 }, name: 'idx_norms_chunk_norm_id_idx' },
+        {
+          key: { 'embedding.0': 1, normId: 1 },
+          name: 'idx_norms_chunk_indexed_embedding',
+          partialFilterExpression: { 'embedding.0': { $exists: true } },
+        },
+        { key: { tags: 1 }, name: 'idx_norms_chunk_tags' },
+      ],
+    });
+    console.log('⚡ [Migration] Índices de performance de RAG (norms / norms_chunk) verificados com sucesso.');
+  } catch (err: any) {
+    console.warn(`⚠️ [Migration] Aviso ao garantir índices de RAG: ${err.message}`);
+  }
+}
+
+/**
  * 1. Executa migrações de dados, normalizações de schema e autocura estrutural (C03)
  */
 export async function runDatabaseMigrations(): Promise<void> {
   console.log('🔄 [Migration] Verificando e aplicando migrações estruturais no MongoDB...');
+  await ensurePerformanceIndexes();
 
   // 1.1 Atualizar AgentModules com code nulo ou vazio
   const agentsWithoutCode = await prisma.agentModule.findMany({

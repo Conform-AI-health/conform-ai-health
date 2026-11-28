@@ -4,6 +4,8 @@ import { NORMS_CATALOG } from '../data/normsCatalog.js';
 import { Role } from '@prisma/client';
 import { z } from 'zod';
 import { LegalNormCrawlerService, CrawlJobState } from '../services/legalNormCrawlerService.js';
+import { NormsResolver } from '../services/normsResolver.js';
+import { AIInvocationCacheService } from '../services/ai/aiInvocationCache.js';
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { env } from '../config/env.js';
 import { normCrawlQueue } from '../config/redis.js';
@@ -592,6 +594,9 @@ export class NormController {
           updatedAt: true,
         },
       });
+
+      NormsResolver.invalidateCache();
+      await AIInvocationCacheService.invalidateAll('norm_tags_updated');
 
       res.status(200).json({
         success: true,

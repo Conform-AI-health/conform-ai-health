@@ -51,12 +51,22 @@ export class GeminiProvider implements IAIProvider {
         .map((n) => `[${n.normCode} - ${n.article}] ${n.title}: ${n.content} (Severidade: ${n.severityDefault})`)
         .join('\n');
 
+      const promptAlreadyEmbedsNorms =
+        /\{normasVigentesDoEscopo\}|\{CONTEUDO_DAS_NORMAS_MD\}/i.test(agentContext.systemPrompt) ||
+        (agentContext.activeNorms.length > 0 &&
+          agentContext.systemPrompt.includes(agentContext.activeNorms[0].content.slice(0, 60)));
+
       const resolvedSystemPrompt = agentContext.systemPrompt.replace(
         /\{normasVigentesDoEscopo\}|\{CONTEUDO_DAS_NORMAS_MD\}/gi,
         relevantNorms
       );
 
       const systemInstruction = `${resolvedSystemPrompt}\n\n${groundingInstructions}`;
+      const normsSection = promptAlreadyEmbedsNorms
+        ? `NORMAS RECUPERADAS (${agentContext.activeNorms.length} dispositivos já carregados nas instruções de sistema acima):\n${agentContext.activeNorms
+            .map((n) => `- [${n.normCode} - ${n.article}] ${n.title} (Severidade: ${n.severityDefault})`)
+            .join('\n')}`
+        : `NORMAS RECUPERADAS:\n${relevantNorms}`;
 
       const prompt = `CONTEÚDO AUDITADO:
 Título: ${scrape.title}
@@ -64,8 +74,7 @@ URL: ${scrape.url}
 
 ${secureAudit.secureBlock}
 
-NORMAS RECUPERADAS:
-${relevantNorms}
+${normsSection}
 
 ENTIDADES DETECTADAS NO PROCESSAMENTO DA PÁGINA:
 - CRMs: ${scrape.extractedEntities.extractionCompleted ? (scrape.extractedEntities.crms.join(', ') || 'Nenhum detectado') : 'Extração não confirmada'}

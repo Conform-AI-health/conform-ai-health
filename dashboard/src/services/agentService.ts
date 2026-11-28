@@ -7,6 +7,7 @@ import { encryptSecret, maskSecret, decryptSecret } from '../shared/encryption.j
 import { validateSafeUrlAsync } from '../shared/security.js';
 import { injectTraceCarrier } from '../shared/tracing.js';
 import { resolveClientByIdOrUrl } from '../shared/clientIdentityResolver.js';
+import { AIInvocationCacheService } from './ai/aiInvocationCache.js';
 import { Role } from '@prisma/client';
 
 export class AgentService {
@@ -197,6 +198,10 @@ export class AgentService {
     }
 
     const updated = await AgentRepository.update(id, updateData);
+    await AIInvocationCacheService.invalidateByAgent(updated.id, 'agent_config_updated');
+    if (updated.code) {
+      await AIInvocationCacheService.invalidateByAgent(updated.code, 'agent_config_updated');
+    }
     await AuditSchedulerService.syncAgentSchedule(updated.id);
 
     return this.sanitizeModule(updated, false);
@@ -211,6 +216,10 @@ export class AgentService {
       throw new Error('AGENT_NOT_FOUND');
     }
 
+    await AIInvocationCacheService.invalidateByAgent(existing.id, 'agent_deleted');
+    if (existing.code) {
+      await AIInvocationCacheService.invalidateByAgent(existing.code, 'agent_deleted');
+    }
     await AgentRepository.delete(id);
     await AuditSchedulerService.removeAgentSchedule(id);
   }

@@ -17,6 +17,7 @@ const embeddingResponseSchema = z.object({
 });
 
 const documentEmbeddingCache = new Map<string, number[]>();
+const queryEmbeddingCache = new Map<string, number[]>();
 
 function normalizeVector(vector: number[]): number[] {
   if (vector.length !== EMBEDDING_DIMENSIONS) {
@@ -61,6 +62,11 @@ export class SemanticEmbeddingService {
     this.circuitBreaker.reset();
   }
 
+  public static clearCache(): void {
+    documentEmbeddingCache.clear();
+    queryEmbeddingCache.clear();
+  }
+
   public static async embedQuery(text: string): Promise<number[]> {
     const [embedding] = await this.embedBatch([text], 'query');
     return embedding;
@@ -87,24 +93,19 @@ export class SemanticEmbeddingService {
       throw new Error('Não é possível gerar embedding para texto vazio.');
     }
 
-    const cacheKeys = task === 'document'
-      ? texts.map((text) => `${this.embeddingModelId}\0${text}`)
-      : [];
+    const cacheKeys = texts.map((text) => `${this.embeddingModelId}\0${task}\0${text.trim().slice(0, 12000)}`);
+    const targetCache = task === 'document' ? documentEmbeddingCache : queryEmbeddingCache;
     const uncachedIndexes: number[] = [];
     const embeddings: Array<number[] | undefined> = new Array(texts.length);
 
-    if (task === 'document') {
-      texts.forEach((text, index) => {
-        const cached = documentEmbeddingCache.get(cacheKeys[index]);
-        if (cached) {
-          embeddings[index] = cached;
-        } else {
-          uncachedIndexes.push(index);
-        }
-      });
-    } else {
-      uncachedIndexes.push(...texts.map((_, index) => index));
-    }
+    texts.forEach((_text, index) => {
+      const cached = targetCache.get(cacheKeys[index]);
+      if (cached) {
+        embeddings[index] = cached;
+      } else {
+        uncachedIndexes.push(index);
+      }
+    });
 
     if (uncachedIndexes.length > 0) {
       const apiKey = env.GEMINI_API_KEY;
@@ -140,9 +141,7 @@ export class SemanticEmbeddingService {
         const normalized = normalizeVector(item.values);
         const textIndex = uncachedIndexes[resultIndex];
         embeddings[textIndex] = normalized;
-        if (task === 'document') {
-          this.cacheDocumentEmbedding(cacheKeys[textIndex], normalized);
-        }
+        this.cacheEmbedding(targetCache, cacheKeys[textIndex], normalized);
       });
     }
 
@@ -154,13 +153,17 @@ export class SemanticEmbeddingService {
     });
   }
 
-  private static cacheDocumentEmbedding(key: string, embedding: number[]): void {
-    if (documentEmbeddingCache.size >= MAX_CACHE_ENTRIES) {
-      const oldestKey = documentEmbeddingCache.keys().next().value;
+  private static cacheEmbedding(
+    store: Map<string, number[]>,
+    key: string,
+    embedding: number[]
+  ): void {
+    if (store.size >= MAX_CACHE_ENTRIES) {
+      const oldestKey = store.keys().next().value;
       if (oldestKey) {
-        documentEmbeddingCache.delete(oldestKey);
+        store.delete(oldestKey);
       }
     }
-    documentEmbeddingCache.set(key, embedding);
+    store.set(key, embedding);
   }
 }

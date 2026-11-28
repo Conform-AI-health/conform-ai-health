@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { ScraperService } from '../services/scraperService.js';
 import { LegalNormCrawlerService } from '../services/legalNormCrawlerService.js';
+import { NormsResolver } from '../services/normsResolver.js';
+import { AIInvocationCacheService } from '../services/ai/aiInvocationCache.js';
 import { env } from '../config/env.js';
 import { TextEncodingSanitizer } from '../shared/textEncodingSanitizer.js';
 import { validateSafeUrl, validateSafeUrlAsync } from '../shared/security.js';
@@ -301,6 +303,9 @@ export class ScrapedPageController {
         },
       });
 
+      NormsResolver.invalidateCache();
+      await AIInvocationCacheService.invalidateAll('scraped_page_uploaded');
+
       res.status(201).json({
         message: 'Arquivo enviado e indexado com sucesso no MongoDB!',
         isBatch: false,
@@ -327,6 +332,8 @@ export class ScrapedPageController {
       }
 
       await prisma.scrapedPage.delete({ where: { id } });
+      NormsResolver.invalidateCache();
+      await AIInvocationCacheService.invalidateAll('scraped_page_deleted');
       res.status(200).json({ message: 'Documento removido da base com sucesso.' });
     } catch (error) {
       next(error);
