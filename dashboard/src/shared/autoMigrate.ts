@@ -195,6 +195,45 @@ export async function ensurePerformanceIndexes(): Promise<void> {
         { key: { tags: 1 }, name: 'idx_norms_chunk_tags' },
       ],
     });
+
+    // Garante também o índice vetorial HNSW nativo do MongoDB Atlas ($vectorSearch) se disponível no cluster
+    try {
+      const existingSearchIdx = (await prisma.normChunk.aggregateRaw({
+        pipeline: [{ $listSearchIndexes: {} }],
+      })) as unknown as Array<{ name?: string }>;
+      const vectorIdxName = env.RAG_VECTOR_INDEX_NAME || 'vector_index_norms_chunk';
+      const hasVectorIdx =
+        Array.isArray(existingSearchIdx) &&
+        existingSearchIdx.some((idx) => idx?.name === vectorIdxName);
+
+      if (!hasVectorIdx) {
+        await prisma.$runCommandRaw({
+          createSearchIndexes: 'norms_chunk',
+          indexes: [
+            {
+              name: vectorIdxName,
+              type: 'vectorSearch',
+              definition: {
+                fields: [
+                  {
+                    type: 'vector',
+                    path: 'embedding',
+                    numDimensions: 768,
+                    similarity: 'cosine',
+                  },
+                  { type: 'filter', path: 'tags' },
+                  { type: 'filter', path: 'normId' },
+                ],
+              },
+            },
+          ],
+        });
+        console.log(`⚡ [Migration] Índice Atlas Vector Search "${vectorIdxName}" provisionado em norms_chunk.`);
+      }
+    } catch {
+      // Cluster MongoDB sem Atlas Search ou índice já em criação; fallback Server-Side $reduce permanece ativo
+    }
+
     console.log('⚡ [Migration] Índices de performance de RAG (norms / norms_chunk) verificados com sucesso.');
   } catch (err: any) {
     console.warn(`⚠️ [Migration] Aviso ao garantir índices de RAG: ${err.message}`);

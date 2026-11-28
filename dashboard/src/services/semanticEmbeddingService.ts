@@ -1,12 +1,16 @@
+import crypto from 'crypto';
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { env } from '../config/env.js';
+import { getRedisConnection } from '../config/redis.js';
 import { Bulkhead } from '../shared/bulkhead.js';
 import { CircuitBreaker } from '../shared/circuitBreaker.js';
 
 const EMBEDDING_DIMENSIONS = 768;
 const MAX_CACHE_ENTRIES = 500;
 const MAX_BATCH_SIZE = 32;
+const REDIS_QUERY_EMB_PREFIX = 'conformia:emb:q:';
+const REDIS_QUERY_EMB_TTL_SECONDS = 7 * 24 * 3600;
 
 const embeddingResponseSchema = z.object({
   embeddings: z.array(
@@ -68,8 +72,61 @@ export class SemanticEmbeddingService {
   }
 
   public static async embedQuery(text: string): Promise<number[]> {
-    const [embedding] = await this.embedBatch([text], 'query');
+    const trimmed = text.trim().slice(0, 12000);
+    if (!trimmed) {
+      throw new Error('Não é possível gerar embedding para texto vazio.');
+    }
+
+    const memKey = `${this.embeddingModelId}\0query\0${trimmed}`;
+    const memHit = queryEmbeddingCache.get(memKey);
+    if (memHit) {
+      return memHit;
+    }
+
+    const redisKey = `${REDIS_QUERY_EMB_PREFIX}${crypto
+      .createHash('sha256')
+      .update(memKey, 'utf8')
+      .digest('hex')}`;
+
+    const redis = this.getSafeRedis();
+    if (redis) {
+      try {
+        const raw = await Promise.race([
+          redis.get(redisKey),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 400)),
+        ]);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length === EMBEDDING_DIMENSIONS) {
+            this.cacheEmbedding(queryEmbeddingCache, memKey, parsed);
+            return parsed;
+          }
+        }
+      } catch {
+        // Ignora erro de leitura no Redis
+      }
+    }
+
+    const [embedding] = await this.embedBatch([trimmed], 'query');
+
+    if (redis && embedding) {
+      void Promise.race([
+        redis.set(redisKey, JSON.stringify(embedding), 'EX', REDIS_QUERY_EMB_TTL_SECONDS),
+        new Promise((resolve) => setTimeout(resolve, 400)),
+      ]).catch(() => {});
+    }
+
     return embedding;
+  }
+
+  private static getSafeRedis() {
+    if (env.NODE_ENV === 'test') return null;
+    try {
+      const redis = getRedisConnection();
+      return redis && redis.status === 'ready' ? redis : null;
+    } catch {
+      return null;
+    }
   }
 
   public static async embedDocuments(texts: string[]): Promise<number[][]> {
