@@ -2,6 +2,7 @@ import { ModelRepository } from '../repositories/modelRepository.js';
 import { encryptModelApiKey, maskApiKey } from '../shared/encryption.js';
 import { validateSafeUrlAsync, isAllowedLocalhostBaseUrl } from '../shared/security.js';
 import { AIProviderFactory } from './ai/aiProviderFactory.js';
+import { AIInvocationCacheService } from './ai/aiInvocationCache.js';
 import { ReconciliationEngine } from './reconciliationEngine.js';
 import { AiModelConfig, Prisma } from '@prisma/client';
 
@@ -141,6 +142,7 @@ export class ModelService {
     if (created.isActive) {
       AIProviderFactory.setActiveProvider(created.provider as any);
     }
+    await AIInvocationCacheService.invalidateAll('model_created');
 
     return {
       ...created,
@@ -185,6 +187,8 @@ export class ModelService {
     if (updated.isActive) {
       AIProviderFactory.setActiveProvider(updated.provider as any);
     }
+    AIProviderFactory.invalidateModelCache();
+    await AIInvocationCacheService.invalidateAll('model_updated');
 
     return {
       ...updated,
@@ -204,6 +208,7 @@ export class ModelService {
     await ModelRepository.updateMany({ id: { not: id }, isActive: true }, { isActive: false });
     const activated = await ModelRepository.update(id, { isActive: true });
     AIProviderFactory.setActiveProvider((activated.provider || target.provider) as any);
+    await AIInvocationCacheService.invalidateAll('model_activated');
 
     return {
       ...target,
@@ -224,6 +229,7 @@ export class ModelService {
       throw new Error('CANNOT_DELETE_ACTIVE_MODEL');
     }
     await ModelRepository.delete(id);
+    await AIInvocationCacheService.invalidateAll('model_deleted');
   }
 
   /**

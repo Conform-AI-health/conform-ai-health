@@ -9,6 +9,7 @@ import { IAIProvider, AIProviderType, AIProviderHealth } from './aiProvider.inte
 import { GeminiProvider } from './geminiProvider.js';
 import { OllamaProvider } from './ollamaProvider.js';
 import { HeuristicProvider } from './heuristicProvider.js';
+import { AIInvocationCacheService } from './aiInvocationCache.js';
 import { resolveOllamaBaseUrl } from './aiUrlResolver.js';
 
 export { resolveOllamaBaseUrl };
@@ -65,6 +66,7 @@ export class AIProviderFactory {
   public static invalidateModelCache(): void {
     this.cachedActiveModel = null;
     this.cacheTimestamp = 0;
+    void AIInvocationCacheService.invalidateAll('active_model_invalidated');
   }
 
   public static async getActiveModelConfig(): Promise<{

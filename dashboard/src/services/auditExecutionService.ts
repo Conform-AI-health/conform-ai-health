@@ -272,7 +272,8 @@ export class AuditExecutionService {
       const agentContext = await ReconciliationEngine.resolveAgentContext(
         agentModuleId,
         firecrawlResult.markdown,
-        combinedAuditTags
+        combinedAuditTags,
+        mod ? { ...mod, tags: combinedAuditTags } : undefined
       );
       const retrievalTimeMs = Date.now() - retrievalStartedAt;
       const moduleTags = agentContext.tags || [];
@@ -333,17 +334,6 @@ export class AuditExecutionService {
         },
       }).catch(() => {});
 
-      await prisma.systemLog.create({
-        data: {
-          level: 'INFO',
-          module: 'AI_ENGINE',
-          correlationId,
-          message: combinedNormsList.length > 0
-            ? `[AI_INVOCATION] Invocando IA com Skill: "${effectiveSkill}" | Contexto com ${combinedNormsList.length} normas ativas para tags: [${moduleTags.join(', ')}]`
-            : `[AI_INVOCATION_SKIPPED] IA não chamada: recuperação ${agentContext.retrievalStatus || 'NO_MATCH'} para tags [${moduleTags.join(', ')}] | Candidatos: ${agentContext.retrievalCandidatesCount || 0}${retrievalDiagnosticsSummary} | Ação: ${agentContext.retrievalStatus === 'UNINDEXED' ? 'executar npm run rag:reindex na base da aplicação e repetir a auditoria' : 'verificar as tags e a disponibilidade das normas vigentes'}`,
-        },
-      }).catch(() => {});
-
       // Adaptador para o formato do ReconciliationEngine
       const extractedEntities = ScraperService.extractEntities(
         firecrawlResult.markdown,
@@ -364,16 +354,69 @@ export class AuditExecutionService {
         extractedEntities,
       };
 
-      // 5. Invocação da IA e Reconciliação Deontológica
-      const recon = await withSpan(
-        'audit.reconcile',
-        {
-          'audit.report_id': auditReportId,
-          'tenant.client_id': finalClientId || undefined,
-          'audit.norms_count': combinedNormsList.length,
+      // 5. Invocação da IA e Reconciliação Deontológica (com Cache Inteligente por Skill + Conteúdo + Normas)
+      const reconMeta =
+        typeof (ReconciliationEngine as any).reconcileWithCacheMeta === 'function'
+          ? await withSpan(
+              'audit.reconcile',
+              {
+                'audit.report_id': auditReportId,
+                'tenant.client_id': finalClientId || undefined,
+                'audit.norms_count': combinedNormsList.length,
+              },
+              async () =>
+                await ReconciliationEngine.reconcileWithCacheMeta(
+                  scrapeAdapter,
+                  agentModuleId,
+                  agentContext
+                )
+            )
+          : {
+              output: await withSpan(
+                'audit.reconcile',
+                {
+                  'audit.report_id': auditReportId,
+                  'tenant.client_id': finalClientId || undefined,
+                  'audit.norms_count': combinedNormsList.length,
+                },
+                async () => await ReconciliationEngine.reconcile(scrapeAdapter, agentModuleId, agentContext)
+              ),
+              cacheHit: false,
+              cacheKey: undefined as string | undefined,
+              evictedPreviousKey: undefined as string | undefined,
+              evictionReason: undefined as string | undefined,
+              tokensSavedByCache: 0,
+            };
+
+      const recon = reconMeta.output;
+
+      const invocationMessage =
+        combinedNormsList.length === 0
+          ? `[AI_INVOCATION_SKIPPED] IA não chamada: recuperação ${agentContext.retrievalStatus || 'NO_MATCH'} para tags [${moduleTags.join(', ')}] | Candidatos: ${agentContext.retrievalCandidatesCount || 0}${retrievalDiagnosticsSummary} | Ação: ${agentContext.retrievalStatus === 'UNINDEXED' ? 'executar npm run rag:reindex na base da aplicação e repetir a auditoria' : 'verificar as tags e a disponibilidade das normas vigentes'}`
+          : reconMeta.cacheHit
+          ? `⚡ [AI_INVOCATION] [CACHE_HIT] Resposta recuperada do cache para Skill: "${effectiveSkill}" | Contexto e conteúdo inalterados (${reconMeta.tokensSavedByCache} tokens economizados) | ${combinedNormsList.length} normas ativas para tags: [${moduleTags.join(', ')}]`
+          : reconMeta.evictedPreviousKey || reconMeta.evictionReason
+          ? `🔄 [AI_INVOCATION] [CACHE_INVALIDATED] Alteração detectada (${reconMeta.evictionReason || 'contexto_atualizado'}) — cache anterior removido. Invocando IA com Skill: "${effectiveSkill}" | Contexto com ${combinedNormsList.length} normas ativas para tags: [${moduleTags.join(', ')}]`
+          : `[AI_INVOCATION] Invocando IA com Skill: "${effectiveSkill}" | Contexto com ${combinedNormsList.length} normas ativas para tags: [${moduleTags.join(', ')}]`;
+
+      await prisma.systemLog.create({
+        data: {
+          level: 'INFO',
+          module: 'AI_ENGINE',
+          correlationId,
+          message: invocationMessage,
+          details: JSON.stringify({
+            cacheHit: reconMeta.cacheHit,
+            cacheKey: reconMeta.cacheKey || null,
+            evictedPreviousKey: reconMeta.evictedPreviousKey || null,
+            evictionReason: reconMeta.evictionReason || null,
+            tokensSavedByCache: reconMeta.tokensSavedByCache || 0,
+            activeNormsCount: combinedNormsList.length,
+            tags: moduleTags,
+          }),
         },
-        async () => await ReconciliationEngine.reconcile(scrapeAdapter, agentModuleId, agentContext)
-      );
+      }).catch(() => {});
+
       const executionTimeMs = Date.now() - startTime;
 
       // Telemetria e log de IA com tokens e fontes/normas utilizadas
@@ -381,7 +424,9 @@ export class AuditExecutionService {
       const isHeuristicFallback = recon.aiModelUsed.startsWith('heuristic:fallback');
       const retrievalStatus = agentContext.retrievalStatus || 'NO_MATCH';
 
-      let logMessage = `[AI_INTERACTION] Veredito emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms | Normas Aplicadas: ${recon.sourcesUsed.length}`;
+      let logMessage = reconMeta.cacheHit
+        ? `⚡ [AI_INTERACTION] [CACHE_HIT] Veredito recuperado do cache: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: 0 | Completion Tokens: 0 | Tokens Economizados: ${reconMeta.tokensSavedByCache} | Latência Total: ${executionTimeMs}ms | Normas Aplicadas: ${recon.sourcesUsed.length}`
+        : `[AI_INTERACTION] Veredito emitido: ${recon.verdict} (Score: ${recon.score}) | Prompt Tokens: ${recon.promptTokens} | Completion Tokens: ${recon.completionTokens} | Total Tokens: ${recon.totalTokens} | Latência: ${executionTimeMs}ms | Normas Aplicadas: ${recon.sourcesUsed.length}`;
       let logLevel = 'INFO';
 
       if (aiInvocationSkipped) {
@@ -399,7 +444,9 @@ export class AuditExecutionService {
           message: logMessage,
           details: JSON.stringify({
             aiModelUsed: recon.aiModelUsed,
-            aiInvoked: !aiInvocationSkipped,
+            aiInvoked: !aiInvocationSkipped && !reconMeta.cacheHit,
+            cacheHit: reconMeta.cacheHit,
+            tokensSavedByCache: reconMeta.tokensSavedByCache || 0,
             heuristicFallback: isHeuristicFallback,
             retrievalStatus,
             retrievalCandidatesCount: agentContext.retrievalCandidatesCount || 0,
@@ -452,7 +499,9 @@ export class AuditExecutionService {
                 normSnapshots: normsSnapshotJson,
                 rawContent: firecrawlResult.rawContent,
                 cleanMarkdown: firecrawlResult.markdown,
-                tokensSaved: Math.max(0, scrapeAdapter.tokensEstimatedRaw - scrapeAdapter.tokensEstimatedClean),
+                tokensSaved:
+                  Math.max(0, scrapeAdapter.tokensEstimatedRaw - scrapeAdapter.tokensEstimatedClean) +
+                  (reconMeta.tokensSavedByCache || 0),
                 promptTokens: recon.promptTokens,
                 completionTokens: recon.completionTokens,
                 totalTokens: recon.totalTokens,

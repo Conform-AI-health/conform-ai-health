@@ -60,8 +60,13 @@ const envSchema = z
     CRAWL_BATCH_SIZE: z.coerce.number().int().positive().default(4),
     CRAWL_MAX_PAGES: z.coerce.number().int().positive().default(1000),
     RAG_MAX_CANDIDATE_CHUNKS: z.coerce.number().int().positive().default(10000),
-    RAG_VECTOR_SEARCH_ENABLED: z.enum(['true', 'false']).default('false'),
+    RAG_VECTOR_SEARCH_ENABLED: z
+      .enum(['true', 'false'])
+      .default(process.env.NODE_ENV === 'test' ? 'false' : 'true'),
     RAG_VECTOR_INDEX_NAME: z.string().default('vector_index_norms_chunk'),
+    SSRF_ALLOWED_HOSTS: z.string().optional().default(''),
+    AI_INVOCATION_CACHE_ENABLED: z.enum(['true', 'false']).default('true'),
+    AI_INVOCATION_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
     DISTRIBUTED_RESILIENCE: z.enum(['true', 'false']).default('true'),
     MCP_SERVER_URL: z.string().optional().default('http://localhost:8080/mcp'),
     CORS_ORIGIN: z.string().default('http://localhost:5173'),

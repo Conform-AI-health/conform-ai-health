@@ -221,6 +221,122 @@ export function isPrivateIp(ip: string): boolean {
 }
 
 /**
+ * Extrai o IPv4 público embutido em hostnames DNS públicos oficiais da AWS EC2
+ * (ex: ec2-3-150-139-15.us-east-2.compute.amazonaws.com -> 3.150.139.15).
+ * Dentro de uma VPC AWS, o DNS Split-Horizon oficial da AWS resolve esse hostname público
+ * para o IP privado RFC 1918 da interface na VPC (ex: 172.31.x.x), sem configurar DNS Rebinding malicioso.
+ */
+export function extractAwsEc2PublicIpFromHostname(rawHostname: string): string | null {
+  if (!rawHostname) return null;
+  const hostname = rawHostname.trim().toLowerCase().replace(/\.$/, '');
+  const match = hostname.match(
+    /^ec2-(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})\.(?:[a-z0-9-]+\.)?compute(?:-1)?\.amazonaws\.com$/i
+  );
+  if (!match) return null;
+
+  const octets = [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
+  if (octets.some((o) => isNaN(o) || o < 0 || o > 255)) {
+    return null;
+  }
+
+  const candidateIp = octets.join('.');
+  // Só é válido se o IP codificado no DNS oficial da AWS for genuinamente público
+  if (isPrivateIp(candidateIp)) {
+    return null;
+  }
+
+  return candidateIp;
+}
+
+/**
+ * Identifica endereços críticos que JAMAIS podem ser acessados, mesmo via Split-Horizon ou allowlist:
+ * - Loopback (127.0.0.0/8, ::1, 0.0.0.0/8)
+ * - Link-Local / Cloud Metadata (169.254.0.0/16, fe80::/10)
+ */
+export function isLoopbackOrMetadataIp(ip: string): boolean {
+  if (!ip) return true;
+  let cleanIp = ip.trim().toLowerCase();
+  if (cleanIp.startsWith('::ffff:')) {
+    const sub = cleanIp.substring(7);
+    if (sub.includes('.')) cleanIp = sub;
+  }
+  const normalized = normalizeIpCandidate(cleanIp) || cleanIp;
+  const family = net.isIP(normalized);
+  if (family === 4) {
+    const [a, b] = normalized.split('.').map(Number);
+    if (a === 127 || a === 0) return true;
+    if (a === 169 && b === 254) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+  if (family === 6) {
+    if (normalized === '::1' || normalized === '::' || normalized === '0000:0000:0000:0000:0000:0000:0000:0001') {
+      return true;
+    }
+    if (/^fe[89ab]/i.test(normalized)) return true;
+    if (/^ff/i.test(normalized)) return true;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Verifica se um hostname está explicitamente autorizado via SSRF_ALLOWED_HOSTS (lista separada por vírgulas)
+ */
+export function isExplicitlyAllowedSsrfHost(rawHostname: string): boolean {
+  const rawList = process.env.SSRF_ALLOWED_HOSTS || '';
+  if (!rawList.trim() || !rawHostname) return false;
+
+  const hostname = rawHostname.trim().toLowerCase().replace(/\.$/, '');
+  if (
+    hostname === '169.254.169.254' ||
+    hostname.startsWith('169.254.') ||
+    hostname === 'metadata.google.internal' ||
+    hostname.includes('metadata.google') ||
+    hostname === 'metadata.platform.aws'
+  ) {
+    return false;
+  }
+
+  const entries = rawList
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase().replace(/\.$/, ''))
+    .filter(Boolean);
+
+  return entries.some((pattern) => {
+    if (pattern === hostname) return true;
+    if (pattern.startsWith('*.')) {
+      const suffix = pattern.slice(1); // ".dominio.interno"
+      return hostname.endsWith(suffix) && hostname.length > suffix.length;
+    }
+    return false;
+  });
+}
+
+/**
+ * Determina se uma resolução de DNS para IP privado de VPC é legítima e segura:
+ * 1. Hostname público oficial AWS EC2 (ec2-A-B-C-D.<region>.compute.amazonaws.com) cujo IP público embutido é válido,
+ *    resolvido internamente pelo DNS Split-Horizon da VPC para um IP RFC 1918 (nunca loopback ou metadata 169.254.x.x).
+ * 2. Hostname explicitamente autorizado pelo administrador em SSRF_ALLOWED_HOSTS (nunca metadata 169.254.x.x).
+ */
+export function isTrustedSplitHorizonResolution(hostname: string, resolvedIp: string): boolean {
+  if (!hostname || !resolvedIp) return false;
+  if (isLoopbackOrMetadataIp(resolvedIp)) {
+    return false;
+  }
+
+  if (extractAwsEc2PublicIpFromHostname(hostname) !== null) {
+    return true;
+  }
+
+  if (isExplicitlyAllowedSsrfHost(hostname)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Validação estática e síncrona de segurança contra SSRF (Server-Side Request Forgery)
  * Bloqueia protocolos inseguros, hostnames literais de loopback, metadados de nuvem e redes RFC 1918,
  * incluindo bypasses por codificação percentual, decimais, hexadecimais e octais.
@@ -266,8 +382,7 @@ export function validateSafeUrl(urlString: string): { safe: boolean; reason?: st
       hostname === '::1' ||
       hostname === '0.0.0.0' ||
       hostname.endsWith('.localhost') ||
-      hostname.endsWith('.local') ||
-      hostname.endsWith('.internal')
+      ((hostname.endsWith('.local') || hostname.endsWith('.internal')) && !isExplicitlyAllowedSsrfHost(hostname))
     ) {
       return { safe: false, reason: 'Acesso a endereços de loopback locais é bloqueado por segurança.' };
     }
@@ -365,7 +480,7 @@ export async function validateSafeUrlAsync(
     const ips: string[] = [];
     for (const record of resolvedAddresses) {
       ips.push(record.address);
-      if (isPrivateIp(record.address)) {
+      if (isPrivateIp(record.address) && !isTrustedSplitHorizonResolution(hostname, record.address)) {
         return {
           safe: false,
           reason: `Bloqueio de SSRF (DNS Rebinding): o domínio ${hostname} resolve para o endereço privado/restrito ${record.address}.`,
@@ -398,7 +513,7 @@ export function createSecureLookup() {
       }
       const addrs = Array.isArray(address) ? address.map((a: any) => a.address) : [address];
       for (const addr of addrs) {
-        if (typeof addr === 'string' && isPrivateIp(addr)) {
+        if (typeof addr === 'string' && isPrivateIp(addr) && !isTrustedSplitHorizonResolution(hostname, addr)) {
           const ssrfErr = new Error(
             `SSRF bloqueado (DNS Rebinding detectado no socket): ${hostname} resolve para IP privado ${addr}`
           );

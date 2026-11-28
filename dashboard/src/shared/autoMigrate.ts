@@ -166,10 +166,86 @@ async function seedNormsCatalog(): Promise<void> {
 }
 
 /**
+ * Garante índices secundários críticos no MongoDB Atlas para evitar COLLSCAN em norms e norms_chunk
+ */
+export async function ensurePerformanceIndexes(): Promise<void> {
+  if (typeof (prisma as any).$runCommandRaw !== 'function') {
+    return;
+  }
+
+  try {
+    await prisma.$runCommandRaw({
+      createIndexes: 'norms',
+      indexes: [
+        { key: { status: 1, tags: 1 }, name: 'idx_norms_status_tags' },
+        { key: { updatedAt: -1 }, name: 'idx_norms_updated_at_desc' },
+        { key: { normId: 1 }, name: 'idx_norms_norm_id' },
+      ],
+    });
+
+    await prisma.$runCommandRaw({
+      createIndexes: 'norms_chunk',
+      indexes: [
+        { key: { normId: 1, chunkIndex: 1 }, name: 'idx_norms_chunk_norm_id_idx' },
+        {
+          key: { 'embedding.0': 1, normId: 1 },
+          name: 'idx_norms_chunk_indexed_embedding',
+          partialFilterExpression: { 'embedding.0': { $exists: true } },
+        },
+        { key: { tags: 1 }, name: 'idx_norms_chunk_tags' },
+      ],
+    });
+
+    // Garante também o índice vetorial HNSW nativo do MongoDB Atlas ($vectorSearch) se disponível no cluster
+    try {
+      const existingSearchIdx = (await prisma.normChunk.aggregateRaw({
+        pipeline: [{ $listSearchIndexes: {} }],
+      })) as unknown as Array<{ name?: string }>;
+      const vectorIdxName = env.RAG_VECTOR_INDEX_NAME || 'vector_index_norms_chunk';
+      const hasVectorIdx =
+        Array.isArray(existingSearchIdx) &&
+        existingSearchIdx.some((idx) => idx?.name === vectorIdxName);
+
+      if (!hasVectorIdx) {
+        await prisma.$runCommandRaw({
+          createSearchIndexes: 'norms_chunk',
+          indexes: [
+            {
+              name: vectorIdxName,
+              type: 'vectorSearch',
+              definition: {
+                fields: [
+                  {
+                    type: 'vector',
+                    path: 'embedding',
+                    numDimensions: 768,
+                    similarity: 'cosine',
+                  },
+                  { type: 'filter', path: 'tags' },
+                  { type: 'filter', path: 'normId' },
+                ],
+              },
+            },
+          ],
+        });
+        console.log(`⚡ [Migration] Índice Atlas Vector Search "${vectorIdxName}" provisionado em norms_chunk.`);
+      }
+    } catch {
+      // Cluster MongoDB sem Atlas Search ou índice já em criação; fallback Server-Side $reduce permanece ativo
+    }
+
+    console.log('⚡ [Migration] Índices de performance de RAG (norms / norms_chunk) verificados com sucesso.');
+  } catch (err: any) {
+    console.warn(`⚠️ [Migration] Aviso ao garantir índices de RAG: ${err.message}`);
+  }
+}
+
+/**
  * 1. Executa migrações de dados, normalizações de schema e autocura estrutural (C03)
  */
 export async function runDatabaseMigrations(): Promise<void> {
   console.log('🔄 [Migration] Verificando e aplicando migrações estruturais no MongoDB...');
+  await ensurePerformanceIndexes();
 
   // 1.1 Atualizar AgentModules com code nulo ou vazio
   const agentsWithoutCode = await prisma.agentModule.findMany({
