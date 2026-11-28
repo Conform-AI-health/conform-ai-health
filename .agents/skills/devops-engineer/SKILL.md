@@ -104,6 +104,8 @@ Sua missão é garantir que toda a plataforma opere com alta disponibilidade, de
    - Deploys devem validar que o novo container respondeu 200 OK no healthcheck antes de derrubar o container anterior (ou usar rolling restart).
 3. **Backup de Configurações:**
    - Assegure cópias de segurança periódicas de volumes de dados e chaves criptográficas.
+4. **Validação Local Obrigatória da Pipeline Pré-PR:**
+   - Antes de realizar `git push` ou abrir/atualizar qualquer Pull Request, execute localmente os exatos gates do `.github/workflows/ci-deploy.yml` (`npm run typecheck`, `npm test` e `npm run build`) garantindo `exit code 0` em ambos os workspaces (`dashboard` e `dashboard-web`).
 
 ---
 

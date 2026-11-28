@@ -1080,35 +1080,113 @@ export class ScraperService {
           const passwordInput = await page.$('input[type="password"]');
           if (passwordInput) {
             loginDetected = true;
+            const initialUrl = page.url();
             console.log(`🔐 [Puppeteer] Formulário de login detectado para ${url}. Submetendo credenciais autorizadas...`);
-            const userInput = await page.$(
-              'input[type="text"], input[type="email"], input[name*="user" i], input[name*="login" i], input[name*="email" i], input[id*="user" i], input[id*="login" i]'
-            );
-            if (userInput) {
-              await userInput.type(auth.username, { delay: 25 });
-            }
-            await passwordInput.type(auth.password, { delay: 25 });
 
-            const submitBtn = await page.$(
-              'button[type="submit"], input[type="submit"], button:has-text("Entrar"), button:has-text("Login"), form button'
-            );
+            // Localiza campo de usuário dentro do mesmo <form> primeiro (cobrindo <input name="username"> sem atributo type)
+            let userInput = await page.evaluateHandle((pwdEl: any) => {
+              const g = globalThis as any;
+              const doc = g.document;
+              const win = g.window;
+              const scope = pwdEl.closest('form') || doc;
+              const candidates = Array.from(scope.querySelectorAll('input')) as any[];
+              return (
+                candidates.find((el) => {
+                  if (el === pwdEl) return false;
+                  const type = String(el.getAttribute('type') || 'text').toLowerCase();
+                  if (['hidden', 'password', 'submit', 'button', 'checkbox', 'radio', 'file', 'reset'].includes(type)) {
+                    return false;
+                  }
+                  const style = win.getComputedStyle(el);
+                  return style.display !== 'none' && style.visibility !== 'hidden';
+                }) || null
+              );
+            }, passwordInput);
+
+            const userElement = userInput.asElement ? userInput.asElement() : null;
+            const fallbackUserEl =
+              userElement ||
+              (await page.$(
+                'input:not([type]), input[type="text"], input[type="email"], input[name*="user" i], input[name*="login" i], input[name*="email" i], input[name*="cpf" i], input[id*="user" i], input[id*="login" i]'
+              ));
+
+            if (fallbackUserEl) {
+              await fallbackUserEl.click({ clickCount: 3 }).catch(() => {});
+              await fallbackUserEl.press('Backspace').catch(() => {});
+              await fallbackUserEl.type(auth.username, { delay: 20 });
+              await page.evaluate((el: any) => {
+                const Ev = (globalThis as any).Event;
+                el.dispatchEvent(new Ev('input', { bubbles: true }));
+                el.dispatchEvent(new Ev('change', { bubbles: true }));
+              }, fallbackUserEl).catch(() => {});
+            }
+
+            await passwordInput.click({ clickCount: 3 }).catch(() => {});
+            await passwordInput.press('Backspace').catch(() => {});
+            await passwordInput.type(auth.password, { delay: 20 });
+            await page.evaluate((el: any) => {
+              const Ev = (globalThis as any).Event;
+              el.dispatchEvent(new Ev('input', { bubbles: true }));
+              el.dispatchEvent(new Ev('change', { bubbles: true }));
+            }, passwordInput).catch(() => {});
+
+            // Busca botão de submissão usando seletores CSS válidos + inspeção de texto (sem pseudo-seletor Playwright inválido)
+            const submitHandle = await page.evaluateHandle((pwdEl: any) => {
+              const doc = (globalThis as any).document;
+              const form = pwdEl.closest('form');
+              if (form) {
+                const direct = form.querySelector('button[type="submit"], input[type="submit"], button:not([type="button"])');
+                if (direct) return direct;
+              }
+              const buttons = Array.from(
+                doc.querySelectorAll('button, input[type="submit"], a[role="button"]')
+              ) as any[];
+              return (
+                buttons.find((btn) => {
+                  const text = String(btn.innerText || btn.value || btn.textContent || '').trim();
+                  return /entrar|login|acessar|sign\s*in|autenticar|continuar/i.test(text);
+                }) || null
+              );
+            }, passwordInput);
+            const submitBtn = submitHandle.asElement ? submitHandle.asElement() : null;
+
+            const waitAfterSubmit = Promise.race([
+              page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => null),
+              page
+                .waitForFunction(
+                  (prevUrl: string) => {
+                    const g = globalThis as any;
+                    return (
+                      g.window.location.href !== prevUrl ||
+                      !g.document.querySelector('input[type="password"]')
+                    );
+                  },
+                  { timeout: 15000 },
+                  initialUrl
+                )
+                .catch(() => null),
+            ]);
+
             if (submitBtn) {
-              await Promise.all([
-                page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {}),
-                submitBtn.click(),
-              ]);
+              await Promise.all([waitAfterSubmit, submitBtn.click()]);
             } else {
-              await Promise.all([
-                page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {}),
-                passwordInput.press('Enter'),
-              ]);
+              await Promise.all([waitAfterSubmit, passwordInput.press('Enter')]);
             }
 
-            // Verifica se a tela de login foi transposta com sucesso (campo de senha não deve mais existir na página atual)
+            // Aguarda chamadas AJAX/SPA pós-login estabilizarem (ex.: class="api-form" -> redirect / renderização de painel)
+            if (typeof page.waitForNetworkIdle === 'function') {
+              await page.waitForNetworkIdle({ idleTime: 600, timeout: 8000 }).catch(() => {});
+            } else {
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+
+            const finalUrl = page.url();
             const remainingPasswordInput = await page.$('input[type="password"]');
-            if (!remainingPasswordInput) {
+            if (!remainingPasswordInput || finalUrl !== initialUrl) {
               authSuccess = true;
-              console.log(`✅ [Puppeteer] [AUTH_SUCCESS] Login efetuado com sucesso na página autorizada: ${url} (Usuário: ${auth.username})`);
+              console.log(
+                `✅ [Puppeteer] [AUTH_SUCCESS] Login efetuado com sucesso na página autorizada: ${finalUrl} (Usuário: ${auth.username})`
+              );
             } else {
               console.warn(`⚠️ [Puppeteer] Campo de senha ainda presente após submissão de credenciais para: ${url}`);
             }
@@ -1249,6 +1327,30 @@ export class ScraperService {
           parts.push(`${text}\n`);
         }
       });
+
+      // Tabelas e painéis internos (comuns em sistemas médicos autenticados pós-login)
+      $('table tr').each((_, tr) => {
+        const cells: string[] = [];
+        $(tr)
+          .find('th, td')
+          .each((__, cell) => {
+            const cellText = $(cell).text().trim().replace(/\s+/g, ' ');
+            if (cellText) cells.push(cellText);
+          });
+        if (cells.length > 0) {
+          parts.push(`| ${cells.join(' | ')} |\n`);
+        }
+      });
+
+      // Fallback para painéis/cards baseados em div/section quando há poucos <p>/<li>
+      if (parts.length <= 3) {
+        $('main section, article, .card-body, .alert, blockquote, dd').each((_, el) => {
+          const text = $(el).text().trim().replace(/\s+/g, ' ');
+          if (text.length > 15) {
+            parts.push(`${text}\n`);
+          }
+        });
+      }
 
       // Atributos de imagens (relevante para auditoria de Antes e Depois)
       $('img').each((_, el) => {

@@ -98,8 +98,9 @@ Ao avaliar infrações ou calibrar regras para a IA e para o banco de dados, uti
 
 ---
 
-## 🔄 Protocolo de Colaboração (Handoffs)
+## 🔄 Protocolo de Colaboração (Handoffs) & Qualidade Pré-PR
 - Ao redigir novos prompts de sistema ou refinar o comportamento da IA para evitar alucinações deontológicas, trabalhe em conjunto com o `@ai-software-engineer`.
 - Ao identificar novas resoluções publicadas pelo Diário Oficial da União (CFM/ANS/ANVISA), estruture os dados para que o `@backend-engineer` os popule no catálogo de normas.
 - Para orientar a exibição intuitiva de relatórios de risco aos clientes médicos, assessore o `@frontend-engineer`.
 - Forneça exemplos de textos promocionais limítrofes ao `@test-specialist` para validação empírica da precisão do motor de auditoria.
+- **Gate Obrigatório de Pipeline CI Pré-PR:** Sempre que uma entrega envolver alteração de código, antes de realizar `git push` ou abrir Pull Request execute obrigatoriamente `npm run typecheck`, `npm test` e `npm run build` na raiz do projeto garantindo aprovação integral da esteira CI.

@@ -97,6 +97,9 @@ Sua missão é construir serviços robustos em **Node.js 20+ com TypeScript**, g
    - Registre eventos críticos com logger contextual (ex: Winston / Pino / Console estruturado), incluindo timestamp, nível, correlationId do job e módulo.
 4. **Resiliência e Timeouts:**
    - Requisições HTTP externas e chamadas de scrapers devem sempre possuir timeouts explícitos (ex: `timeout: 30000ms`).
+5. **Compatibilidade `tsc --noEmit` (Node vs DOM) & Gate de CI Pré-PR:**
+   - O `dashboard/tsconfig.json` não inclui a biblioteca `"dom"`. Em funções serializadas para o navegador (ex.: `page.evaluate`, `page.evaluateHandle`, `page.waitForFunction` do Puppeteer), acesse `document`, `window` e `Event` via `globalThis as any` para não quebrar o `tsc --noEmit`.
+   - Antes de qualquer `git push` ou abertura de Pull Request, execute obrigatoriamente `npm run typecheck`, `npm test` e `npm run build` na raiz do projeto com `exit code 0`.
 
 ---
 

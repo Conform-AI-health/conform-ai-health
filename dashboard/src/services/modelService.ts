@@ -1,5 +1,5 @@
 import { ModelRepository } from '../repositories/modelRepository.js';
-import { encryptModelApiKey, maskApiKey } from '../shared/encryption.js';
+import { encryptModelApiKey, maskApiKey, isMaskedSecret } from '../shared/encryption.js';
 import { validateSafeUrlAsync, isAllowedLocalhostBaseUrl } from '../shared/security.js';
 import { AIProviderFactory } from './ai/aiProviderFactory.js';
 import { AIInvocationCacheService } from './ai/aiInvocationCache.js';
@@ -175,7 +175,7 @@ export class ModelService {
 
     const updateData: any = { ...data };
     if (data.apiKey !== undefined) {
-      if (!data.apiKey || data.apiKey.trim().length === 0 || data.apiKey.includes('****')) {
+      if (!data.apiKey || data.apiKey.trim().length === 0 || isMaskedSecret(data.apiKey)) {
         delete updateData.apiKey;
       } else {
         updateData.apiKey = encryptModelApiKey(data.apiKey.trim());

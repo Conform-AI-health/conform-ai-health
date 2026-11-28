@@ -4,6 +4,13 @@ import { ClientScraperService } from '../services/clientScraperService.js';
 import { ReconciliationEngine } from '../services/reconciliationEngine.js';
 import { NormsResolver } from '../services/normsResolver.js';
 import { SemanticEmbeddingService } from '../services/semanticEmbeddingService.js';
+import { AgentService } from '../services/agentService.js';
+import { AgentRepository } from '../repositories/agentRepository.js';
+import { ReportRepository } from '../repositories/reportRepository.js';
+import { AuditSchedulerService } from '../services/auditSchedulerService.js';
+import { auditQueue } from '../config/redis.js';
+import { encryptSecret, isMaskedSecret } from '../shared/encryption.js';
+import axios from 'axios';
 import { prisma } from '../config/prisma.js';
 
 describe('🧪 Suíte de Testes: Autenticação de Scraping, Telemetria e Auto-Tagging de Chunks (T36 a T39)', () => {
@@ -100,6 +107,117 @@ describe('🧪 Suíte de Testes: Autenticação de Scraping, Telemetria e Auto-T
             message: expect.stringContaining('[SCRAPER] [AUTH_SUCCESS]'),
           }),
         })
+      );
+    });
+
+    it('ClientScraperService deve pular Firecrawl API e usar PUPPETEER diretamente quando hasAuth=true', async () => {
+      const prevKey = process.env.FIRECRAWL_API_KEY;
+      process.env.FIRECRAWL_API_KEY = 'fc-real-test-key-12345';
+      const axiosPostSpy = vi.spyOn(axios, 'post');
+      const scraperSpy = vi.spyOn(ScraperService, 'scrape').mockResolvedValueOnce({
+        url: 'https://portal-auditia.med.br/login',
+        mode: 'PUPPETEER',
+        title: 'Painel AuditIA',
+        rawHtmlLength: 500,
+        cleanMarkdown: '# Painel AuditIA\nSessão autenticada do auditor.',
+        tokensEstimatedRaw: 125,
+        tokensEstimatedClean: 40,
+        tokensSavedPercentage: 68,
+        detectedTags: ['CFM'],
+        extractedEntities: {
+          crms: [],
+          rqes: [],
+          states: [],
+          hasBeforeAfterMention: false,
+          hasPromotionalPricing: false,
+          hasGuaranteedResultMention: false,
+        },
+        authSuccess: true,
+        loginDetected: true,
+      } as any);
+      vi.spyOn(prisma.systemLog, 'create').mockResolvedValue({} as any);
+
+      try {
+        const res = await ClientScraperService.scrapeClientAsset({
+          url: 'https://portal-auditia.med.br/login',
+          auth: {
+            hasAuth: true,
+            username: 'auditor-aurora',
+            password: 'SenhaRealForte!2026',
+          },
+        });
+
+        expect(axiosPostSpy).not.toHaveBeenCalled();
+        expect(scraperSpy).toHaveBeenCalledWith(
+          'https://portal-auditia.med.br/login',
+          'PUPPETEER',
+          undefined,
+          { username: 'auditor-aurora', password: 'SenhaRealForte!2026' }
+        );
+        expect(res.authSuccess).toBe(true);
+      } finally {
+        if (prevKey === undefined) delete process.env.FIRECRAWL_API_KEY;
+        else process.env.FIRECRAWL_API_KEY = prevKey;
+      }
+    });
+
+    it('AgentService.updateAgent nunca deve sobrescrever a senha cifrada com a máscara •••••••• e runAudit deve propagar hasAuth=true', async () => {
+      expect(isMaskedSecret('••••••••')).toBe(true);
+      expect(isMaskedSecret('****')).toBe(true);
+      expect(isMaskedSecret('SenhaReal123')).toBe(false);
+
+      const encryptedReal = encryptSecret('SenhaRealDoAuditor#99')!;
+      vi.spyOn(prisma.client, 'findMany').mockResolvedValue([] as any);
+      vi.spyOn(AgentRepository, 'findById').mockResolvedValue({
+        id: '6b0a182e55ade23441b9b554',
+        name: 'AuditAI',
+        code: 'auditai-mwzn1hyd',
+        targetUrl: 'https://portal-auditia.med.br/login',
+        extractionMode: 'FIRECRAWL',
+        hasAuth: true,
+        authUsername: 'auditor-aurora',
+        authPassword: encryptedReal,
+        tags: ['cfm'],
+      } as any);
+      const updateSpy = vi.spyOn(AgentRepository, 'update').mockImplementation(async (_id, data: any) => ({
+        id: '6b0a182e55ade23441b9b554',
+        name: 'AuditAI',
+        code: 'auditai-mwzn1hyd',
+        ...data,
+        authPassword: data.authPassword ?? encryptedReal,
+      }) as any);
+      vi.spyOn(AuditSchedulerService, 'syncAgentSchedule').mockResolvedValue(undefined);
+
+      await AgentService.updateAgent('6b0a182e55ade23441b9b554', {
+        name: 'AuditAI',
+        hasAuth: true,
+        authUsername: 'auditor-aurora',
+        authPassword: '••••••••',
+      });
+
+      const passedUpdatePayload = updateSpy.mock.calls[0][1] as any;
+      expect(passedUpdatePayload.authPassword).toBeUndefined();
+
+      vi.spyOn(ReportRepository, 'create').mockResolvedValue({ id: 'rep-auth-run-1' } as any);
+      const queueSpy = vi.spyOn(auditQueue, 'add').mockResolvedValue({ id: 'job-auth-1' } as any);
+
+      await AgentService.runAudit('6b0a182e55ade23441b9b554', {
+        targetUrl: 'https://portal-auditia.med.br/login',
+        hasAuth: true,
+        authUsername: 'auditor-aurora',
+        authPassword: '••••••••',
+      });
+
+      expect(queueSpy).toHaveBeenCalledWith(
+        'auditJob',
+        expect.objectContaining({
+          auth: {
+            hasAuth: true,
+            username: 'auditor-aurora',
+            password: 'SenhaRealDoAuditor#99',
+          },
+        }),
+        expect.anything()
       );
     });
   });

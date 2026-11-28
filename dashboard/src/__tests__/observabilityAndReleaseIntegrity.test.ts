@@ -267,7 +267,7 @@ describe('📊 Observabilidade (Pino + LGPD Redact + OTel W3C) & Releases Imutá
       const deployScriptPath = path.join(rootDir, 'scripts/ec2-deploy-release.sh');
       expect(fs.existsSync(deployScriptPath)).toBe(true);
 
-      const content = fs.readFileSync(deployScriptPath, 'utf8');
+      const content = fs.readFileSync(deployScriptPath, 'utf8').replace(/\r\n/g, '\n');
       expect(content).toMatch(/latest/);
       expect(content).toMatch(/\.previous_version/);
       expect(content).toMatch(/releases\.log/);

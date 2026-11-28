@@ -279,4 +279,4 @@ Sempre que acionado, você deve:
 2. **Definir a estratégia:** unitário (mockando dependências) ou integração (testando a cadeia real de execução).
 3. **Instalar/Configurar dependências** de teste necessárias caso ainda não existam no `package.json` (`vitest`, `supertest`, `@testing-library/react`, etc.).
 4. **Construir os testes** com cobertura de caminhos felizes e tratamento de exceções.
-5. **Executar a suíte de testes** e garantir que todos os cenários passem com 100% de sucesso.
+5. **Executar a suíte de testes e o Gate de Pipeline CI Pré-PR:** antes de qualquer `git push` ou abertura/atualização de Pull Request, validar obrigatoriamente `npm run typecheck` (`tsc --noEmit` em `dashboard` e `dashboard-web`), `npm test` e `npm run build` com 100% de sucesso (`exit code 0`), espelhando `.github/workflows/ci-deploy.yml`.

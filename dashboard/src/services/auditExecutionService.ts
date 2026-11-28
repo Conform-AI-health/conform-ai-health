@@ -6,7 +6,7 @@ import { NormsResolver } from './normsResolver.js';
 import { AIStructuredContractAdapter } from '../shared/aiStructuredContract.js';
 import { ExtractionMode } from '@prisma/client';
 import { ScraperService, ScrapeResult } from './scraperService.js';
-import { decryptSecret } from '../shared/encryption.js';
+import { decryptSecret, isMaskedSecret } from '../shared/encryption.js';
 import { createLogger } from '../shared/logger.js';
 import { getActiveTraceIds, runWithContext, withSpan } from '../shared/tracing.js';
 import {
@@ -126,22 +126,47 @@ export class AuditExecutionService {
       const moduleName = mod?.name || 'Módulo Geral';
       const effectiveSkill = params.skill || mod?.description || 'compliance-specialist';
 
-      // Determina configuração de autenticação (passada explicitamente ou recuperada do módulo)
-      const authConfig = params.auth || (mod?.hasAuth ? {
-        hasAuth: true,
-        username: mod.authUsername || undefined,
-        password: mod.authPassword ? (decryptSecret(mod.authPassword) || undefined) : undefined,
-      } : undefined);
+      // Determina configuração de autenticação (passada explicitamente ou recuperada do módulo, protegendo contra máscara '••••••••')
+      const modDecryptedPwd = mod?.authPassword ? decryptSecret(mod.authPassword) || undefined : undefined;
+      const validModPwd = modDecryptedPwd && !isMaskedSecret(modDecryptedPwd) ? modDecryptedPwd : undefined;
+      const paramPwd =
+        params.auth?.password && !isMaskedSecret(params.auth.password)
+          ? params.auth.password
+          : undefined;
+      const hasAuthEnabled = Boolean(
+        params.auth?.hasAuth ||
+          params.auth?.username ||
+          params.auth?.password ||
+          mod?.hasAuth
+      );
+      const authConfig = hasAuthEnabled
+        ? {
+            hasAuth: true,
+            username: params.auth?.username || mod?.authUsername || undefined,
+            password: paramPwd || validModPwd,
+          }
+        : undefined;
 
       if (authConfig?.hasAuth) {
-        await prisma.systemLog.create({
-          data: {
-            level: 'INFO',
-            module: 'SCRAPER',
-            correlationId,
-            message: `[SCRAPER] [AUTH] Extração configurada com credenciais de autenticação para: ${targetUrl} (Usuário: ${authConfig.username || 'autenticado'})`,
-          },
-        }).catch(() => {});
+        if (!authConfig.username || !authConfig.password) {
+          await prisma.systemLog.create({
+            data: {
+              level: 'WARN',
+              module: 'SCRAPER',
+              correlationId,
+              message: `⚠️ [SCRAPER] [AUTH_CREDENTIALS_MISSING] Autenticação habilitada para ${targetUrl}, porém a senha válida não está disponível (ausente ou mascarada no banco). Redigite e salve a senha real do módulo no Cockpit.`,
+            },
+          }).catch(() => {});
+        } else {
+          await prisma.systemLog.create({
+            data: {
+              level: 'INFO',
+              module: 'SCRAPER',
+              correlationId,
+              message: `[SCRAPER] [AUTH] Extração configurada com credenciais de autenticação para: ${targetUrl} (Usuário: ${authConfig.username || 'autenticado'})`,
+            },
+          }).catch(() => {});
+        }
       }
 
       // Log operacional: Início da extração
@@ -188,7 +213,7 @@ export class AuditExecutionService {
         targetUrl: effectiveTargetUrl,
       });
 
-      // Telemetria forense: Registra êxito de login / acesso restrito autorizado
+      // Telemetria forense: Registra êxito ou falha de login / acesso restrito
       if (authConfig?.hasAuth && firecrawlResult.authSuccess) {
         await prisma.systemLog.create({
           data: {
@@ -206,6 +231,15 @@ export class AuditExecutionService {
               contentHash: firecrawlResult.contentHash,
               timestamp: new Date().toISOString(),
             }),
+          },
+        }).catch(() => {});
+      } else if (authConfig?.hasAuth && firecrawlResult.loginDetected && !firecrawlResult.authSuccess) {
+        await prisma.systemLog.create({
+          data: {
+            level: 'WARN',
+            module: 'SCRAPER',
+            correlationId,
+            message: `⚠️ [SCRAPER] [AUTH_FAILED] Formulário de login detectado em ${targetUrl}, mas a sessão autenticada não pôde ser estabelecida para o usuário "${authConfig.username || 'informado'}". Verifique usuário e senha do módulo.`,
           },
         }).catch(() => {});
       }

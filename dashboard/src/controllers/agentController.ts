@@ -58,6 +58,7 @@ const runAuditSchema = z.object({
     .optional()
     .nullable(),
   extractionMode: z.enum(['PUPPETEER', 'CHEERIO', 'FALLBACK_AI', 'MCP', 'FIRECRAWL']).optional(),
+  hasAuth: z.boolean().optional(),
   authUsername: z.string().optional().nullable(),
   authPassword: z.string().optional().nullable(),
 });

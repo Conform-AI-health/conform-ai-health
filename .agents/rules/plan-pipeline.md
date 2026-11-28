@@ -74,14 +74,18 @@ flowchart TD
   2. Construção de testes automatizados:
      - **Backend:** Testes unitários e de integração de endpoints, guardrails anti-alucinação, resiliência (Circuit Breaker e Bulkhead) e serviços com mocks via Vitest.
      - **Frontend:** Testes de renderização de componentes, paginação e fluxos no React via Vitest + Testing Library.
-  3. Executar e validar que a suíte roda com **100% de sucesso (`npm test`)** e builds de produção sem erros (`tsc` e `vite build`).
+  3. **Gate Obrigatório de Pipeline CI Pré-PR (Espelhamento `.github/workflows/ci-deploy.yml`):** Executar na raiz do repositório e validar aprovação integral (`exit code 0`) **antes** de avançar para o Estágio 5 (Push/PR):
+     - `npm run typecheck` (`tsc --noEmit` em `dashboard` e `dashboard-web`)
+     - `npm test` (`vitest` em `dashboard` e `dashboard-web`)
+     - `npm run build` (`tsc` em `dashboard` e `tsc && vite build` em `dashboard-web`)
 - **Ação no GitHub Projects Board:**
-  - Após os testes serem gerados e aprovados, **mover obrigatoriamente a issue para a coluna `In review`**.
+  - Após o gate completo da pipeline (`typecheck`, `test` e `build`) ser aprovado, **mover obrigatoriamente a issue para a coluna `In review`**.
 
 ---
 
 ## 🌿 Estágio 5: Branch Git & Rastreabilidade (@architect + Time)
 - **Agentes Participantes:** `@architect` e Time de Engenharia
+- **Pré-condição Bloqueante:** `npm run typecheck`, `npm test` e `npm run build` executados localmente sem erros na árvore final que será commitada.
 - **Ações:**
   1. Criar branch dedicada no Git referenciando a issue: `git checkout -b feat/issue-<ID>-<slug>` (ou `fix/...`).
   2. Realizar commits claros com rastreabilidade: `git commit -m "... (refs #<ID>)"`.
